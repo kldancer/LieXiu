@@ -27,13 +27,13 @@ vi.mock("../i18n", async () => {
   };
 });
 
-vi.mock("@multica/core/api", () => ({
+vi.mock("@liexiu/core/api", () => ({
   api: { getAttachmentTextContent: getAttachmentTextContentMock },
   PreviewTooLargeError: class extends Error {},
   PreviewUnsupportedError: class extends Error {},
 }));
 
-vi.mock("@multica/core/paths", () => ({
+vi.mock("@liexiu/core/paths", () => ({
   useWorkspacePaths: () => ({
     issueDetail: (id: string) => `/test/issues/${id}`,
   }),
@@ -99,7 +99,7 @@ afterEach(() => {
 });
 
 describe("ReadonlyContent memoization", () => {
-  // Long-timeline issues (Inbox + IssueDetail with thousands of comments)
+  // Long-timeline issues and IssueDetail with thousands of comments
   // freeze the tab when each comment re-runs the full react-markdown pipeline
   // on every parent re-render. Wrapping the component in React.memo is the
   // mitigation; this test guards against a future revert that would silently
@@ -328,13 +328,13 @@ describe("ReadonlyContent CJK emphasis", () => {
 
   it("repairs a trailing space before a CJK strong closing delimiter", () => {
     const { container } = render(
-      <ReadonlyContent content="**为什么做，收益是什么。 **Multica 的能力边界" />,
+      <ReadonlyContent content="**为什么做，收益是什么。 **LieXiu 的能力边界" />,
     );
 
     expect(container.querySelector("strong")?.textContent).toBe(
       "为什么做，收益是什么。",
     );
-    expect(container.textContent).toBe("为什么做，收益是什么。 Multica 的能力边界");
+    expect(container.textContent).toBe("为什么做，收益是什么。 LieXiu 的能力边界");
   });
 
   it.each([
@@ -757,7 +757,7 @@ describe("ReadonlyContent bare URL autolinking (MUL-4242)", () => {
   // shared linkify now drops a trailing markdown-delimiter run from the URL, so
   // the closing `**` stays as emphasis outside a clean [url](url).
   it("renders a bold-wrapped bare URL as bold plus a clean link", () => {
-    const url = "https://github.com/multica-ai/multica/pull/5081";
+    const url = "https://github.com/kailonyang/liexiu/pull/5081";
     const { container } = render(<ReadonlyContent content={`**PR：${url}**`} />);
 
     const strong = container.querySelector("strong");
@@ -772,7 +772,7 @@ describe("ReadonlyContent bare URL autolinking (MUL-4242)", () => {
   it("bolds a bare URL even when a CJK punctuation immediately follows (variant B)", () => {
     // `**url**（MUL）` — the closing `**` is glued to a fullwidth paren. gfm
     // autolink swallowed the `**` here; the shared string linkify does not.
-    const url = "https://github.com/multica-ai/multica/pull/5133";
+    const url = "https://github.com/kailonyang/liexiu/pull/5133";
     const { container } = render(
       <ReadonlyContent content={`PR：**${url}**（MUL-4277）。`} />,
     );

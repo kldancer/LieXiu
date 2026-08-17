@@ -4,8 +4,8 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/multica-ai/multica/server/internal/events"
-	"github.com/multica-ai/multica/server/pkg/protocol"
+	"github.com/kailonyang/liexiu/server/internal/events"
+	"github.com/kailonyang/liexiu/server/pkg/protocol"
 )
 
 // TestRegisterListeners_FrameContainsActorType asserts that every WS frame
@@ -28,20 +28,6 @@ func TestRegisterListeners_FrameContainsActorType(t *testing.T) {
 				ActorType:   "agent",
 				Payload:     map[string]any{"id": "issue-1"},
 			},
-		},
-		{
-			name: "personal event (inbox:new) carries actor_type",
-			event: events.Event{
-				Type:        protocol.EventInboxNew,
-				WorkspaceID: "ws-1",
-				ActorID:     "member-xyz",
-				ActorType:   "member",
-				Payload: map[string]any{
-					"item": map[string]any{"recipient_id": "user-1"},
-				},
-			},
-			checkUser: true,
-			userID:    "user-1",
 		},
 	}
 

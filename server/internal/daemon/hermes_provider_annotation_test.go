@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/multica-ai/multica/server/internal/service"
-	"github.com/multica-ai/multica/server/pkg/taskfailure"
+	"github.com/kailonyang/liexiu/server/internal/service"
+	"github.com/kailonyang/liexiu/server/pkg/taskfailure"
 )
 
 // hermesProviderUnconfiguredError is the failure exactly as it reaches the
@@ -73,12 +73,12 @@ func TestAnnotateHermesProviderUnconfigured(t *testing.T) {
 // the task's error, is persisted in agent_task_queue.error, and is re-scanned
 // there for the life of the row — by service.ResumeUnsafeFailure on the write
 // path and by the ILIKE/regex guards in GetLastTaskSession /
-// GetLastChatTaskSession on every later resume lookup. Those guards decide
+// GetLastTaskSession on every later resume lookup. Those guards decide
 // whether a session pointer survives.
 //
 // So anything embedded in this text gets a vote on session recovery. Paths are
 // user-controlled (HERMES_HOME via the agent's custom_env, the overlay root via
-// MULTICA_WORKSPACES_ROOT), and a home under /srv/400-invalid_request_error/ is
+// LIEXIU_WORKSPACES_ROOT), and a home under /srv/400-invalid_request_error/ is
 // a legal directory that would trip the poisoned-request guard on a failure
 // that has nothing to do with it. A constant hint has no such vote.
 func TestAnnotationCannotChangeMachineDecisions(t *testing.T) {
@@ -118,7 +118,7 @@ func TestAnnotationCannotChangeMachineDecisions(t *testing.T) {
 // TestAnnotationAvoidsPersistedRowGuards covers the one reader the test above
 // cannot execute: the SQL text guards in pkg/db/queries/agent.sql, which scan
 // agent_task_queue.error long after the daemon that wrote it is gone. Keep this
-// list in sync with GetLastTaskSession / GetLastChatTaskSession — a hint that
+// list in sync with GetLastTaskSession — a hint that
 // matched one of these would quietly exclude healthy sessions from resume.
 func TestAnnotationAvoidsPersistedRowGuards(t *testing.T) {
 	t.Parallel()

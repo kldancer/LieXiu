@@ -16,9 +16,9 @@
  */
 
 import { useMemo, type RefObject } from "react";
-import { attachmentToDraftUpload, type DraftUpload } from "@multica/core/drafts";
-import { useIssueDraftStore } from "@multica/core/issues/stores";
-import type { CreateMode } from "@multica/core/issues/stores";
+import { attachmentToDraftUpload, type DraftUpload } from "@liexiu/core/drafts";
+import { useIssueDraftStore } from "@liexiu/core/issues/stores";
+import type { CreateMode } from "@liexiu/core/issues/stores";
 import type { UploadGate } from "../editor/use-upload-gate";
 import type { ContentEditorRef } from "../editor/content-editor";
 import {

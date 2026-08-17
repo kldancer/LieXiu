@@ -3,16 +3,16 @@ import { useLocation, useNavigate } from "react-router-dom";
 import {
   bucketDiagnosticPath,
   setDiagnosticRoute,
-} from "@multica/core/diagnostics";
+} from "@liexiu/core/diagnostics";
 import {
   NavigationProvider,
   type LinkClickIntent,
   type NavigationAdapter,
-} from "@multica/views/navigation";
+} from "@liexiu/views/navigation";
 import { parseIssueWindowPath } from "../../../shared/issue-window";
 
 /**
- * Answer the `multica:navigate` event inside a dedicated issue window (MUL-5208).
+ * Answer the `liexiu:navigate` event inside a dedicated issue window (MUL-5208).
  *
  * The event is what a link in content (comment, description) fires once it
  * resolves to an in-app destination, including an absolute URL on this
@@ -55,8 +55,8 @@ function useContentLinkHandler(
         `${runtimeConfig.config.appUrl}${path}`,
       );
     };
-    window.addEventListener("multica:navigate", handler);
-    return () => window.removeEventListener("multica:navigate", handler);
+    window.addEventListener("liexiu:navigate", handler);
+    return () => window.removeEventListener("liexiu:navigate", handler);
   }, [navigate, runtimeConfig]);
 }
 

@@ -45,9 +45,7 @@ DELETE FROM agent_invocation_target
 WHERE agent_id = $1
 `
 
-// Clears every target for an agent. Used before re-writing the allow-list so
-// the update is a wholesale replace, matching the composio_toolkit_allowlist
-// write model.
+// Clears every target for an agent before replacing the invocation allow-list.
 func (q *Queries) DeleteAgentInvocationTargets(ctx context.Context, agentID pgtype.UUID) error {
 	_, err := q.db.Exec(ctx, deleteAgentInvocationTargets, agentID)
 	return err
@@ -74,28 +72,6 @@ type DeleteAgentInvocationTargetsByMemberParams struct {
 // to bound the delete to @workspace_id.
 func (q *Queries) DeleteAgentInvocationTargetsByMember(ctx context.Context, arg DeleteAgentInvocationTargetsByMemberParams) error {
 	_, err := q.db.Exec(ctx, deleteAgentInvocationTargetsByMember, arg.WorkspaceID, arg.TargetID)
-	return err
-}
-
-const deleteAgentInvocationTargetsBySystemRuntimeAgents = `-- name: DeleteAgentInvocationTargetsBySystemRuntimeAgents :exec
-DELETE FROM agent_invocation_target
-WHERE agent_id IN (
-    SELECT id FROM agent WHERE runtime_id = $1 AND kind = 'system'
-)
-`
-
-// Application-layer replacement for the (deliberately absent) agent_id ON
-// DELETE CASCADE: removes invocation targets for the system agents a runtime
-// delete is about to hard-delete. MUST run in the same tx as, and BEFORE,
-// DeleteSystemAgentsByRuntime so no orphan target rows survive the agent rows
-// they belonged to. Mirrors the agent hard-delete predicate exactly.
-//
-// Scoped to kind = 'system' since MUL-5559: user agents are no longer deleted
-// with their runtime (they are unbound and keep their configuration), so
-// clearing THEIR invocation targets here would silently strip a surviving
-// agent's allow-list.
-func (q *Queries) DeleteAgentInvocationTargetsBySystemRuntimeAgents(ctx context.Context, runtimeID pgtype.UUID) error {
-	_, err := q.db.Exec(ctx, deleteAgentInvocationTargetsBySystemRuntimeAgents, runtimeID)
 	return err
 }
 

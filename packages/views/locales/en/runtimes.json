@@ -27,15 +27,6 @@
       "hint": "This usually takes a few seconds. Your daemon is registering with the workspace."
     }
   },
-  "mika_setup": {
-    "title": "Your runtime is ready. Start with Mika.",
-    "description": "Mika turns your goal into an issue, coordinates the right agent, and helps you add reusable specialists when your workflow needs them.",
-    "action": "Start with Mika",
-    "failed": "Couldn't start Mika",
-    "dialog_title": "Where should Mika run?",
-    "dialog_description": "Pick the runtime Mika will use. You can change it later in settings.",
-    "cancel": "Cancel"
-  },
   "machine": {
     "search_placeholder": "Search machines…",
     "filters": {
@@ -202,7 +193,7 @@
   "connect": {
     "title": "Add a computer",
     "description": "Run these two commands on the computer you want to add. We'll detect it the moment the daemon comes online.",
-    "step1_label": "Install the Multica CLI",
+    "step1_label": "Install the LieXiu CLI",
     "step2_label": "Start the daemon",
     "step2_hint": "Opens a browser to sign in, then keeps the daemon running in the background.",
     "live_listening": "Waiting for your computer",
@@ -265,11 +256,11 @@
     "cli_version_label": "CLI Version:",
     "version_unknown": "unknown",
     "managed_by_desktop": "Managed by Desktop",
-    "managed_by_desktop_title": "The CLI binary is managed by Multica Desktop — update Desktop to upgrade the CLI.",
+    "managed_by_desktop_title": "The CLI binary is managed by LieXiu Desktop — update Desktop to upgrade the CLI.",
     "read_only": "Read-only",
     "read_only_title": "Only runtime owners and workspace admins can update the CLI.",
     "local_build": "Local build",
-    "local_build_title": "This runtime reports a non-release version, so Multica cannot tell whether an upgrade is available. Update it from the machine itself.",
+    "local_build_title": "This runtime reports a non-release version, so LieXiu cannot tell whether an upgrade is available. Update it from the machine itself.",
     "latest": "Latest",
     "available": "available",
     "action": "Update",
@@ -341,7 +332,7 @@
     "builtin_section_aria": "Supported built-in protocol families",
     "builtin_reference": "Reference",
     "empty_title": "Create your first custom runtime",
-    "empty_description": "Pick a base protocol family, then point Multica at the command to run.",
+    "empty_description": "Pick a base protocol family, then point LieXiu at the command to run.",
     "badge_builtin": "Built-in",
     "badge_custom": "Custom",
     "badge_disabled": "Disabled",

@@ -18,8 +18,8 @@ import (
 //     cannot widen the metric label space.
 
 // queryActiveUsers fills snap.activeUsers with a count of distinct user_ids
-// that have either sent a chat message or had an agent task created for one
-// of their issues inside the short rolling window. We deliberately skip
+// that had an agent task created for one of their issues inside the short
+// rolling window. We deliberately skip
 // Postgres `now() - interval '$1'` substitution and instead pass a typed
 // interval as a bind parameter so the caller cannot inject SQL via the
 // window string.
@@ -34,14 +34,6 @@ func (c *BusinessSamplerCollector) queryActiveUsers(
 ) error {
 	const stmt = `
 SELECT count(DISTINCT user_id) FROM (
-  SELECT cs.creator_id AS user_id
-  FROM chat_session cs
-  WHERE EXISTS (
-    SELECT 1 FROM chat_message cm
-    WHERE cm.chat_session_id = cs.id
-      AND cm.created_at > now() - $1::interval
-  )
-  UNION ALL
   SELECT i.creator_id AS user_id
   FROM issue i
   WHERE i.creator_type = 'member'
@@ -62,8 +54,8 @@ SELECT count(DISTINCT user_id) FROM (
 	return nil
 }
 
-// queryActiveWorkspaces counts distinct workspaces with chat or task
-// activity in the short window. Mirrors queryActiveUsers and intentionally
+// queryActiveWorkspaces counts distinct workspaces with issue task activity
+// in the short window. Mirrors queryActiveUsers and intentionally
 // has no inner LIMIT for the same reason: a LIMIT inside the distinct
 // subquery would truncate the COUNT and report a wrong value.
 func (c *BusinessSamplerCollector) queryActiveWorkspaces(
@@ -71,14 +63,6 @@ func (c *BusinessSamplerCollector) queryActiveWorkspaces(
 ) error {
 	const stmt = `
 SELECT count(DISTINCT workspace_id) FROM (
-  SELECT cs.workspace_id
-  FROM chat_session cs
-  WHERE EXISTS (
-    SELECT 1 FROM chat_message cm
-    WHERE cm.chat_session_id = cs.id
-      AND cm.created_at > now() - $1::interval
-  )
-  UNION ALL
   SELECT i.workspace_id
   FROM issue i
   WHERE EXISTS (
@@ -107,8 +91,6 @@ func (c *BusinessSamplerCollector) queryTaskQueued(
 	const stmt = `
 SELECT
   CASE
-    WHEN chat_session_id IS NOT NULL THEN 'chat'
-    WHEN autopilot_run_id IS NOT NULL THEN 'autopilot'
     WHEN issue_id IS NOT NULL THEN 'issue'
     ELSE 'other'
   END AS source,
@@ -146,18 +128,16 @@ func (c *BusinessSamplerCollector) queryTaskRunning(
 	// running-only partial index from migration 114 independently.
 	const stmt = `
 WITH in_flight AS (
-  SELECT chat_session_id, autopilot_run_id, issue_id, runtime_id
+  SELECT issue_id, runtime_id
   FROM agent_task_queue
   WHERE status = 'dispatched'
   UNION ALL
-  SELECT chat_session_id, autopilot_run_id, issue_id, runtime_id
+  SELECT issue_id, runtime_id
   FROM agent_task_queue
   WHERE status = 'running'
 )
 SELECT
   CASE
-    WHEN atq.chat_session_id IS NOT NULL THEN 'chat'
-    WHEN atq.autopilot_run_id IS NOT NULL THEN 'autopilot'
     WHEN atq.issue_id IS NOT NULL THEN 'issue'
     ELSE 'other'
   END AS source,
@@ -196,8 +176,6 @@ func (c *BusinessSamplerCollector) queryTaskStuck(
 	stmt := `
 SELECT
   CASE
-    WHEN chat_session_id IS NOT NULL THEN 'chat'
-    WHEN autopilot_run_id IS NOT NULL THEN 'autopilot'
     WHEN issue_id IS NOT NULL THEN 'issue'
     ELSE 'other'
   END AS source,

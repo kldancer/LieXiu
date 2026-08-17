@@ -19,7 +19,7 @@ const VIEWS_ROOT = join(__dirname, "..");
 
 // Product surfaces that render user/agent-authored content. Any of these
 // reaching for a generic Markdown renderer is the regression.
-const PRODUCT_SURFACES = ["chat", "issues", "skills", "autopilots", "inbox"];
+const PRODUCT_SURFACES = ["issues", "skills", "autopilots"];
 
 function walk(dir: string, out: string[] = []): string[] {
   let entries: string[];
@@ -60,7 +60,7 @@ describe("RichContent import boundary", () => {
   it("no product surface imports the generic ui Markdown renderer", () => {
     const offenders = sourceFiles(PRODUCT_SURFACES)
       .filter(({ text }) =>
-        /from\s+["']@multica\/ui\/markdown["']/.test(text) &&
+        /from\s+["']@liexiu\/ui\/markdown["']/.test(text) &&
         /\bMarkdown\b|\bMemoizedMarkdown\b|\bStreamingMarkdown\b/.test(text),
       )
       .map(({ path }) => path);
@@ -139,28 +139,9 @@ describe("RichContent import boundary", () => {
     const uiRoot = join(VIEWS_ROOT, "..", "ui");
     const offenders = walk(uiRoot)
       .map((path) => ({ path, text: stripComments(readFileSync(path, "utf8")) }))
-      .filter(({ text }) => /\bRichContent\b|from\s+["']@multica\/views/.test(text))
+      .filter(({ text }) => /\bRichContent\b|from\s+["']@liexiu\/views/.test(text))
       .map(({ path }) => relative(uiRoot, path));
 
     expect(offenders).toEqual([]);
-  });
-});
-
-describe("chat renders every text entry through RichContent", () => {
-  const chatList = readFileSync(
-    join(VIEWS_ROOT, "chat/components/chat-message-list.tsx"),
-    "utf8",
-  );
-
-  it("uses RichContent and no other markdown renderer", () => {
-    expect(chatList).toMatch(/\bRichContent\b/);
-    expect(chatList).not.toMatch(/MemoizedMarkdown|<Markdown\b/);
-  });
-
-  it("keys the live row and the persisted assistant row on the task", () => {
-    // The identity contract in source form: if someone reverts to `msg.id`,
-    // the parity test's remount assertion and this both fail.
-    expect(chatList).toMatch(/task:\$\{/);
-    expect(chatList).not.toMatch(/computeItemKey=\{\(_, msg\) => msg\.id\}/);
   });
 });

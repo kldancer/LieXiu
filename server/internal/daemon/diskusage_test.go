@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/multica-ai/multica/server/internal/daemon/execenv"
+	"github.com/kailonyang/liexiu/server/internal/daemon/execenv"
 )
 
 func writeFile(t *testing.T, path string, size int) {
@@ -52,10 +52,10 @@ func TestScanDiskUsage_AggregatesAndCategorizes(t *testing.T) {
 	taskA2 := filepath.Join(root, wsA, "bbbbbbbb")
 	writeFile(t, filepath.Join(taskA2, "workdir/notes.md"), 500)
 	mustWriteMeta(t, taskA2, execenv.GCMeta{
-		Kind:          execenv.GCKindChat,
-		ChatSessionID: "chat-1",
-		WorkspaceID:   wsA,
-		CompletedAt:   time.Now().Add(-1 * time.Hour),
+		Kind:        execenv.GCKindQuickCreate,
+		TaskID:      "quick-1",
+		WorkspaceID: wsA,
+		CompletedAt: time.Now().Add(-1 * time.Hour),
 	})
 
 	taskB1 := filepath.Join(root, wsB, "cccccccc")
@@ -103,8 +103,8 @@ func TestScanDiskUsage_AggregatesAndCategorizes(t *testing.T) {
 	}
 
 	a2 := byShort["bbbbbbbb"]
-	if a2.Kind != string(execenv.GCKindChat) {
-		t.Errorf("task a2 kind = %q, want chat", a2.Kind)
+	if a2.Kind != string(execenv.GCKindQuickCreate) {
+		t.Errorf("task a2 kind = %q, want quick_create", a2.Kind)
 	}
 	if a2.SizeBytes < 500 || a2.SizeBytes > 500+1024 {
 		t.Errorf("task a2 size = %d, want in [500, 1524]", a2.SizeBytes)
@@ -495,7 +495,7 @@ func TestResolveParentStatuses_FillsIssueTasks(t *testing.T) {
 		issueTask(wsA, "aaaa2222", "issue-1"),
 		issueTask(wsA, "aaaa3333", "issue-2"),
 		issueTask(wsB, "bbbb1111", "issue-3"),
-		{WorkspaceID: wsA, TaskShort: "cccc1111", Kind: string(execenv.GCKindChat), ParentID: "chat-1"},
+		{WorkspaceID: wsA, TaskShort: "cccc1111", Kind: string(execenv.GCKindQuickCreate), ParentID: "quick-1"},
 		{WorkspaceID: wsA, TaskShort: "dddd1111", Kind: DiskUsageKindUnknown},
 	}}
 

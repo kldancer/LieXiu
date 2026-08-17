@@ -5,13 +5,13 @@ import {
   QueryClientProvider,
   QueryObserver,
 } from "@tanstack/react-query";
-import { setApiInstance } from "@multica/core/api";
-import { agentTaskSnapshotKeys, agentTasksKeys } from "@multica/core/agents/queries";
-import { useBatchDeleteIssues, useDeleteIssue } from "@multica/core/issues/mutations";
-import { issueKeys } from "@multica/core/issues/queries";
-import { labelKeys } from "@multica/core/labels/queries";
-import { WorkspaceSlugProvider } from "@multica/core/paths";
-import { workspaceKeys } from "@multica/core/workspace/queries";
+import { setApiInstance } from "@liexiu/core/api";
+import { agentTaskSnapshotKeys, agentTasksKeys } from "@liexiu/core/agents/queries";
+import { useBatchDeleteIssues, useDeleteIssue } from "@liexiu/core/issues/mutations";
+import { issueKeys } from "@liexiu/core/issues/queries";
+import { labelKeys } from "@liexiu/core/labels/queries";
+import { WorkspaceSlugProvider } from "@liexiu/core/paths";
+import { workspaceKeys } from "@liexiu/core/workspace/queries";
 import type {
   AgentTask,
   Attachment,
@@ -22,7 +22,7 @@ import type {
   ListIssuesCache,
   TimelineEntry,
   Workspace,
-} from "@multica/core/types";
+} from "@liexiu/core/types";
 
 const WS_ID = "ws-1";
 const SLUG = "test";
@@ -65,7 +65,6 @@ const baseIssue: Issue = {
   start_date: null,
   due_date: null,
   metadata: {},
-  properties: {},
   labels: [],
   created_at: "2026-01-01T00:00:00Z",
   updated_at: "2026-01-01T00:00:00Z",
@@ -93,8 +92,6 @@ const attachment: Attachment = {
   workspace_id: WS_ID,
   issue_id: ISSUE_ID,
   comment_id: null,
-  chat_session_id: null,
-  chat_message_id: null,
   uploader_type: "member",
   uploader_id: "member-1",
   filename: "evidence.png",

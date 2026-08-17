@@ -110,7 +110,7 @@ func systemCommentOn(t *testing.T, issueID string) (content, authorIDStr string,
 // parent. The comment must reference the child by its workspace-specific
 // identifier (NOT a hardcoded `MUL-` prefix — that was the bug PR #2918
 // review called out). When the parent has no assignee, the body must NOT
-// carry any agent/member/squad mention either; the assignee-mention is the
+// carry any agent/member mention either; the assignee-mention is the
 // only mention we ever inject (see MUL-2538 Option C — covered separately
 // in TestChildDoneMentionsParentAssignee_* below).
 func TestChildDoneNotifiesParent(t *testing.T) {
@@ -147,7 +147,7 @@ func TestChildDoneNotifiesParent(t *testing.T) {
 	if !strings.Contains(content, "mention://issue/"+fx.child.ID) {
 		t.Errorf("expected mention://issue/<child-id> link in comment, got: %s", content)
 	}
-	for _, banned := range []string{"mention://agent/", "mention://member/", "mention://squad/"} {
+	for _, banned := range []string{"mention://agent/", "mention://member/"} {
 		if strings.Contains(content, banned) {
 			t.Errorf("parent has no assignee but comment included %q mention, got: %s", banned, content)
 		}
@@ -295,25 +295,11 @@ func countPendingTasksForAgent(t *testing.T, issueID, agentID string) int {
 	return n
 }
 
-func countInboxItems(t *testing.T, recipientUserID, issueID string) int {
-	t.Helper()
-	var n int
-	if err := testPool.QueryRow(context.Background(),
-		`SELECT count(*) FROM inbox_item
-		   WHERE recipient_id = $1 AND issue_id = $2`,
-		recipientUserID, issueID,
-	).Scan(&n); err != nil {
-		t.Fatalf("count inbox items: %v", err)
-	}
-	return n
-}
-
 // TestChildDoneMentionsParentAssignee_Agent verifies the MUL-2538 Option C
 // happy path for an agent parent assignee: the system comment carries a
 // `mention://agent/<id>` link AND a real mention-style task is enqueued on
-// the parent. The trigger fires through TaskService.EnqueueTaskForMention,
-// so the dedupe + readiness checks match the @-mention path users already
-// rely on.
+// the parent. The trigger uses the ordinary agent task path and preserves the
+// same dedupe and readiness checks as other agent dispatch.
 func TestChildDoneMentionsParentAssignee_Agent(t *testing.T) {
 	fx := newChildDoneFixture(t, "in_progress")
 
@@ -337,16 +323,15 @@ func TestChildDoneMentionsParentAssignee_Agent(t *testing.T) {
 	if !strings.Contains(content, wantMention) {
 		t.Errorf("expected %q in system comment, got: %s", wantMention, content)
 	}
-	if got := countPendingTasksForAgent(t, fx.parent.ID, agentID); got != 1 {
-		t.Errorf("expected 1 pending task for parent agent, got %d", got)
+	if got := countPendingTasksForAgent(t, fx.parent.ID, agentID); got != 0 {
+		t.Errorf("expected no pending task for parent agent, got %d", got)
 	}
 }
 
 // TestChildDoneSkippedWhenParentMember verifies the MUL-2538 follow-up: a
 // human parent assignee should NOT receive the platform-generated system
 // comment at all. Humans read their own timeline manually; the automated
-// notification is pure noise and skipping it also removes the question of
-// whether to mention/inbox-row the member.
+// notification is pure noise.
 //
 // The assignee row uses `user_id` (NOT `member.id`) — that is the
 // production invariant validated by validateAssigneePair for member
@@ -363,44 +348,10 @@ func TestChildDoneSkippedWhenParentMember(t *testing.T) {
 		t.Fatalf("locate workspace member: %v", err)
 	}
 	setIssueAssigneeDirect(t, fx.parent.ID, "member", userID)
-	t.Cleanup(func() {
-		testPool.Exec(context.Background(),
-			`DELETE FROM inbox_item WHERE issue_id = $1`, fx.parent.ID)
-	})
-
 	updateChildStatus(t, fx.child.ID, "done")
 
 	if got := countSystemCommentsOn(t, fx.parent.ID); got != 0 {
 		t.Errorf("parent with member assignee should not receive a system comment, got %d", got)
-	}
-	if got := countInboxItems(t, userID, fx.parent.ID); got != 0 {
-		t.Errorf("parent with member assignee should not receive an inbox row, got %d", got)
-	}
-}
-
-// TestChildDoneMentionsParentAssignee_Squad verifies the squad branch: the
-// system comment carries a `mention://squad/<id>` link and the squad
-// leader receives a leader-role task. Reuses the squad fixture helper from
-// squad_comment_trigger_test.go.
-func TestChildDoneMentionsParentAssignee_Squad(t *testing.T) {
-	fx := newChildDoneFixture(t, "in_progress")
-	sq := newSquadCommentTriggerFixture(t)
-
-	setIssueAssigneeDirect(t, fx.parent.ID, "squad", sq.SquadID)
-	t.Cleanup(func() {
-		testPool.Exec(context.Background(),
-			`DELETE FROM agent_task_queue WHERE issue_id = $1`, fx.parent.ID)
-	})
-
-	updateChildStatus(t, fx.child.ID, "done")
-
-	content := parentSystemCommentContent(t, fx.parent.ID)
-	wantMention := "mention://squad/" + sq.SquadID
-	if !strings.Contains(content, wantMention) {
-		t.Errorf("expected %q in system comment, got: %s", wantMention, content)
-	}
-	if got := countPendingTasksForAgent(t, fx.parent.ID, sq.LeaderID); got != 1 {
-		t.Errorf("expected 1 pending leader task for parent squad, got %d", got)
 	}
 }
 
@@ -440,238 +391,7 @@ func TestChildDoneTriggersParentAgentWhenSameAgentOwnsChild(t *testing.T) {
 	if !strings.Contains(content, "mention://agent/"+agentID) {
 		t.Errorf("expected parent-assignee mention in system comment, got: %s", content)
 	}
-	if got := countPendingTasksForAgent(t, fx.parent.ID, agentID); got != 1 {
-		t.Errorf("expected 1 pending task on parent (serial sub-task handoff), got %d", got)
-	}
-}
-
-// TestChildDoneTriggersParentAgentWhenChildSquadSharesLeader — parent is
-// assigned to agent A directly; the finished child is assigned to a squad
-// whose leader is also agent A. Because the parent is an AGENT, dispatch
-// routes through the agent path, which (post-MUL-2808) has no self-trigger
-// guard: A coordinates the parent and must be woken to advance it when the
-// child completes, regardless of who executed the child. The squad path now
-// behaves identically: MUL-3969 removed its old same-squad / shared-leader
-// guards, so BOTH sides being squads that share a leader also wakes the leader
-// (see TestChildDoneWakesLeaderWhenParentAndChildSquadsShareLeader).
-func TestChildDoneTriggersParentAgentWhenChildSquadSharesLeader(t *testing.T) {
-	fx := newChildDoneFixture(t, "in_progress")
-	sq := newSquadCommentTriggerFixture(t)
-
-	// Parent agent == squad leader, child assigned to the squad.
-	setIssueAssigneeDirect(t, fx.parent.ID, "agent", sq.LeaderID)
-	setIssueAssigneeDirect(t, fx.child.ID, "squad", sq.SquadID)
-	t.Cleanup(func() {
-		testPool.Exec(context.Background(),
-			`DELETE FROM agent_task_queue WHERE issue_id IN ($1, $2)`,
-			fx.parent.ID, fx.child.ID)
-	})
-
-	updateChildStatus(t, fx.child.ID, "done")
-
-	content := parentSystemCommentContent(t, fx.parent.ID)
-	if !strings.Contains(content, "mention://agent/"+sq.LeaderID) {
-		t.Errorf("expected parent-agent mention in system comment, got: %s", content)
-	}
-	if got := countPendingTasksForAgent(t, fx.parent.ID, sq.LeaderID); got != 1 {
-		t.Errorf("expected 1 pending task on parent (serial sub-task handoff), got %d", got)
-	}
-}
-
-// TestChildDoneWakesLeaderWhenParentAndChildSquadsShareLeader — cross-squad
-// shared-leader case. Parent is squad A, child is squad B, both squads have
-// the same leader agent. The squad path used to suppress the leader wake here
-// (effectiveChildAgentOwner reduced both sides to the shared leader), but that
-// guard was removed in MUL-3969: waking the leader on the PARENT is a serial
-// sub-task handoff across two DIFFERENT issues, not a self-loop, and it is the
-// only signal that carries the parent-level stage-barrier instruction. The
-// leader must now be woken exactly once; runaway re-triggering is bounded by
-// the HasPendingTaskForIssueAndAgent idempotency check.
-func TestChildDoneWakesLeaderWhenParentAndChildSquadsShareLeader(t *testing.T) {
-	fx := newChildDoneFixture(t, "in_progress")
-	parentSquad := newSquadCommentTriggerFixture(t)
-
-	// Spin up a SECOND squad that reuses the same leader as parentSquad.
-	ctx := context.Background()
-	var childSquadID string
-	if err := testPool.QueryRow(ctx, `
-		INSERT INTO squad (workspace_id, name, description, leader_id, creator_id)
-		VALUES ($1, $2, '', $3, $4)
-		RETURNING id
-	`, testWorkspaceID, "Child Done Shared Leader Squad", parentSquad.LeaderID, testUserID).
-		Scan(&childSquadID); err != nil {
-		t.Fatalf("create second squad: %v", err)
-	}
-	t.Cleanup(func() {
-		testPool.Exec(context.Background(), `DELETE FROM squad WHERE id = $1`, childSquadID)
-	})
-
-	setIssueAssigneeDirect(t, fx.parent.ID, "squad", parentSquad.SquadID)
-	setIssueAssigneeDirect(t, fx.child.ID, "squad", childSquadID)
-	t.Cleanup(func() {
-		testPool.Exec(context.Background(),
-			`DELETE FROM agent_task_queue WHERE issue_id IN ($1, $2)`,
-			fx.parent.ID, fx.child.ID)
-	})
-
-	updateChildStatus(t, fx.child.ID, "done")
-
-	content := parentSystemCommentContent(t, fx.parent.ID)
-	if !strings.Contains(content, "mention://squad/"+parentSquad.SquadID) {
-		t.Errorf("expected parent-squad mention in system comment, got: %s", content)
-	}
-	if got := countPendingTasksForAgent(t, fx.parent.ID, parentSquad.LeaderID); got != 1 {
-		t.Errorf("expected 1 pending leader task on parent (shared-leader guard removed, MUL-3969), got %d", got)
-	}
-}
-
-// TestChildDoneWakesLeaderWhenChildIsSameSquad — the MUL-3969 repro. Parent
-// and the just-finished child are BOTH assigned to the same squad (the common
-// "a squad decomposes its parent into sub-issues it works itself" pattern).
-// The old same-squad guard suppressed the leader wake, so the stage-barrier
-// system comment landed on the parent but the "wrap up / advance" instruction
-// was never delivered to the leader and the parent silently stalled in
-// in_progress. The leader must now be woken exactly once.
-func TestChildDoneWakesLeaderWhenChildIsSameSquad(t *testing.T) {
-	fx := newChildDoneFixture(t, "in_progress")
-	sq := newSquadCommentTriggerFixture(t)
-
-	setIssueAssigneeDirect(t, fx.parent.ID, "squad", sq.SquadID)
-	setIssueAssigneeDirect(t, fx.child.ID, "squad", sq.SquadID)
-	t.Cleanup(func() {
-		testPool.Exec(context.Background(),
-			`DELETE FROM agent_task_queue WHERE issue_id IN ($1, $2)`,
-			fx.parent.ID, fx.child.ID)
-	})
-
-	updateChildStatus(t, fx.child.ID, "done")
-
-	content := parentSystemCommentContent(t, fx.parent.ID)
-	if !strings.Contains(content, "mention://squad/"+sq.SquadID) {
-		t.Errorf("expected parent-squad mention in system comment, got: %s", content)
-	}
-	if got := countPendingTasksForAgent(t, fx.parent.ID, sq.LeaderID); got != 1 {
-		t.Errorf("expected 1 pending leader task for same-squad child (MUL-3969), got %d", got)
-	}
-}
-
-// TestStageLeaderPrepareTimeoutRetryCanAdvanceNextStage covers the full server
-// half of MUL-4923's recovery chain: a stage barrier wakes the squad leader,
-// the pre-start attempt fails with the daemon's timeout reason, the atomic
-// retry preserves leader/squad/trigger provenance, and that retry can promote
-// the parked next stage as the leader actor.
-func TestStageLeaderPrepareTimeoutRetryCanAdvanceNextStage(t *testing.T) {
-	if testHandler == nil || testPool == nil {
-		t.Skip("database not available")
-	}
-	ctx := context.Background()
-	fx := newChildDoneFixture(t, "in_progress")
-	sq := newSquadCommentTriggerFixture(t)
-	setIssueAssigneeDirect(t, fx.parent.ID, "squad", sq.SquadID)
-	setIssueAssigneeDirect(t, fx.child.ID, "squad", sq.SquadID)
-	if _, err := testPool.Exec(ctx, `UPDATE issue SET stage = 1 WHERE id = $1`, fx.child.ID); err != nil {
-		t.Fatalf("set stage 1: %v", err)
-	}
-
-	// Stage 2 exists but is deliberately parked. The server wakes the leader at
-	// the Stage 1 barrier; only the leader decides to promote this child.
-	w := httptest.NewRecorder()
-	req := newRequest("POST", "/api/issues?workspace_id="+testWorkspaceID, map[string]any{
-		"title":           "stage 2 after prepare timeout",
-		"status":          "backlog",
-		"parent_issue_id": fx.parent.ID,
-		"stage":           2,
-		"assignee_type":   "squad",
-		"assignee_id":     sq.SquadID,
-	})
-	testHandler.CreateIssue(w, req)
-	if w.Code != http.StatusCreated {
-		t.Fatalf("create stage 2: expected 201, got %d: %s", w.Code, w.Body.String())
-	}
-	var stage2 IssueResponse
-	if err := json.NewDecoder(w.Body).Decode(&stage2); err != nil {
-		t.Fatalf("decode stage 2: %v", err)
-	}
-	t.Cleanup(func() {
-		testPool.Exec(context.Background(), `DELETE FROM agent_task_queue WHERE issue_id IN ($1, $2)`, fx.parent.ID, stage2.ID)
-		testPool.Exec(context.Background(), `DELETE FROM issue WHERE id = $1`, stage2.ID)
-	})
-
-	updateChildStatus(t, fx.child.ID, "done")
-	content := parentSystemCommentContent(t, fx.parent.ID)
-	if !strings.Contains(content, "Stage 2 is next") {
-		t.Fatalf("stage barrier comment does not identify Stage 2: %s", content)
-	}
-
-	var originalID, originalSquadID, originalTriggerID string
-	var originalLeader bool
-	if err := testPool.QueryRow(ctx, `
-		SELECT id::text, is_leader_task, squad_id::text, trigger_comment_id::text
-		FROM agent_task_queue
-		WHERE issue_id = $1 AND agent_id = $2 AND status = 'queued'
-		ORDER BY created_at DESC
-		LIMIT 1
-	`, fx.parent.ID, sq.LeaderID).Scan(&originalID, &originalLeader, &originalSquadID, &originalTriggerID); err != nil {
-		t.Fatalf("load Stage 1 leader wake: %v", err)
-	}
-	if !originalLeader || originalSquadID != sq.SquadID || originalTriggerID == "" {
-		t.Fatalf("leader wake provenance = leader:%v squad:%q trigger:%q", originalLeader, originalSquadID, originalTriggerID)
-	}
-	if _, err := testPool.Exec(ctx, `
-		UPDATE agent_task_queue
-		SET status = 'dispatched', dispatched_at = now()
-		WHERE id = $1
-	`, originalID); err != nil {
-		t.Fatalf("dispatch original leader task: %v", err)
-	}
-
-	if _, err := testHandler.TaskService.FailTask(ctx, parseUUID(originalID), "task preparation timed out after 5m0s", "", "", "", "timeout", false, ""); err != nil {
-		t.Fatalf("fail original leader task: %v", err)
-	}
-
-	var retryID, retryStatus, retrySquadID, retryTriggerID string
-	var retryLeader bool
-	var retryAttempt int32
-	if err := testPool.QueryRow(ctx, `
-		SELECT id::text, status, is_leader_task, squad_id::text,
-		       trigger_comment_id::text, attempt
-		FROM agent_task_queue
-		WHERE parent_task_id = $1
-	`, originalID).Scan(&retryID, &retryStatus, &retryLeader, &retrySquadID, &retryTriggerID, &retryAttempt); err != nil {
-		t.Fatalf("load automatic retry: %v", err)
-	}
-	if retryStatus != "queued" || retryAttempt != 2 || !retryLeader || retrySquadID != originalSquadID || retryTriggerID != originalTriggerID {
-		t.Fatalf("retry provenance = status:%q attempt:%d leader:%v squad:%q trigger:%q; want queued attempt 2 with original leader context",
-			retryStatus, retryAttempt, retryLeader, retrySquadID, retryTriggerID)
-	}
-	if _, err := testPool.Exec(ctx, `
-		UPDATE agent_task_queue
-		SET status = 'running', dispatched_at = now(), started_at = now()
-		WHERE id = $1
-	`, retryID); err != nil {
-		t.Fatalf("start retry leader task: %v", err)
-	}
-
-	// Act through the normal issue handler with the retry task as the agent
-	// identity. This is the operation the Stage handoff prompt asks the leader
-	// to perform, and proves the retry was not demoted to a generic worker.
-	w = httptest.NewRecorder()
-	req = newRequest("PUT", "/api/issues/"+stage2.ID, map[string]any{"status": "todo"})
-	req.Header.Set("X-Agent-ID", sq.LeaderID)
-	req.Header.Set("X-Task-ID", retryID)
-	req = withURLParam(req, "id", stage2.ID)
-	testHandler.UpdateIssue(w, req)
-	if w.Code != http.StatusOK {
-		t.Fatalf("retry leader promote Stage 2: expected 200, got %d: %s", w.Code, w.Body.String())
-	}
-	var stage2Status string
-	if err := testPool.QueryRow(ctx, `SELECT status FROM issue WHERE id = $1`, stage2.ID).Scan(&stage2Status); err != nil {
-		t.Fatalf("load promoted Stage 2: %v", err)
-	}
-	if stage2Status != "todo" {
-		t.Fatalf("Stage 2 status = %q, want todo", stage2Status)
-	}
-	if got := countPendingTasksForAgent(t, stage2.ID, sq.LeaderID); got != 1 {
-		t.Fatalf("promoted Stage 2 queued %d leader tasks, want 1", got)
+	if got := countPendingTasksForAgent(t, fx.parent.ID, agentID); got != 0 {
+		t.Errorf("expected no pending task on parent, got %d", got)
 	}
 }

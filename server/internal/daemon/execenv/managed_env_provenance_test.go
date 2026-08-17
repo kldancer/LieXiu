@@ -42,7 +42,7 @@ func TestPrepareManagedIssueEnvWritesProvenance(t *testing.T) {
 
 // TestPrepareLocalDirectoryWritesNoProvenance pins the local_directory branch:
 // a task bound to a user-supplied path must NOT get a managed-env provenance
-// marker, so a squad leader can never treat the user's directory as a reusable
+// marker, so an agent can never treat the user's directory as a reusable
 // managed workdir. Absence of the marker is the fail-closed signal.
 func TestPrepareLocalDirectoryWritesNoProvenance(t *testing.T) {
 	root := t.TempDir()
@@ -72,20 +72,17 @@ func TestPrepareLocalDirectoryWritesNoProvenance(t *testing.T) {
 	}
 }
 
-// TestPrepareNonIssueEnvWritesNoProvenance confirms non-issue envs (chat,
-// autopilot, quick-create) get no provenance: reuse targets only issue tasks,
-// so writing it elsewhere would be dead weight.
+// TestPrepareNonIssueEnvWritesNoProvenance confirms quick-create envs get no
+// provenance: reuse targets only issue tasks, so writing it elsewhere is dead
+// weight.
 func TestPrepareNonIssueEnvWritesNoProvenance(t *testing.T) {
 	root := t.TempDir()
 	env, err := Prepare(PrepareParams{
 		WorkspacesRoot: root,
-		WorkspaceID:    "ws-prov-chat",
+		WorkspaceID:    "ws-prov-quick-create",
 		TaskID:         "cccccccc-dddd-eeee-ffff-000000000000",
-		AgentName:      "Chat Agent",
-		Task: TaskContextForEnv{
-			ChatSessionID: "chat-1",
-			AgentID:       "agent-chat",
-		},
+		AgentName:      "Quick Create Agent",
+		Task:           TaskContextForEnv{QuickCreatePrompt: "create an issue", AgentID: "agent-quick"},
 	}, testLogger())
 	if err != nil {
 		t.Fatalf("Prepare failed: %v", err)

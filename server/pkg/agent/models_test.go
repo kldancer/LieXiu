@@ -744,7 +744,7 @@ func TestInferCopilotProvider(t *testing.T) {
 func TestCopilotStaticModelsExposesFullCatalog(t *testing.T) {
 	// GitHub Copilot CLI has no `models list` subcommand, so the
 	// catalog is hand-maintained from the official supported-models
-	// docs. Regression guard for multica-ai/multica#1948 — the
+	// docs. Regression guard for kailonyang/liexiu#1948 — the
 	// dropdown previously shipped only 2 models and used dashed IDs
 	// (`claude-sonnet-4-6`) which the CLI rejects. IDs must use the
 	// dotted form (`claude-sonnet-4.6`) that `copilot --model <id>`
@@ -1077,8 +1077,8 @@ func writeFakePiRPCModelsBinary(t *testing.T) string {
 if [ "$1" = "--mode" ] && [ "$2" = "rpc" ]; then
   IFS= read -r _state_request
   IFS= read -r _models_request
-  printf '%s\n' '{"id":"multica-state","type":"response","command":"get_state","success":true,"data":{"model":{"id":"gpt-5.6-luna","name":"Luna","provider":"openai-multi","reasoning":true,"thinkingLevelMap":{"off":"none","minimal":"none","low":"low","medium":null,"high":"high","xhigh":"xhigh","max":"max"}},"thinkingLevel":"max"}}'
-  printf '%s\n' '{"id":"multica-models","type":"response","command":"get_available_models","success":true,"data":{"models":[{"id":"gpt-5.6-sol","name":"Sol","provider":"openai-multi","reasoning":true},{"id":"gpt-5.6-luna","name":"Luna","provider":"openai-multi","reasoning":true,"thinkingLevelMap":{"off":"none","minimal":"none","low":"low","medium":null,"high":"high","xhigh":"xhigh","max":"max"}},{"id":"plain-chat","name":"Plain chat","provider":"openai-multi","reasoning":false}]}}'
+  printf '%s\n' '{"id":"liexiu-state","type":"response","command":"get_state","success":true,"data":{"model":{"id":"gpt-5.6-luna","name":"Luna","provider":"openai-multi","reasoning":true,"thinkingLevelMap":{"off":"none","minimal":"none","low":"low","medium":null,"high":"high","xhigh":"xhigh","max":"max"}},"thinkingLevel":"max"}}'
+  printf '%s\n' '{"id":"liexiu-models","type":"response","command":"get_available_models","success":true,"data":{"models":[{"id":"gpt-5.6-sol","name":"Sol","provider":"openai-multi","reasoning":true},{"id":"gpt-5.6-luna","name":"Luna","provider":"openai-multi","reasoning":true,"thinkingLevelMap":{"off":"none","minimal":"none","low":"low","medium":null,"high":"high","xhigh":"xhigh","max":"max"}},{"id":"plain-chat","name":"Plain chat","provider":"openai-multi","reasoning":false}]}}'
   exit 0
 fi
 printf '%s\n' 'provider model context max-out thinking images'
@@ -1143,7 +1143,7 @@ func TestDiscoverPiModelsIDLessRPCErrorFallsBack(t *testing.T) {
 if [ "$1" = "--mode" ] && [ "$2" = "rpc" ]; then
   IFS= read -r _state_request
   IFS= read -r _models_request
-  printf '%s\n' '{"id":"multica-state","type":"response","command":"get_state","success":true,"data":{"thinkingLevel":"high"}}'
+  printf '%s\n' '{"id":"liexiu-state","type":"response","command":"get_state","success":true,"data":{"thinkingLevel":"high"}}'
   printf '%s\n' '{"type":"response","command":"get_available_models","success":false,"error":"Unknown command: get_available_models"}'
   cat >/dev/null
   exit 0

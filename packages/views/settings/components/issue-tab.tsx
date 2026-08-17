@@ -1,11 +1,11 @@
 "use client";
 
-import { Switch } from "@multica/ui/components/ui/switch";
+import { Switch } from "@liexiu/ui/components/ui/switch";
 import {
   MANUAL_CREATE_FIELDS,
   QUICK_CREATE_FIELDS,
   useIssueCreateSettingsStore,
-} from "@multica/core/issues/stores/issue-create-settings-store";
+} from "@liexiu/core/issues/stores/issue-create-settings-store";
 import { toast } from "sonner";
 import { useT } from "../../i18n";
 import {

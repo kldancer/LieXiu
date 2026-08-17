@@ -6,8 +6,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/multica-ai/multica/server/internal/auth"
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
+	"github.com/kailonyang/liexiu/server/internal/auth"
+	db "github.com/kailonyang/liexiu/server/pkg/db/generated"
 )
 
 // TestDaemonAuth_DaemonTokenCacheHit pins the daemon-token cache short-circuit:
@@ -114,8 +114,8 @@ func TestDaemonAuth_MissingAuth(t *testing.T) {
 //
 // We exercise an mdt_ token with an attempted forged X-Actor-Source.
 // On the mdt_ path no actor-source stamp is added (daemon tokens
-// aren't a "machine credential" in the billing sense — they're a
-// runtime-bound proof for the daemon API itself), so a clean strip
+// aren't a machine credential for account-level human-only actions —
+// they're a runtime-bound proof for the daemon API itself), so a clean strip
 // leaves the header empty downstream.
 func TestDaemonAuth_StripsClientSuppliedActorSource(t *testing.T) {
 	rdb := newRedisTestClient(t)
@@ -165,7 +165,7 @@ func TestDaemonAuth_InvalidMDT_NilQueries(t *testing.T) {
 }
 
 // TestDaemonAuth_MCN_NoVerifierConfigured pins the fail-closed
-// behaviour when MULTICA_CLOUD_FLEET_URL is empty: an mcn_ token MUST
+// behaviour when LIEXIU_CLOUD_FLEET_URL is empty: an mcn_ token MUST
 // be rejected at the prefix branch with 401, not silently fall
 // through to the mul_/JWT paths (an mcn_ string would never match a
 // valid PAT or JWT, but failing closed makes the contract explicit).
@@ -284,7 +284,6 @@ func TestDaemonAuth_MCN_FleetUnreachable(t *testing.T) {
 		t.Fatalf("expected 503 when fleet is unavailable, got %d", w.Code)
 	}
 }
-
 
 // TestDaemonAuth_MCN_OwnerNotInLocalDB pins the new owner-existence
 // guard end-to-end through the middleware. Cloud verifies the token

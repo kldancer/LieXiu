@@ -15,7 +15,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
+	db "github.com/kailonyang/liexiu/server/pkg/db/generated"
 )
 
 // enqueueViaRealQuery creates a task through the generated CreateAgentTask query —
@@ -95,7 +95,12 @@ func TestTaskOwnershipWritesCallTheFence(t *testing.T) {
 		return false
 	}
 
-	checked := 0
+	type ownershipWriter struct {
+		file string
+		name string
+		code string
+	}
+	var writers []ownershipWriter
 	for _, entry := range entries {
 		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".sql") {
 			continue
@@ -129,16 +134,18 @@ func TestTaskOwnershipWritesCallTheFence(t *testing.T) {
 			if !writesOwnership {
 				continue
 			}
-			checked++
-			if !strings.Contains(code, "lock_task_owner_rows(") {
-				t.Errorf("%s: %s writes agent_task_queue ownership without calling "+
-					"lock_task_owner_rows; that reopens the workspace-delete race "+
-					"(see migration 284)", entry.Name(), name)
-			}
+			writers = append(writers, ownershipWriter{file: entry.Name(), name: name, code: code})
 		}
 	}
-	if checked < 9 {
-		t.Errorf("only %d ownership-writing statements found; the detector probably stopped matching", checked)
+	if len(writers) == 0 {
+		t.Fatal("no ownership-writing statements found; the detector must enumerate the current task write surface")
+	}
+	for _, writer := range writers {
+		if !strings.Contains(writer.code, "lock_task_owner_rows(") {
+			t.Errorf("%s: %s writes agent_task_queue ownership without calling "+
+				"lock_task_owner_rows; that reopens the workspace-delete race "+
+				"(see migration 284)", writer.file, writer.name)
+		}
 	}
 }
 

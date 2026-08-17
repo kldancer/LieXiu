@@ -1,11 +1,9 @@
 "use client";
 
-import { useEffect, useMemo } from "react";
+import { useMemo } from "react";
 import { ApiClient } from "../api/client";
-import { installFreezeWatchdog } from "../diagnostics/freeze-watchdog";
 import { setApiInstance, setSchemaLogger } from "../api";
 import { createAuthStore, registerAuthStore } from "../auth";
-import { createChatStore, registerChatStore } from "../chat";
 import {
   I18nProvider,
   LocaleAdapterProvider,
@@ -28,7 +26,6 @@ import {
 // Vite HMR preserves module-level state, so these survive hot reloads.
 let initialized = false;
 let authStore: ReturnType<typeof createAuthStore>;
-let chatStore: ReturnType<typeof createChatStore>;
 function initCore(
   apiBaseUrl: string,
   storage: StorageAdapter,
@@ -56,7 +53,7 @@ function initCore(
   const api = new ApiClient(apiBaseUrl, {
     logger: createLogger("api"),
     onUnauthorized: () => {
-      storage.removeItem("multica_token");
+      storage.removeItem("liexiu_token");
     },
     identity,
   });
@@ -65,7 +62,7 @@ function initCore(
 
   // In token mode, hydrate token from storage.
   if (!cookieAuth) {
-    const token = storage.getItem("multica_token");
+    const token = storage.getItem("liexiu_token");
     if (token) api.setToken(token);
   }
   // Workspace identity is URL-driven: the [workspaceSlug] layout resolves
@@ -75,9 +72,6 @@ function initCore(
 
   authStore = createAuthStore({ api, storage, onLogin, onLogout, cookieAuth });
   registerAuthStore(authStore);
-
-  chatStore = createChatStore({ storage });
-  registerChatStore(chatStore);
 
   initialized = true;
 }
@@ -99,12 +93,6 @@ export function CoreProvider({
   // apiBaseUrl, storage, and callbacks are set at app boot and never change at runtime.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useMemo(() => initCore(apiBaseUrl, storage, onLogin, onLogout, cookieAuth, identity), []);
-
-  // Client-only freeze watchdog — shared by web and desktop. No-op on the
-  // server and idempotent, so mounting it here covers both apps in one place.
-  useEffect(() => {
-    installFreezeWatchdog();
-  }, []);
 
   // I18nProvider wraps everything else: server and client must use the same
   // (locale, resources) to avoid hydration mismatch. Language switching goes

@@ -17,9 +17,7 @@ import {
   issueKeys,
   type IssueSortParam,
 } from "./queries";
-import { inboxKeys } from "../inbox/queries";
 import type {
-  InboxItem,
   Issue,
   ListIssuesCache,
   TimelineEntry,
@@ -53,35 +51,8 @@ function makeIssue(idx: number, overrides: Partial<Issue> = {}): Issue {
     due_date: null,
     labels: [],
     metadata: {},
-  properties: {},
     created_at: "2025-01-01T00:00:00Z",
     updated_at: "2025-01-01T00:00:00Z",
-    ...overrides,
-  };
-}
-
-function makeInboxItem(
-  id: string,
-  issueId: string,
-  overrides: Partial<InboxItem> = {},
-): InboxItem {
-  return {
-    id,
-    workspace_id: WS_ID,
-    recipient_type: "member",
-    recipient_id: "user-1",
-    actor_type: "member",
-    actor_id: "user-2",
-    type: "status_changed",
-    severity: "info",
-    issue_id: issueId,
-    title: `Inbox ${id}`,
-    body: null,
-    issue_status: "todo",
-    read: false,
-    archived: false,
-    created_at: "2025-01-01T00:00:00Z",
-    details: null,
     ...overrides,
   };
 }
@@ -99,7 +70,6 @@ describe("useUpdateIssue — optimistic move keeps every bucketed board in sync"
   const projectScope = "project:p1";
   const projectFilter = { project_id: "p1" };
   const wsKey = issueKeys.listSorted(WS_ID, sort);
-  const inboxKey = inboxKeys.list(WS_ID);
   // My-Issues AND the Project board both ride this myList cache; a move that
   // only patched the workspace cache snaps back on those boards.
   const myKey = issueKeys.myListSorted(WS_ID, myScope, myFilter, sort);
@@ -126,12 +96,6 @@ describe("useUpdateIssue — optimistic move keeps every bucketed board in sync"
     return (c?.byStatus[status]?.issues ?? []).map((i) => i.id);
   }
 
-  function inboxStatus(issueId: string) {
-    return qc
-      .getQueryData<InboxItem[]>(inboxKey)
-      ?.find((item) => item.issue_id === issueId)?.issue_status;
-  }
-
   beforeEach(() => {
     qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     updateIssue = vi.fn();
@@ -140,10 +104,6 @@ describe("useUpdateIssue — optimistic move keeps every bucketed board in sync"
     qc.setQueryData<ListIssuesCache>(wsKey, makeBucketed());
     qc.setQueryData<ListIssuesCache>(myKey, makeBucketed());
     qc.setQueryData<ListIssuesCache>(projectKey, makeBucketed());
-    qc.setQueryData<InboxItem[]>(inboxKey, [
-      makeInboxItem("inbox-1", "issue-1"),
-      makeInboxItem("inbox-2", "issue-2"),
-    ]);
   });
 
   afterEach(() => {
@@ -253,33 +213,6 @@ describe("useUpdateIssue — optimistic move keeps every bucketed board in sync"
     ).toBe(15);
   });
 
-  it("optimistically patches the linked inbox row status and reconciles with the server response", async () => {
-    let resolve!: (issue: Issue) => void;
-    updateIssue.mockReturnValue(
-      new Promise<Issue>((r) => {
-        resolve = r;
-      }),
-    );
-
-    const { result } = renderHook(() => useUpdateIssue(), {
-      wrapper: createWrapper(qc),
-    });
-
-    act(() => {
-      result.current.mutate({ id: "issue-1", status: "in_progress" });
-    });
-
-    expect(inboxStatus("issue-1")).toBe("in_progress");
-    expect(inboxStatus("issue-2")).toBe("todo");
-
-    await act(async () => {
-      resolve(makeIssue(1, { status: "done" }));
-    });
-
-    expect(inboxStatus("issue-1")).toBe("done");
-    expect(inboxStatus("issue-2")).toBe("todo");
-  });
-
   it("rolls both caches back when the request fails", async () => {
     updateIssue.mockRejectedValue(new Error("boom"));
 
@@ -297,23 +230,6 @@ describe("useUpdateIssue — optimistic move keeps every bucketed board in sync"
       expect(bucketIds(key, "todo")).toEqual(["issue-1"]);
       expect(bucketIds(key, "in_progress")).toEqual([]);
     }
-  });
-
-  it("rolls the linked inbox row status back when the request fails", async () => {
-    updateIssue.mockRejectedValue(new Error("boom"));
-
-    const { result } = renderHook(() => useUpdateIssue(), {
-      wrapper: createWrapper(qc),
-    });
-
-    await act(async () => {
-      await result.current
-        .mutateAsync({ id: "issue-1", status: "in_progress" })
-        .catch(() => {});
-    });
-
-    expect(inboxStatus("issue-1")).toBe("todo");
-    expect(inboxStatus("issue-2")).toBe("todo");
   });
 
   it("does not invalidate the board list on settle (no refetch flicker)", async () => {
@@ -676,7 +592,6 @@ describe("useResolveComment", () => {
       content: id,
       parent_id: parentId,
       comment_type: "comment",
-      reactions: [],
       attachments: [],
       created_at: "2026-01-01T00:00:00Z",
       updated_at: "2026-01-01T00:00:00Z",

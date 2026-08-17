@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
@@ -12,17 +13,18 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/multica-ai/multica/server/internal/analytics"
-	"github.com/multica-ai/multica/server/internal/daemonws"
-	"github.com/multica-ai/multica/server/internal/events"
-	"github.com/multica-ai/multica/server/internal/handler"
-	"github.com/multica-ai/multica/server/internal/logger"
-	obsmetrics "github.com/multica-ai/multica/server/internal/metrics"
-	"github.com/multica-ai/multica/server/internal/realtime"
-	"github.com/multica-ai/multica/server/internal/scheduler"
-	"github.com/multica-ai/multica/server/internal/service"
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
-	"github.com/multica-ai/multica/server/pkg/featureflag"
+	"github.com/kailonyang/liexiu/server/internal/analytics"
+	"github.com/kailonyang/liexiu/server/internal/daemonws"
+	"github.com/kailonyang/liexiu/server/internal/events"
+	"github.com/kailonyang/liexiu/server/internal/handler"
+	"github.com/kailonyang/liexiu/server/internal/logger"
+	obsmetrics "github.com/kailonyang/liexiu/server/internal/metrics"
+	"github.com/kailonyang/liexiu/server/internal/realtime"
+	"github.com/kailonyang/liexiu/server/internal/scheduler"
+	"github.com/kailonyang/liexiu/server/internal/service"
+	"github.com/kailonyang/liexiu/server/internal/service/orchestration"
+	db "github.com/kailonyang/liexiu/server/pkg/db/generated"
+	"github.com/kailonyang/liexiu/server/pkg/featureflag"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -48,7 +50,7 @@ func redisClientName(existing, suffix string) string {
 	if existing != "" {
 		return existing + ":" + suffix
 	}
-	return "multica-api:" + suffix
+	return "liexiu-api:" + suffix
 }
 
 func closeRedisClient(label string, client *redis.Client) {
@@ -172,35 +174,40 @@ func envBool(name string, def bool) bool {
 	return v
 }
 
-func backgroundServices(h *handler.Handler) (*service.TaskService, *service.AutopilotService) {
-	return h.TaskService, h.AutopilotService
+// validateStartupSecurity enforces the process-level secret contract before
+// any auth-dependent server wiring can use the development fallback.
+func validateStartupSecurity(appEnv, jwtSecret string) error {
+	if strings.EqualFold(strings.TrimSpace(appEnv), "production") && strings.TrimSpace(jwtSecret) == "" {
+		return fmt.Errorf("JWT_SECRET must be set when APP_ENV=production")
+	}
+	return nil
+}
+
+func backgroundTaskService(h *handler.Handler) *service.TaskService {
+	return h.TaskService
 }
 
 func main() {
 	logger.Init()
 
-	// Warn about missing configuration
-	if os.Getenv("JWT_SECRET") == "" {
+	// Refuse to start production with the auth package's development fallback.
+	jwtSecret := os.Getenv("JWT_SECRET")
+	if err := validateStartupSecurity(os.Getenv("APP_ENV"), jwtSecret); err != nil {
+		slog.Error("startup security validation failed", "error", err)
+		os.Exit(1)
+	}
+	// Warn about missing configuration in development, preserving the local
+	// compatibility behavior where auth uses its development fallback.
+	if strings.TrimSpace(jwtSecret) == "" {
 		slog.Warn("JWT_SECRET is not set — using insecure default. Set JWT_SECRET for production use.")
 	}
-	if os.Getenv("RESEND_API_KEY") == "" && strings.TrimSpace(os.Getenv("SMTP_HOST")) == "" {
-		slog.Warn("no email backend configured (RESEND_API_KEY and SMTP_HOST both empty) — verification codes will be printed to the log instead of emailed.")
-	}
-	if os.Getenv("MULTICA_DEV_VERIFICATION_CODE") != "" {
-		if strings.EqualFold(strings.TrimSpace(os.Getenv("APP_ENV")), "production") {
-			slog.Warn("MULTICA_DEV_VERIFICATION_CODE is set but ignored because APP_ENV=production.")
-		} else {
-			slog.Warn("MULTICA_DEV_VERIFICATION_CODE is enabled. Use it only for local development or private test instances.")
-		}
-	}
-
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8080"
 	}
-	shutdownHoldDuration := envNonNegativeDuration("MULTICA_SHUTDOWN_HOLD_DURATION", 0)
+	shutdownHoldDuration := envNonNegativeDuration("LIEXIU_SHUTDOWN_HOLD_DURATION", 0)
 
-	// Feature flags: loaded once at startup from MULTICA_FEATURE_FLAGS_FILE
+	// Feature flags: loaded once at startup from LIEXIU_FEATURE_FLAGS_FILE
 	// (a YAML rule set) with FF_<KEY> env overrides layered on top.
 	// See server/pkg/featureflag for the schema and lifecycle rules.
 	//
@@ -209,7 +216,7 @@ func main() {
 	// default, so existing code paths are unchanged until someone adds a
 	// rule. A misconfigured (malformed / missing) file surfaces as a hard
 	// error so operators see misconfig the same way they do for any other
-	// MULTICA_*_FILE knob.
+	// LIEXIU_*_FILE knob.
 	flags, err := featureflag.NewServiceFromEnv(featureflag.WithLogger(slog.Default()))
 	if err != nil {
 		slog.Error("feature flag configuration failed to load", "error", err)
@@ -219,7 +226,7 @@ func main() {
 
 	dbURL := os.Getenv("DATABASE_URL")
 	if dbURL == "" {
-		dbURL = "postgres://multica:multica@localhost:5432/multica?sslmode=disable"
+		dbURL = "postgres://liexiu:liexiu@localhost:5432/liexiu?sslmode=disable"
 	}
 
 	// Connect to database
@@ -330,20 +337,13 @@ func main() {
 
 	queries := db.New(pool)
 	hub.SetAuthorizer(newScopeAuthorizer(queries))
-	// Order matters: subscriber listeners must register BEFORE notification listeners.
-	// The notification listener queries the subscriber table to determine recipients,
-	// so subscribers must be written first within the same synchronous event dispatch.
-	registerSubscriberListeners(bus, pool)
 	registerActivityListeners(bus, queries)
-	registerNotificationListeners(bus, queries)
 
 	metricsConfig := obsmetrics.ConfigFromEnv()
 	var metricsServer *http.Server
 	var httpMetrics *obsmetrics.HTTPMetrics
 	var businessMetrics *obsmetrics.BusinessMetrics
 	var samplerPool *pgxpool.Pool
-	var channelMediaMetrics *obsmetrics.ChannelMediaReconcilerMetrics
-	var wecomMetrics *obsmetrics.WecomMetrics
 	if metricsConfig.Enabled() {
 		// Build a dedicated tiny pool for the BusinessSamplerCollector
 		// so a stalled scrape can never starve business traffic. If the
@@ -371,8 +371,6 @@ func main() {
 		})
 		httpMetrics = metricsRegistry.HTTP
 		businessMetrics = metricsRegistry.Business
-		channelMediaMetrics = metricsRegistry.ChannelMedia
-		wecomMetrics = metricsRegistry.Wecom
 		// Forward inbound daemon WS frames into the per-kind counter so
 		// dashboards can split heartbeat / unknown / invalid traffic.
 		if daemonHub != nil {
@@ -399,7 +397,6 @@ func main() {
 	r, h := NewRouterWithOptions(pool, hub, bus, analyticsClient, storeRedis, RouterOptions{
 		HTTPMetrics:        httpMetrics,
 		BusinessMetrics:    businessMetrics,
-		WecomMetrics:       wecomMetrics,
 		DaemonHub:          daemonHub,
 		DaemonWakeup:       daemonWakeup,
 		FeatureFlags:       flags,
@@ -413,14 +410,19 @@ func main() {
 
 	// Start background workers.
 	sweepCtx, sweepCancel := context.WithCancel(context.Background())
-	autopilotCtx, autopilotCancel := context.WithCancel(context.Background())
-	// Reuse the router's services here. In particular, the router wires the
-	// EmptyClaim cache into TaskService; constructing a second TaskService for
-	// scheduled Autopilot dispatch would send the daemon wakeup without bumping
-	// that cache's version, so an idle runtime could keep returning an empty
-	// claim until the cache TTL expires.
-	taskSvc, autopilotSvc := backgroundServices(h)
-	registerAutopilotListeners(bus, autopilotSvc)
+	// Reuse the router-owned TaskService for the runtime sweeper. Mission/Run
+	// reconciliation below owns orchestration lifecycle recovery.
+	taskSvc := backgroundTaskService(h)
+	runReconciler := h.Orchestration.NewRunReconciler(orchestration.RunReconcilerOptions{
+		AfterReconcile: func(ctx context.Context, result orchestration.ReconcileRunResult) error {
+			_, err := h.Orchestration.AdvanceMission(ctx, orchestration.AdvanceMissionCommand{
+				WorkspaceID:   result.Run.WorkspaceID,
+				MissionID:     result.Run.MissionID,
+				CorrelationID: result.Run.ID,
+			})
+			return err
+		},
+	})
 
 	// Construct a LivenessStore that mirrors the one wired into the HTTP
 	// handler. Both the heartbeat write path (handler) and the sweeper read
@@ -433,34 +435,12 @@ func main() {
 
 	// Start background sweeper to mark stale runtimes as offline.
 	go runRuntimeSweeper(sweepCtx, pool, queries, liveness, taskSvc, bus)
+	go runReconciler.Run(sweepCtx)
 	go heartbeatScheduler.Run(sweepCtx)
-	go runAutopilotFailureMonitor(autopilotCtx, queries, bus, envFailureMonitorConfig())
 	go runDBStatsLogger(sweepCtx, pool)
-	if h.WebhookDeliveryWorker != nil {
-		go h.WebhookDeliveryWorker.Run(sweepCtx)
-	}
 	// GitHub PR-card API snapshot pipeline (MUL-5265): worker pool + TTL sweeper.
 	// No-op when unconfigured (no App private key).
 	h.PRRefresh.Start(sweepCtx)
-
-	// Channel inbound supervisor (MUL-3620): holds the §4.4 WS lease per
-	// installation and drives each channel.Channel. It is built
-	// unconditionally (it is channel-agnostic, not Lark-specific), so it
-	// always exists here; with no platform registered or no installation
-	// rows it simply idles. Lifecycle is bound to sweepCtx so it winds down
-	// alongside the other long-running workers, AFTER the HTTP server has
-	// drained.
-	if h.ChannelSupervisor != nil {
-		go h.ChannelSupervisor.Run(sweepCtx)
-	}
-
-	// Media intent-ledger reconciler (PR #5580): settles uploaded-but-unbound
-	// channel media objects. An independent worker so object-storage latency
-	// spikes cannot starve any other sweeper's cadence.
-	if h.ChannelMediaReconciler != nil {
-		h.ChannelMediaReconciler.Metrics = channelMediaMetrics
-		go h.ChannelMediaReconciler.Run(sweepCtx)
-	}
 
 	// MUL-2957: DB-backed execution scheduler. The scheduler turns the
 	// `sys_cron_executions` table into the distributed lease + audit
@@ -479,15 +459,6 @@ func main() {
 	schedulerMgr := scheduler.NewManager(pool, scheduler.Options{})
 	if err := schedulerMgr.Register(scheduler.TaskUsageHourlyJob(pool)); err != nil {
 		slog.Warn("scheduler: failed to register task_usage_hourly rollup job", "error", err)
-	}
-	// MUL-3551: scheduled-Autopilot dispatch runs on the same DB-backed
-	// scheduler. The job owns its plan_times via PlansForScope (each
-	// trigger has its own cron expression, so the Cadence planner does
-	// not fit). Crash recovery, occurrence-level idempotency, lease
-	// theft, and retry are all reused from the manager + sys_cron_executions
-	// — there is no separate goroutine for scheduled Autopilot anymore.
-	if err := schedulerMgr.Register(scheduler.AutopilotScheduleDispatchJob(pool, queries, autopilotSvc)); err != nil {
-		slog.Warn("scheduler: failed to register autopilot_schedule_dispatch job", "error", err)
 	}
 	go func() {
 		_ = schedulerMgr.Run(sweepCtx)
@@ -519,7 +490,6 @@ func main() {
 	signal.Stop(quit)
 
 	slog.Info("shutting down server")
-	autopilotCancel()
 
 	// Order matters: drain in-flight HTTP first so any heartbeat handlers
 	// finish calling Schedule() before we stop the scheduler. Otherwise a
@@ -537,36 +507,6 @@ func main() {
 	// final batch of queued heartbeat bumps.
 	sweepCancel()
 	heartbeatScheduler.Stop()
-	if h.WebhookDeliveryWorker != nil && !h.WebhookDeliveryWorker.WaitWithTimeout(5*time.Second) {
-		slog.Warn("webhook delivery worker did not exit within shutdown timeout")
-	}
-
-	// Join the channel supervisor's per-installation goroutines so the
-	// lease renewer can issue a final release before process exit;
-	// otherwise the next replica would have to wait the full LeaseTTL
-	// before picking up the installation on the other side of the
-	// redeploy. The wait is bounded — if a supervisor is wedged (DB
-	// pool stalled, a connector ignoring ctx, etc.) the fallback is the
-	// natural LeaseTTL expiry on the other side, which is strictly better
-	// than holding shutdown open forever. Then drain the Feishu runtime:
-	// the supervisors have stopped delivering inbound events, so flush the
-	// debounced run triggers and join any in-flight outbound replies
-	// (each bounded by ReplyTimeout) so a binding card / offline notice is
-	// not lost on shutdown.
-	if h.ChannelSupervisor != nil {
-		if !h.ChannelSupervisor.WaitWithTimeout(h.ChannelSupervisor.ShutdownTimeout()) {
-			slog.Warn("channel supervisor: connections did not exit within shutdown timeout; proceeding",
-				"timeout", h.ChannelSupervisor.ShutdownTimeout().String(),
-			)
-		}
-		if h.ChannelRouter != nil {
-			drainCtx, drainCancel := context.WithTimeout(context.Background(), 10*time.Second)
-			if !h.ChannelRouter.Drain(drainCtx) {
-				slog.Warn("channel router: drain deadline reached; deferred media fallback remains durable")
-			}
-			drainCancel()
-		}
-	}
 
 	if metricsServer != nil {
 		metricsShutdownCtx, metricsShutdownCancel := context.WithTimeout(context.Background(), 3*time.Second)

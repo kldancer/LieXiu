@@ -1,12 +1,8 @@
 import {
-  Inbox,
-  MessageSquare,
   CircleUser,
   ListTodo,
   FolderKanban,
-  Zap,
   Bot,
-  Users,
   BarChart3,
   Monitor,
   Server,
@@ -22,24 +18,20 @@ import {
   FileQuestion,
   type LucideIcon,
 } from "lucide-react";
-import { resolveRouteIconName, type RouteIconName } from "@multica/core/paths";
+import { resolveRouteIconName, type RouteIconName } from "@liexiu/core/paths";
 
 /**
  * Icon name → component registry: the rendering half of the route icon
- * contract defined in `@multica/core/paths`.
+ * contract defined in `@liexiu/core/paths`.
  *
  * Every {@link RouteIconName} must have an entry — the `Record` type makes a
  * missing key a compile error.
  */
 export const ROUTE_ICON_COMPONENTS: Record<RouteIconName, LucideIcon> = {
-  Inbox,
-  MessageSquare,
   CircleUser,
   ListTodo,
   FolderKanban,
-  Zap,
   Bot,
-  Users,
   BarChart3,
   Monitor,
   Server,

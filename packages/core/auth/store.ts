@@ -1,6 +1,10 @@
 import { create } from "zustand";
-import type { User, StorageAdapter } from "../types";
-import { identify as identifyAnalytics, resetAnalytics } from "../analytics";
+import type {
+  BootstrapRequest,
+  BootstrapResponse,
+  User,
+  StorageAdapter,
+} from "../types";
 import { ApiError, type ApiClient } from "../api/client";
 import { setCurrentWorkspace } from "../platform/workspace-storage";
 
@@ -18,9 +22,7 @@ export interface AuthState {
   isLoading: boolean;
 
   initialize: () => Promise<void>;
-  sendCode: (email: string) => Promise<void>;
-  verifyCode: (email: string, code: string) => Promise<User>;
-  loginWithGoogle: (code: string, redirectUri: string) => Promise<User>;
+  bootstrap: (request: BootstrapRequest) => Promise<BootstrapResponse>;
   loginWithToken: (token: string) => Promise<User>;
   logout: () => void;
   setUser: (user: User) => void;
@@ -48,7 +50,7 @@ export function createAuthStore(options: AuthStoreOptions) {
       }
 
       // Token mode: read from localStorage (Electron / legacy).
-      const token = storage.getItem("multica_token");
+      const token = storage.getItem("liexiu_token");
       if (!token) {
         set({ isLoading: false });
         return;
@@ -74,41 +76,24 @@ export function createAuthStore(options: AuthStoreOptions) {
       }
     },
 
-    sendCode: async (email: string) => {
-      await api.sendCode(email);
-    },
-
-    verifyCode: async (email: string, code: string) => {
-      const { token, user } = await api.verifyCode(email, code);
+    bootstrap: async (request: BootstrapRequest) => {
+      const response = await api.bootstrap(request);
       if (!cookieAuth) {
-        // Token mode: persist for Electron / legacy.
-        storage.setItem("multica_token", token);
-        api.setToken(token);
+        // Token mode is retained for desktop/legacy clients. The secret is
+        // deliberately never written to storage.
+        storage.setItem("liexiu_token", response.token);
+        api.setToken(response.token);
       }
       onLogin?.();
-      identifyAnalytics(user.id, { email: user.email, name: user.name });
-      set({ user });
-      return user;
-    },
-
-    loginWithGoogle: async (code: string, redirectUri: string) => {
-      const { token, user } = await api.googleLogin(code, redirectUri);
-      if (!cookieAuth) {
-        storage.setItem("multica_token", token);
-        api.setToken(token);
-      }
-      onLogin?.();
-      identifyAnalytics(user.id, { email: user.email, name: user.name });
-      set({ user });
-      return user;
+      set({ user: response.user, isLoading: false });
+      return response;
     },
 
     loginWithToken: async (token: string) => {
-      storage.setItem("multica_token", token);
+      storage.setItem("liexiu_token", token);
       api.setToken(token);
       const user = await api.getMe();
       onLogin?.();
-      identifyAnalytics(user.id, { email: user.email, name: user.name });
       set({ user, isLoading: false });
       return user;
     },
@@ -118,10 +103,9 @@ export function createAuthStore(options: AuthStoreOptions) {
         // Clear server-side HttpOnly cookie.
         api.logout().catch(() => {});
       }
-      storage.removeItem("multica_token");
+      storage.removeItem("liexiu_token");
       api.setToken(null);
       setCurrentWorkspace(null, null);
-      resetAnalytics();
       onLogout?.();
       set({ user: null });
     },

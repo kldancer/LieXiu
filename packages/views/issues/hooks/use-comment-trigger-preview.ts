@@ -2,17 +2,17 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
-import { api } from "@multica/core/api";
-import { issueKeys } from "@multica/core/issues/queries";
-import { parseMentions } from "@multica/core/issues/comment-trigger-outcomes";
-import type { CommentTriggerPreviewAgent, CommentTriggerOutcome } from "@multica/core/types";
+import { api } from "@liexiu/core/api";
+import { issueKeys } from "@liexiu/core/issues/queries";
+import { parseMentions } from "@liexiu/core/issues/comment-trigger-outcomes";
+import type { CommentTriggerPreviewAgent, CommentTriggerOutcome } from "@liexiu/core/types";
 
 const COMMENT_TRIGGER_PREVIEW_DEBOUNCE_MS = 300;
 const NOTE_COMMAND_RE = /^\/note(?:$|\s)/i;
 
 export interface UseCommentTriggerPreviewResult {
   agents: CommentTriggerPreviewAgent[];
-  // Explicit @agent / @squad mentions that will NOT trigger if posted as-is
+  // Explicit @agent mentions that will NOT trigger if posted as-is
   // (MUL-4525 §2), so the composer can warn before sending.
   blocked: CommentTriggerOutcome[];
 }

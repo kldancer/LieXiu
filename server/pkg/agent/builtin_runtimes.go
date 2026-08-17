@@ -28,11 +28,11 @@ type BuiltinRuntime struct {
 	ProtocolFamily string
 
 	// DefaultCommand is the bare CLI name the probe looks up on PATH
-	// when MULTICA_<ID>_PATH is not set (e.g. "omp").
+	// when LIEXIU_<ID>_PATH is not set (e.g. "omp").
 	DefaultCommand string
 
-	// EnvPrefix is the MULTICA_ prefix for *_PATH and *_MODEL env overrides
-	// (e.g. "MULTICA_OMP" → MULTICA_OMP_PATH / MULTICA_OMP_MODEL).
+	// EnvPrefix is the LIEXIU_ prefix for *_PATH and *_MODEL env overrides
+	// (e.g. "LIEXIU_OMP" → LIEXIU_OMP_PATH / LIEXIU_OMP_MODEL).
 	EnvPrefix string
 
 	// DisplayName is the human-facing runtime name. The daemon and frontend
@@ -88,7 +88,7 @@ var BuiltinRuntimes = []BuiltinRuntime{
 		ID:                "omp",
 		ProtocolFamily:    "pi",
 		DefaultCommand:    "omp",
-		EnvPrefix:         "MULTICA_OMP",
+		EnvPrefix:         "LIEXIU_OMP",
 		DisplayName:       "Oh-My-Pi",
 		SkillsDir:         ".omp/skills",
 		UserSkillsDir:     ".omp/agent/skills",

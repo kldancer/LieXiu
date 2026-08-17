@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
-import type { Issue } from "@multica/core/types";
+import type { Issue } from "@liexiu/core/types";
 import { BatchActionToolbar } from "./batch-action-toolbar";
 
 // Mutable selection state shared with the store mock below. The real toolbar
@@ -11,12 +11,12 @@ const selection = vi.hoisted(() => ({
   clear: () => {},
 }));
 
-vi.mock("@multica/core/issues/stores/selection-store", () => ({
+vi.mock("@liexiu/core/issues/stores/selection-store", () => ({
   useIssueSelectionStore: (selector: (s: typeof selection) => unknown) =>
     selector(selection),
 }));
 
-vi.mock("@multica/core/issues/mutations", () => ({
+vi.mock("@liexiu/core/issues/mutations", () => ({
   useBatchUpdateIssues: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useBatchDeleteIssues: () => ({ mutateAsync: vi.fn(), isPending: false }),
 }));
@@ -73,7 +73,6 @@ function makeIssue(overrides: Partial<Issue> = {}): Issue {
     start_date: null,
     due_date: null,
     metadata: {},
-    properties: {},
     created_at: "2026-01-01T00:00:00Z",
     updated_at: "2026-01-01T00:00:00Z",
     ...overrides,

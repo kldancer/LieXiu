@@ -66,44 +66,6 @@ func opencodeStdinProbe(t *testing.T, prompt string) ([]string, string, Result) 
 	return argv, string(stdinRaw), result
 }
 
-// TestOpencodeExecuteSendsPromptOnStdinNotArgv is the regression for #6538.
-// The daemon used to inline the whole task prompt as an argv element, which
-// Windows CreateProcess rejects once the command line clears 32,767 characters.
-// The prompt must now reach OpenCode byte-for-byte on stdin while argv keeps
-// only the daemon's own flags.
-func TestOpencodeExecuteSendsPromptOnStdinNotArgv(t *testing.T) {
-	t.Parallel()
-
-	prompt := "MULTICA_AGENT_BUILDER_INPUT\n" +
-		"{\n" +
-		`  "user_request": "专注本机 CPA 有关的所有工作",` + "\n" +
-		`  "current_draft": {"instructions": "Run go build -ldflags \"-X main.version=foo\""},` + "\n" +
-		`  "available_workspace_skills": [{"description": "- inspect local changes"}]` + "\n" +
-		"}"
-
-	argv, stdinGot, result := opencodeStdinProbe(t, prompt)
-
-	if stdinGot != prompt {
-		t.Errorf("prompt did not arrive on stdin intact:\n got  %q\n want %q", stdinGot, prompt)
-	}
-	for _, arg := range argv {
-		for _, needle := range []string{"MULTICA_AGENT_BUILDER_INPUT", "user_request", "-X", "inspect local"} {
-			if strings.Contains(arg, needle) {
-				t.Errorf("prompt fragment %q leaked into argv element %q; argv=%v", needle, arg, argv)
-			}
-		}
-	}
-	joined := strings.Join(argv, " ")
-	for _, want := range []string{"run", "--format json", "--dangerously-skip-permissions", "--model lanz/Lanz-Medium"} {
-		if !strings.Contains(joined, want) {
-			t.Errorf("expected %q in argv, got %v", want, argv)
-		}
-	}
-	if result.Status != "completed" || result.Output != "ok" {
-		t.Fatalf("result = %+v, want completed with output ok", result)
-	}
-}
-
 // TestOpencodeExecutePromptExceedingWindowsCommandLineLimit pins the exact
 // shape reported in #6538: a prompt well past the 32,767-character Windows
 // command-line ceiling. On the old argv path this could not even start the
@@ -111,7 +73,7 @@ func TestOpencodeExecuteSendsPromptOnStdinNotArgv(t *testing.T) {
 func TestOpencodeExecutePromptExceedingWindowsCommandLineLimit(t *testing.T) {
 	t.Parallel()
 
-	prompt := strings.Repeat("multica opencode workspace skill catalogue 0123456789\n", 800)
+	prompt := strings.Repeat("liexiu opencode workspace skill catalogue 0123456789\n", 800)
 	if len(prompt) <= 32767 {
 		t.Fatalf("test prompt must exceed the Windows command-line limit, got %d bytes", len(prompt))
 	}
@@ -141,7 +103,7 @@ func TestOpencodeExecuteLargePromptDoesNotDeadlock(t *testing.T) {
 	fakePath := filepath.Join(dir, "opencode")
 	writeTestExecutable(t, fakePath, []byte(script))
 
-	prompt := strings.Repeat("multica opencode stdin payload 0123456789\n", 16_384)
+	prompt := strings.Repeat("liexiu opencode stdin payload 0123456789\n", 16_384)
 	if len(prompt) < 512*1024 {
 		t.Fatalf("test prompt too small: %d bytes", len(prompt))
 	}

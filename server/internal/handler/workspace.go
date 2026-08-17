@@ -14,11 +14,11 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/multica-ai/multica/server/internal/analytics"
-	"github.com/multica-ai/multica/server/internal/logger"
-	obsmetrics "github.com/multica-ai/multica/server/internal/metrics"
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
-	"github.com/multica-ai/multica/server/pkg/protocol"
+	"github.com/kailonyang/liexiu/server/internal/analytics"
+	"github.com/kailonyang/liexiu/server/internal/logger"
+	obsmetrics "github.com/kailonyang/liexiu/server/internal/metrics"
+	db "github.com/kailonyang/liexiu/server/pkg/db/generated"
+	"github.com/kailonyang/liexiu/server/pkg/protocol"
 )
 
 var nonAlpha = regexp.MustCompile(`[^a-zA-Z]`)
@@ -203,16 +203,6 @@ func (h *Handler) CreateWorkspace(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Self-host gate (#3433): when the operator has set
-	// DISABLE_WORKSPACE_CREATION=true, no caller — including existing
-	// workspace owners — may create additional workspaces. The frontend
-	// hides every "Create workspace" affordance via /api/config, but the
-	// 403 here is the only authoritative check.
-	if h.cfg.DisableWorkspaceCreation {
-		writeError(w, http.StatusForbidden, "workspace creation is disabled for this instance")
-		return
-	}
-
 	var req CreateWorkspaceRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
@@ -298,10 +288,9 @@ func (h *Handler) CreateWorkspace(w http.ResponseWriter, r *http.Request) {
 
 	wsID := uuidToString(ws.ID)
 
-	// "Is this the user's first workspace?" is derived in PostHog by looking
-	// at whether they have a prior workspace_created event, not stamped at
-	// emit time. Stamping here would race under concurrent creates without
-	// a schema change, and the event stream answers the question exactly.
+	// "Is this the user's first workspace?" is derived from the operational
+	// database, not stamped at emit time. Stamping here would race under
+	// concurrent creates without a schema change.
 	obsmetrics.RecordEvent(h.Analytics, h.Metrics, analytics.WorkspaceCreated(userID, wsID))
 	h.notifyDaemonWorkspacesChanged(userID)
 
@@ -804,9 +793,8 @@ func (h *Handler) LeaveWorkspace(w http.ResponseWriter, r *http.Request) {
 // workspaceDeleteLockTimeout bounds every lock wait inside the workspace
 // teardown transaction.
 //
-// The teardown waits on three kinds of lock: the workspace row (FOR UPDATE),
-// every chat_session row in the workspace (FOR UPDATE), and the global
-// advisory lock 4246 that serialises it against the task_usage_hourly rollup.
+// The teardown waits on the workspace row (FOR UPDATE) and the global advisory
+// lock 4246 that serialises it against the task_usage_hourly rollup.
 // The advisory lock is the dangerous one — it is global and batch-held. A
 // rollup tick may hold it for as long as its 25 min scheduler RunTimeout, the
 // backfill commands (cmd/backfill_task_usage_hourly, cmd/backfill_codex_usage_cache)
@@ -913,8 +901,8 @@ const workspaceDeleteVerifyPasses = 3
 //     a stale claim, and a task we locked cannot move before we delete it.
 //   - Children first, in the application layer. DetachTaskBatchReferences breaks
 //     inbound references and DeleteTaskBatch removes task_usage, task_message,
-//     task_token, the two outbound card tables and chat_draft_restore before the
-//     task rows themselves. The legacy FK cascades stay a safety net only.
+//     task_token and the task-owned rows before the task rows themselves. The
+//     legacy FK cascades stay a safety net only.
 //
 // Late arrivals are handled by the fence, not here: migration 284 makes every task
 // write take FOR KEY SHARE on its owners' workspace rows, which conflicts with the
@@ -1140,20 +1128,8 @@ func (h *Handler) DeleteWorkspace(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// The teardown runs in one transaction so the chat_session row locks below
-	// are still held when DeleteWorkspace sweeps chat_draft_restore. Without
-	// them, FinalizeDeferredCancelledChat could commit a restore for one of
-	// these sessions after the sweep's snapshot was taken: the session cascades
-	// away, the restore has no FK to follow it (MUL-3515) and no reaper, and the
-	// user's prompt is stranded forever (#5219). The finalizer takes the same
-	// lock before inserting, so it either blocks until the session is gone and
-	// skips the insert, or commits first and the sweep sees its row.
-	//
-	// The workspace row is locked first, because the session locks only cover
-	// sessions that already exist: a CreateChatSession committing inside the
-	// delete window would otherwise slip in a session nobody locked, and its
-	// restore would outlive the cascade the same way. Holding the workspace row
-	// FOR UPDATE blocks that insert on its workspace FK (FOR KEY SHARE).
+	// The teardown runs in one transaction so all workspace-owned relationship
+	// cleanup and the final workspace delete commit or roll back together.
 	tx, err := h.TxStarter.Begin(r.Context())
 	if err != nil {
 		slog.Warn("begin workspace delete tx failed", append(logger.RequestAttrs(r), "error", err, "workspace_id", workspaceID)...)
@@ -1175,11 +1151,6 @@ func (h *Handler) DeleteWorkspace(w http.ResponseWriter, r *http.Request) {
 
 	if _, err := qtx.LockWorkspaceForDelete(r.Context(), requester.WorkspaceID); err != nil {
 		failWorkspaceDelete(w, r, workspaceID, "lock workspace", err)
-		return
-	}
-
-	if _, err := qtx.LockChatSessionsByWorkspace(r.Context(), requester.WorkspaceID); err != nil {
-		failWorkspaceDelete(w, r, workspaceID, "lock chat sessions", err)
 		return
 	}
 
@@ -1207,10 +1178,6 @@ func (h *Handler) DeleteWorkspace(w http.ResponseWriter, r *http.Request) {
 			run:  func() error { return qtx.PrepareWorkspaceDeletionLinks(ctx, requester.WorkspaceID) },
 		},
 		{
-			name: "delete chat pins",
-			run:  func() error { return qtx.DeleteChatPinnedAgentsByWorkspace(ctx, requester.WorkspaceID) },
-		},
-		{
 			// This is the first stage that touches usage rollups. Keep the
 			// global rollup lock out of relationship preparation so unrelated
 			// workspaces skip the shortest possible rollup window. This wait
@@ -1231,32 +1198,16 @@ func (h *Handler) DeleteWorkspace(w http.ResponseWriter, r *http.Request) {
 			run:  func() error { return qtx.DeleteWorkspaceLeafData(ctx, requester.WorkspaceID) },
 		},
 		{
-			name: "delete autopilot runs",
-			run:  func() error { return qtx.DeleteWorkspaceAutopilotRuns(ctx, requester.WorkspaceID) },
-		},
-		{
-			name: "delete chat messages",
-			run:  func() error { return qtx.DeleteWorkspaceChatMessages(ctx, requester.WorkspaceID) },
-		},
-		{
-			name: "delete communication roots",
-			run:  func() error { return qtx.DeleteWorkspaceCommunicationRoots(ctx, requester.WorkspaceID) },
-		},
-		{
 			name: "delete comments",
 			run:  func() error { return qtx.DeleteWorkspaceComments(ctx, requester.WorkspaceID) },
 		},
 		{
+			name: "delete orchestration data",
+			run:  func() error { return qtx.DeleteWorkspaceOrchestrationData(ctx, requester.WorkspaceID) },
+		},
+		{
 			name: "delete issue roots",
 			run:  func() error { return qtx.DeleteWorkspaceIssueRoots(ctx, requester.WorkspaceID) },
-		},
-		{
-			name: "delete autopilot children",
-			run:  func() error { return qtx.DeleteWorkspaceAutopilotChildren(ctx, requester.WorkspaceID) },
-		},
-		{
-			name: "delete autopilots",
-			run:  func() error { return qtx.DeleteWorkspaceAutopilots(ctx, requester.WorkspaceID) },
 		},
 		{
 			name: "delete pull requests",
@@ -1267,12 +1218,8 @@ func (h *Handler) DeleteWorkspace(w http.ResponseWriter, r *http.Request) {
 			run:  func() error { return qtx.DeleteWorkspaceConnections(ctx, requester.WorkspaceID) },
 		},
 		{
-			name: "delete squads and skills",
-			run:  func() error { return qtx.DeleteWorkspaceSquadsAndSkills(ctx, requester.WorkspaceID) },
-		},
-		{
-			name: "delete plugin data",
-			run:  func() error { return qtx.DeleteWorkspacePluginData(ctx, requester.WorkspaceID) },
+			name: "delete skills",
+			run:  func() error { return qtx.DeleteWorkspaceSkills(ctx, requester.WorkspaceID) },
 		},
 		{
 			name: "delete agents",

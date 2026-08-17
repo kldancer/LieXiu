@@ -1,15 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   AppConfigSchema,
-  WecomInstallationSchema,
-  ListWecomInstallationsResponseSchema,
-  RedeemWecomBindingTokenResponseSchema,
-  EMPTY_WECOM_INSTALLATION,
-  EMPTY_LIST_WECOM_INSTALLATIONS_RESPONSE,
-  EMPTY_REDEEM_WECOM_BINDING_TOKEN_RESPONSE,
+  BootstrapResponseSchema,
+  BootstrapStatusSchema,
   AgentTaskListSchema,
-  AutopilotRunSchema,
-  FALLBACK_AUTOPILOT_RUN,
   CommentTriggerPreviewSchema,
   DashboardAgentRunTimeListSchema,
   DashboardRunTimeDailyListSchema,
@@ -17,24 +11,11 @@ import {
   DashboardFailureDailyListSchema,
   DashboardUsageByAgentListSchema,
   DashboardUsageDailyListSchema,
-  ChatDraftRestoresResponseSchema,
-  ChatPendingTaskSchema,
-  PrioritizeQueuedChatTaskResponseSchema,
-  CreateFeedbackResponseSchema,
   DuplicateIssueErrorBodySchema,
-  EMPTY_CHAT_DRAFT_RESTORES,
-  EMPTY_CHAT_PENDING_TASK,
-  EMPTY_PRIORITIZE_QUEUED_CHAT_TASK_RESPONSE,
-  EMPTY_CREATE_FEEDBACK_RESPONSE,
-  EMPTY_INBOX_ITEMS,
-  EMPTY_INBOX_UNREAD_SUMMARY,
   EMPTY_SEARCH_PROJECTS_RESPONSE,
   EMPTY_USER,
-  InboxItemListSchema,
-  InboxUnreadSummarySchema,
   IssueTriggerPreviewSchema,
   ListIssuesResponseSchema,
-  ListPropertiesResponseSchema,
   MALFORMED_RUNTIME_MODEL_LIST_REQUEST,
   RuntimeModelListRequestSchema,
   SearchProjectsResponseSchema,
@@ -42,16 +23,9 @@ import {
   RuntimeUsageByAgentListSchema,
   RuntimeUsageByHourListSchema,
   RuntimeUsageListSchema,
-  SendChatMessageResponseSchema,
-  SquadListSchema,
-  SquadSchema,
   TimelineEntriesSchema,
   UserSchema,
-  EMPTY_PLUGIN_CATALOG,
-  PluginCatalogResponseSchema,
-  PluginInstallationSchema,
 } from "./schemas";
-import { IssueViewSchema, IssueViewListSchema } from "./schemas";
 import { parseWithFallback } from "./schema";
 
 const baseIssue = {
@@ -77,6 +51,28 @@ const baseIssue = {
   created_at: "2026-01-01T00:00:00Z",
   updated_at: "2026-01-01T00:00:00Z",
 };
+
+describe("local bootstrap schemas", () => {
+  it("defaults status selection when the server omits it", () => {
+    expect(BootstrapStatusSchema.parse({ enabled: true })).toEqual({
+      enabled: true,
+      initialized: false,
+      requires_selection: false,
+    });
+  });
+
+  it("requires a token, user, and canonical workspace in the response", () => {
+    expect(
+      BootstrapResponseSchema.safeParse({
+        token: "token-1",
+        user: { id: "user-1" },
+        workspace: { id: "workspace-1", slug: "local" },
+        provisioned: true,
+      }).success,
+    ).toBe(true);
+    expect(BootstrapResponseSchema.safeParse({ token: "token-1" }).success).toBe(false);
+  });
+});
 
 describe("IssueSchema (via ListIssuesResponseSchema)", () => {
   it("accepts a primitive metadata KV map", () => {
@@ -125,97 +121,6 @@ describe("IssueSchema (via ListIssuesResponseSchema)", () => {
     expect(parsed.issues[0]?.stage).toBeNull();
   });
 
-  it("accepts custom property values including multi_select arrays", () => {
-    const payload = {
-      issues: [
-        {
-          ...baseIssue,
-          properties: { "def-1": "opt-a", "def-2": ["opt-x", "opt-y"], "def-3": 3.5, "def-4": true },
-        },
-      ],
-      total: 1,
-    };
-    const parsed = ListIssuesResponseSchema.parse(payload);
-    expect(parsed.issues[0]?.properties).toEqual({
-      "def-1": "opt-a",
-      "def-2": ["opt-x", "opt-y"],
-      "def-3": 3.5,
-      "def-4": true,
-    });
-  });
-
-  it("defaults properties to {} when the server omits it (older backend)", () => {
-    const parsed = ListIssuesResponseSchema.parse({ issues: [baseIssue], total: 1 });
-    expect(parsed.issues[0]?.properties).toEqual({});
-  });
-
-  it("drops unknown-shaped property values instead of failing the issue parse", () => {
-    // Forward compat: a future server type (actor/relation) may ship object
-    // values. That one entry must disappear; the issue and its other
-    // properties must survive — a full parse failure would blank the whole
-    // list through parseWithFallback on installed desktop builds.
-    const payload = {
-      issues: [
-        {
-          ...baseIssue,
-          properties: { "def-1": { nested: 1 }, "def-2": "opt-a" },
-        },
-      ],
-      total: 1,
-    };
-    const parsed = ListIssuesResponseSchema.parse(payload);
-    expect(parsed.issues[0]?.properties).toEqual({ "def-2": "opt-a" });
-  });
-});
-
-describe("IssuePropertySchema (via ListPropertiesResponseSchema)", () => {
-  const baseProperty = {
-    id: "22222222-2222-2222-2222-222222222222",
-    workspace_id: "ws-1",
-    name: "Severity",
-    type: "select",
-    description: "",
-    icon: "flag",
-    config: { options: [{ id: "opt-1", name: "Critical", color: "#ef4444" }] },
-    position: 1,
-    archived: false,
-    archived_at: null,
-    usage_count: 2,
-    created_at: "2026-01-01T00:00:00Z",
-    updated_at: "2026-01-01T00:00:00Z",
-  };
-
-  it("parses a full definition", () => {
-    const parsed = ListPropertiesResponseSchema.parse({ properties: [baseProperty], total: 1 });
-    expect(parsed.properties[0]?.config.options?.[0]?.name).toBe("Critical");
-    expect(parsed.properties[0]?.icon).toBe("flag");
-  });
-
-  it("survives a malformed response by defaulting the list", () => {
-    const parsed = ListPropertiesResponseSchema.parse({});
-    expect(parsed.properties).toEqual([]);
-    expect(parsed.total).toBe(0);
-  });
-
-  it("keeps unknown property types as strings (forward compat)", () => {
-    const parsed = ListPropertiesResponseSchema.parse({
-      properties: [{ ...baseProperty, type: "relation", config: {} }],
-      total: 1,
-    });
-    expect(parsed.properties[0]?.type).toBe("relation");
-  });
-
-  it("defaults config when the server sends none", () => {
-    const { config: _omit, ...withoutConfig } = baseProperty;
-    const parsed = ListPropertiesResponseSchema.parse({ properties: [withoutConfig], total: 1 });
-    expect(parsed.properties[0]?.config).toEqual({});
-  });
-
-  it("defaults icon for an older server response", () => {
-    const { icon: _omit, ...withoutIcon } = baseProperty;
-    const parsed = ListPropertiesResponseSchema.parse({ properties: [withoutIcon], total: 1 });
-    expect(parsed.properties[0]?.icon).toBe("");
-  });
 });
 
 // POST /api/issues/preview-trigger feeds this schema through parseWithFallback
@@ -379,192 +284,6 @@ describe("AgentTaskListSchema", () => {
   });
 });
 
-describe("ChatDraftRestoresResponseSchema", () => {
-  it("parses a well-formed response with attachments", () => {
-    const parsed = parseWithFallback(
-      {
-        restores: [
-          {
-            id: "msg-1",
-            chat_session_id: "s-1",
-            task_id: "t-1",
-            content: "run the thing",
-            attachments: [{ id: "att-1", filename: "notes.txt" }],
-            created_at: "2026-07-01T00:00:00Z",
-          },
-        ],
-      },
-      ChatDraftRestoresResponseSchema,
-      EMPTY_CHAT_DRAFT_RESTORES,
-      { endpoint: "test" },
-    );
-    expect(parsed.restores).toHaveLength(1);
-    expect(parsed.restores[0]?.content).toBe("run the thing");
-    expect(parsed.restores[0]?.attachments?.[0]?.id).toBe("att-1");
-  });
-
-  it("defaults a missing restores array instead of crashing the composer", () => {
-    const parsed = parseWithFallback(
-      {},
-      ChatDraftRestoresResponseSchema,
-      EMPTY_CHAT_DRAFT_RESTORES,
-      { endpoint: "test" },
-    );
-    expect(parsed.restores).toEqual([]);
-  });
-
-  it("falls back to the empty response on a malformed row", () => {
-    // A row without the consume key (id) is unusable — the whole response
-    // falls back and the durable rows simply stay pending server-side.
-    const parsed = parseWithFallback(
-      { restores: [{ chat_session_id: "s-1", content: 42 }] },
-      ChatDraftRestoresResponseSchema,
-      EMPTY_CHAT_DRAFT_RESTORES,
-      { endpoint: "test" },
-    );
-    expect(parsed).toEqual(EMPTY_CHAT_DRAFT_RESTORES);
-  });
-});
-
-describe("ChatPendingTaskSchema", () => {
-  const ENDPOINT = { endpoint: "GET /api/chat/sessions/:id/pending-task" };
-
-  it("keeps legacy responses compatible when queued_tasks is absent", () => {
-    const parsed = parseWithFallback(
-      {
-        task_id: "task-active",
-        status: "running",
-        created_at: "2026-07-01T00:00:00Z",
-      },
-      ChatPendingTaskSchema,
-      EMPTY_CHAT_PENDING_TASK,
-      ENDPOINT,
-    );
-
-    expect(parsed).toMatchObject({
-      task_id: "task-active",
-      status: "running",
-    });
-    expect(parsed.queued_tasks).toBeUndefined();
-  });
-
-  it("parses queued task summaries", () => {
-    const parsed = ChatPendingTaskSchema.parse({
-      task_id: "task-active",
-      status: "running",
-      queued_tasks: [
-        {
-          task_id: "task-queued",
-          status: "queued",
-          content: "Follow up after the current task",
-          created_at: "2026-07-01T00:01:00Z",
-        },
-      ],
-    });
-
-    expect(parsed.queued_tasks).toEqual([
-      expect.objectContaining({
-        task_id: "task-queued",
-        content: "Follow up after the current task",
-      }),
-    ]);
-  });
-
-  it("keeps a valid head and ignores only malformed queued rows", () => {
-    const parsed = parseWithFallback(
-      {
-        task_id: "task-active",
-        queued_tasks: [{ task_id: 42, status: "queued" }],
-      },
-      ChatPendingTaskSchema,
-      EMPTY_CHAT_PENDING_TASK,
-      ENDPOINT,
-    );
-
-    expect(parsed).toEqual({
-      task_id: "task-active",
-      queued_tasks: [],
-    });
-  });
-});
-
-describe("SendChatMessageResponseSchema", () => {
-  const base = {
-    message_id: "message-1",
-    task_id: "task-1",
-    created_at: "2026-08-05T00:00:00Z",
-  };
-
-  it("parses the server-authoritative queue position", () => {
-    expect(SendChatMessageResponseSchema.parse({ ...base, queued: false }).queued).toBe(false);
-  });
-
-  it("ignores a malformed additive queue position without losing the accepted send", () => {
-    expect(SendChatMessageResponseSchema.parse({ ...base, queued: "no" }).queued).toBeUndefined();
-  });
-});
-
-describe("PrioritizeQueuedChatTaskResponseSchema", () => {
-  const ENDPOINT = {
-    endpoint: "POST /api/chat/sessions/:id/queued-tasks/:taskId/prioritize",
-  };
-
-  it("parses the prioritized task id", () => {
-    expect(
-      PrioritizeQueuedChatTaskResponseSchema.parse({
-        task_id: "task-queued",
-        active_task_id: "task-active",
-      }),
-    ).toEqual({
-      task_id: "task-queued",
-      active_task_id: "task-active",
-    });
-  });
-
-  it("falls back when task_id is malformed", () => {
-    expect(
-      parseWithFallback(
-        { task_id: 42 },
-        PrioritizeQueuedChatTaskResponseSchema,
-        EMPTY_PRIORITIZE_QUEUED_CHAT_TASK_RESPONSE,
-        ENDPOINT,
-      ),
-    ).toBe(EMPTY_PRIORITIZE_QUEUED_CHAT_TASK_RESPONSE);
-  });
-});
-
-describe("CreateFeedbackResponseSchema", () => {
-  const ENDPOINT = { endpoint: "POST /api/feedback" };
-
-  it("parses a well-formed response and preserves extra fields", () => {
-    const parsed = parseWithFallback(
-      { id: "feedback-1", created_at: "2026-06-26T00:00:00Z", future_field: true },
-      CreateFeedbackResponseSchema,
-      EMPTY_CREATE_FEEDBACK_RESPONSE,
-      ENDPOINT,
-    );
-    expect(parsed).toMatchObject({
-      id: "feedback-1",
-      created_at: "2026-06-26T00:00:00Z",
-      future_field: true,
-    });
-  });
-
-  it("returns the empty fallback for malformed feedback responses", () => {
-    expect(
-      parseWithFallback(
-        { id: 123, created_at: "2026-06-26T00:00:00Z" },
-        CreateFeedbackResponseSchema,
-        EMPTY_CREATE_FEEDBACK_RESPONSE,
-        ENDPOINT,
-      ),
-    ).toBe(EMPTY_CREATE_FEEDBACK_RESPONSE);
-    expect(
-      parseWithFallback(null, CreateFeedbackResponseSchema, EMPTY_CREATE_FEEDBACK_RESPONSE, ENDPOINT),
-    ).toBe(EMPTY_CREATE_FEEDBACK_RESPONSE);
-  });
-});
-
 // The duplicate-issue branch in create-issue.tsx feeds ApiError.body
 // (typed as `unknown`) through this schema. Any future server drift that
 // loses the contract MUST fail the parse so the UI falls back to a normal
@@ -654,51 +373,6 @@ describe("UserSchema timezone drift", () => {
       { endpoint: "GET /api/me" },
     );
     expect(parsed).toBe(EMPTY_USER);
-  });
-});
-
-describe("SquadListSchema member preview drift", () => {
-  const baseSquad = {
-    id: "squad-1",
-    workspace_id: "ws-1",
-    name: "Frontend Squad",
-    description: "",
-    instructions: "",
-    avatar_url: null,
-    leader_id: "agent-1",
-    creator_id: "user-1",
-    created_at: "2026-05-01T00:00:00Z",
-    updated_at: "2026-05-01T00:00:00Z",
-    archived_at: null,
-    archived_by: null,
-  };
-
-  it("defaults preview fields when an older backend omits them", () => {
-    const parsed = SquadListSchema.parse([baseSquad]);
-    expect(parsed[0]?.member_count).toBe(0);
-    expect(parsed[0]?.member_preview).toEqual([]);
-  });
-
-  it("defaults preview fields on a single squad response", () => {
-    const parsed = SquadSchema.parse(baseSquad);
-    expect(parsed.member_count).toBe(0);
-    expect(parsed.member_preview).toEqual([]);
-  });
-
-  it("preserves lightweight member preview rows", () => {
-    const parsed = SquadListSchema.parse([
-      {
-        ...baseSquad,
-        member_count: 2,
-        member_preview: [
-          { member_type: "agent", member_id: "agent-1", role: "leader" },
-          { member_type: "member", member_id: "user-2", role: "member" },
-        ],
-      },
-    ]);
-    expect(parsed[0]?.member_count).toBe(2);
-    expect(parsed[0]?.member_preview).toHaveLength(2);
-    expect(parsed[0]?.member_preview?.[0]?.role).toBe("leader");
   });
 });
 
@@ -855,12 +529,10 @@ describe("AppConfigSchema cdn_signed drift", () => {
   it("parses frontend feature flag decisions", () => {
     const parsed = AppConfigSchema.parse({
       feature_flags: {
-        composio_mcp_apps: true,
         malformed_future_flag: "yes",
       },
     });
     expect(parsed.feature_flags).toEqual({
-      composio_mcp_apps: true,
       malformed_future_flag: false,
     });
   });
@@ -874,126 +546,7 @@ describe("AppConfigSchema cdn_signed drift", () => {
     expect(AppConfigSchema.parse({ server_version: "1.2.3" }).server_version).toBe("1.2.3");
     expect(AppConfigSchema.parse({}).server_version).toBeUndefined();
   });
-});
 
-describe("InboxUnreadSummarySchema", () => {
-  const ENDPOINT = { endpoint: "GET /api/inbox/unread-summary" };
-
-  it("parses a well-formed summary and tolerates extra fields", () => {
-    const parsed = parseWithFallback(
-      [
-        { workspace_id: "ws-1", count: 2 },
-        { workspace_id: "ws-2", count: 0, future_field: "ignored" },
-      ],
-      InboxUnreadSummarySchema,
-      EMPTY_INBOX_UNREAD_SUMMARY,
-      ENDPOINT,
-    );
-    expect(parsed).toEqual([
-      { workspace_id: "ws-1", count: 2 },
-      { workspace_id: "ws-2", count: 0, future_field: "ignored" },
-    ]);
-  });
-
-  it("returns the empty fallback (dot hidden) for a non-array body", () => {
-    expect(
-      parseWithFallback({ rows: [] }, InboxUnreadSummarySchema, EMPTY_INBOX_UNREAD_SUMMARY, ENDPOINT),
-    ).toBe(EMPTY_INBOX_UNREAD_SUMMARY);
-    expect(
-      parseWithFallback(null, InboxUnreadSummarySchema, EMPTY_INBOX_UNREAD_SUMMARY, ENDPOINT),
-    ).toBe(EMPTY_INBOX_UNREAD_SUMMARY);
-  });
-
-  it("returns the empty fallback when an entry has a wrong-typed count", () => {
-    expect(
-      parseWithFallback(
-        [{ workspace_id: "ws-1", count: "lots" }],
-        InboxUnreadSummarySchema,
-        EMPTY_INBOX_UNREAD_SUMMARY,
-        ENDPOINT,
-      ),
-    ).toBe(EMPTY_INBOX_UNREAD_SUMMARY);
-  });
-});
-
-describe("InboxItemListSchema", () => {
-  const ENDPOINT = { endpoint: "GET /api/inbox/archived" };
-
-  const row = (overrides: Record<string, unknown> = {}) => ({
-    id: "inbox-1",
-    workspace_id: "ws-1",
-    recipient_type: "member",
-    recipient_id: "member-1",
-    type: "new_comment",
-    severity: "info",
-    issue_id: "issue-1",
-    title: "Issue title",
-    body: null,
-    read: false,
-    archived: true,
-    created_at: "2026-06-15T08:00:00Z",
-    ...overrides,
-  });
-
-  it("parses a well-formed archived list and tolerates extra fields", () => {
-    const parsed = parseWithFallback(
-      [row({ issue_status: "in_progress", details: { comment_id: "c-1" }, future_field: 1 })],
-      InboxItemListSchema,
-      EMPTY_INBOX_ITEMS,
-      ENDPOINT,
-    );
-    expect(parsed).toHaveLength(1);
-    expect(parsed[0]).toMatchObject({ id: "inbox-1", archived: true });
-  });
-
-  it("keeps a notification type this client doesn't know yet", () => {
-    // Enums stay lenient on purpose: a backend that ships a new inbox type
-    // must not blank the whole archived list on older clients.
-    const parsed = parseWithFallback(
-      [row({ type: "some_future_type", severity: "future_severity" })],
-      InboxItemListSchema,
-      EMPTY_INBOX_ITEMS,
-      ENDPOINT,
-    );
-    expect(parsed).toHaveLength(1);
-  });
-
-  it("accepts rows that omit the nullable optional fields", () => {
-    const { body, issue_id, ...withoutOptionals } = row();
-    void body;
-    void issue_id;
-    expect(
-      parseWithFallback([withoutOptionals], InboxItemListSchema, EMPTY_INBOX_ITEMS, ENDPOINT),
-    ).toHaveLength(1);
-  });
-
-  it("returns the empty fallback for a non-array body", () => {
-    expect(
-      parseWithFallback({ items: [] }, InboxItemListSchema, EMPTY_INBOX_ITEMS, ENDPOINT),
-    ).toBe(EMPTY_INBOX_ITEMS);
-    expect(
-      parseWithFallback(null, InboxItemListSchema, EMPTY_INBOX_ITEMS, ENDPOINT),
-    ).toBe(EMPTY_INBOX_ITEMS);
-  });
-
-  it("returns the empty fallback when a row is missing a required field", () => {
-    const { id, ...withoutId } = row();
-    void id;
-    expect(
-      parseWithFallback([withoutId], InboxItemListSchema, EMPTY_INBOX_ITEMS, ENDPOINT),
-    ).toBe(EMPTY_INBOX_ITEMS);
-  });
-
-  it("returns the empty fallback when `archived` is wrong-typed", () => {
-    expect(
-      parseWithFallback(
-        [row({ archived: "yes" })],
-        InboxItemListSchema,
-        EMPTY_INBOX_ITEMS,
-        ENDPOINT,
-      ),
-    ).toBe(EMPTY_INBOX_ITEMS);
-  });
 });
 
 describe("SearchProjectsResponseSchema date drift", () => {
@@ -1045,50 +598,6 @@ describe("SearchProjectsResponseSchema date drift", () => {
   });
 });
 
-// The "run now" flow branches on run.status/reason_code to avoid a false-success
-// toast (MUL-4525), so the trigger response must survive backend drift.
-describe("AutopilotRunSchema", () => {
-  const ENDPOINT = { endpoint: "POST /api/autopilots/:id/trigger" };
-  const baseRun = {
-    id: "run-1",
-    autopilot_id: "ap-1",
-    trigger_id: null,
-    source: "manual",
-    status: "issue_created",
-    issue_id: "issue-1",
-    task_id: null,
-    triggered_at: "2026-07-14T00:00:00Z",
-    completed_at: null,
-    failure_reason: null,
-    trigger_payload: null,
-    result: null,
-    created_at: "2026-07-14T00:00:00Z",
-  };
-
-  it("preserves a blocked run's status and reason_code", () => {
-    const parsed = parseWithFallback(
-      { ...baseRun, status: "skipped", failure_reason: "you are not allowed to trigger this autopilot's assignee agent", reason_code: "invocation_not_allowed" },
-      AutopilotRunSchema,
-      FALLBACK_AUTOPILOT_RUN,
-      ENDPOINT,
-    );
-    expect(parsed.status).toBe("skipped");
-    expect(parsed.reason_code).toBe("invocation_not_allowed");
-  });
-
-  it("tolerates an older server omitting reason_code", () => {
-    const parsed = parseWithFallback(baseRun, AutopilotRunSchema, FALLBACK_AUTOPILOT_RUN, ENDPOINT);
-    expect(parsed.status).toBe("issue_created");
-    expect(parsed.reason_code).toBeUndefined();
-  });
-
-  it("degrades a malformed response to a non-success fallback (never a false success)", () => {
-    const parsed = parseWithFallback("not-an-object", AutopilotRunSchema, FALLBACK_AUTOPILOT_RUN, ENDPOINT);
-    expect(parsed).toBe(FALLBACK_AUTOPILOT_RUN);
-    expect(parsed.status).toBe("failed");
-  });
-});
-
 // The comment composer branches on preview.blocked to warn before sending
 // (MUL-4525 §2), so the additive field must parse and degrade gracefully.
 describe("CommentTriggerPreviewSchema.blocked", () => {
@@ -1096,12 +605,12 @@ describe("CommentTriggerPreviewSchema.blocked", () => {
     const parsed = CommentTriggerPreviewSchema.parse({
       agents: [{ id: "a1", source: "mention_agent", reason: "" }],
       blocked: [
-        { target_type: "squad", target_id: "s1", status: "blocked", reason_code: "invocation_not_allowed" },
+        { target_type: "agent", target_id: "a2", status: "blocked", reason_code: "invocation_not_allowed" },
       ],
     });
     expect(parsed.agents).toHaveLength(1);
     expect(parsed.blocked).toEqual([
-      { target_type: "squad", target_id: "s1", status: "blocked", reason_code: "invocation_not_allowed" },
+      { target_type: "agent", target_id: "a2", status: "blocked", reason_code: "invocation_not_allowed" },
     ]);
   });
 
@@ -1123,12 +632,12 @@ describe("CommentTriggerPreviewSchema.blocked", () => {
     const parsed = CommentTriggerPreviewSchema.parse({
       agents: [],
       blocked: [
-        { target_type: "squad", target_id: "s1", status: "blocked", reason_code: "invocation_not_allowed" },
+        { target_type: "agent", target_id: "a2", status: "blocked", reason_code: "invocation_not_allowed" },
         { status: "blocked" }, // missing target_id → dropped individually
         { target_type: "agent", target_id: "a1", status: "blocked", reason_code: "runtime_offline" },
       ],
     });
-    expect(parsed.blocked.map((b) => b.target_id)).toEqual(["s1", "a1"]);
+    expect(parsed.blocked.map((b) => b.target_id)).toEqual(["a2", "a1"]);
   });
 });
 
@@ -1245,154 +754,5 @@ describe("RuntimeModelListRequestSchema", () => {
     expect((parsed as unknown as { future_field?: string }).future_field).toBe(
       "keep me",
     );
-  });
-});
-
-describe("IssueViewSchema", () => {
-  const valid = {
-    id: "v1",
-    workspace_id: "ws1",
-    owner_id: "u1",
-    name: "Needs review",
-    scope_type: "workspace",
-    scope_id: null,
-    scope_variant: null,
-    visibility: "workspace",
-    definition_version: 1,
-    query: { statusFilters: ["in_review"] },
-    display: { viewMode: "board" },
-    revision: 3,
-    created_at: "2026-08-06T00:00:00Z",
-    updated_at: "2026-08-06T00:00:00Z",
-  };
-
-  it("parses a well-formed view and keeps unknown future fields", () => {
-    const parsed = IssueViewSchema.parse({ ...valid, future_field: "keep me" });
-    expect(parsed.name).toBe("Needs review");
-    expect(parsed.query).toEqual({ statusFilters: ["in_review"] });
-    expect((parsed as unknown as { future_field?: string }).future_field).toBe("keep me");
-  });
-
-  it("defaults missing definition blobs instead of failing", () => {
-    const parsed = IssueViewSchema.parse({ id: "v2" });
-    expect(parsed.query).toEqual({});
-    expect(parsed.display).toEqual({});
-    expect(parsed.revision).toBe(1);
-  });
-
-  it("degrades a malformed list response to [] via parseWithFallback", () => {
-    expect(
-      parseWithFallback({ nonsense: true }, IssueViewListSchema, [], {
-        endpoint: "GET /api/issue-views",
-      }),
-    ).toEqual([]);
-    expect(
-      parseWithFallback(null, IssueViewListSchema, [], {
-        endpoint: "GET /api/issue-views",
-      }),
-    ).toEqual([]);
-  });
-
-  it("degrades a malformed detail response to null — NOT an error", () => {
-    // The sidebar's pinned view rows hinge on this distinction: a parse
-    // fallback (null, no error) hides the row, while only a REAL 404
-    // error may ever unpin. A malformed body must never destroy a pin.
-    expect(
-      parseWithFallback({ nonsense: true }, IssueViewSchema.nullable(), null, {
-        endpoint: "GET /api/issue-views/{id}",
-      }),
-    ).toBeNull();
-  });
-});
-
-// WeCom smart-bot installation schemas. These gate UI affordances (the Connect
-// dialog, the "ask your operator" state, the revoked-vs-active badge), so a
-// malformed response must degrade to the safe state rather than a broken one.
-describe("WeCom installation schemas", () => {
-  it("parses a well-formed installation", () => {
-    const parsed = WecomInstallationSchema.parse({
-      id: "i1",
-      workspace_id: "w1",
-      agent_id: "a1",
-      bot_id: "aibot_xyz",
-      installer_user_id: "u1",
-      status: "active",
-    });
-    expect(parsed.bot_id).toBe("aibot_xyz");
-    expect(parsed.status).toBe("active");
-  });
-
-  it("defaults a missing status to 'revoked', never 'active'", () => {
-    // A broken read must not render a bot as connected when it may not be.
-    const parsed = WecomInstallationSchema.parse({ id: "i1" });
-    expect(parsed.status).toBe("revoked");
-    expect(parsed.bot_id).toBe("");
-  });
-
-  it("keeps unknown forward-compat fields (loose) instead of failing the parse", () => {
-    const parsed = WecomInstallationSchema.parse({ id: "i1", future_field: "keep" });
-    expect((parsed as unknown as { future_field?: string }).future_field).toBe("keep");
-  });
-
-  it("defaults 'configured' to false so a malformed list renders the operator state", () => {
-    const parsed = ListWecomInstallationsResponseSchema.parse({});
-    expect(parsed.configured).toBe(false);
-    expect(parsed.installations).toEqual([]);
-  });
-
-  it("falls back to the empty list when the response is not an object", () => {
-    const parsed = parseWithFallback(
-      "not json",
-      ListWecomInstallationsResponseSchema,
-      EMPTY_LIST_WECOM_INSTALLATIONS_RESPONSE,
-      { endpoint: "GET /api/workspaces/:id/wecom/installations" },
-    );
-    expect(parsed).toEqual(EMPTY_LIST_WECOM_INSTALLATIONS_RESPONSE);
-    expect(parsed.configured).toBe(false);
-  });
-
-  it("falls back on a malformed installation and redeem response", () => {
-    const inst = parseWithFallback(42, WecomInstallationSchema, EMPTY_WECOM_INSTALLATION, {
-      endpoint: "POST /api/workspaces/:id/wecom/install/byo",
-    });
-    expect(inst).toEqual(EMPTY_WECOM_INSTALLATION);
-
-    const redeem = parseWithFallback(
-      null,
-      RedeemWecomBindingTokenResponseSchema,
-      EMPTY_REDEEM_WECOM_BINDING_TOKEN_RESPONSE,
-      { endpoint: "POST /api/wecom/binding/redeem" },
-    );
-    expect(redeem).toEqual(EMPTY_REDEEM_WECOM_BINDING_TOKEN_RESPONSE);
-  });
-});
-
-describe("Plugin catalog schemas", () => {
-  it("defaults optional release fields without granting trust or compatibility", () => {
-    const parsed = PluginCatalogResponseSchema.parse({
-      releases: [{ plugin_key: "ai.multica.software-delivery", version: "1.0.0" }],
-    });
-    expect(parsed.supported).toBe(true);
-    expect(parsed.releases[0]?.compatible).toBe(false);
-    expect(parsed.releases[0]?.signature_verified).toBe(false);
-    expect(parsed.releases[0]?.contributions).toEqual([]);
-  });
-
-  it("defaults missing lifecycle and binding fields to a disabled error state", () => {
-    const parsed = PluginInstallationSchema.parse({ id: "installation-1" });
-    expect(parsed.enabled).toBe(false);
-    expect(parsed.lifecycle_status).toBe("error");
-    expect(parsed.bindings).toEqual([]);
-    expect(parsed.trust_tier).toBe("");
-    expect(parsed.signature_verified).toBe(false);
-    expect(parsed.contribution_details).toEqual([]);
-  });
-
-  it("degrades a malformed catalog response to unsupported and empty", () => {
-    const parsed = parseWithFallback("not-json", PluginCatalogResponseSchema, EMPTY_PLUGIN_CATALOG, {
-      endpoint: "GET /api/workspaces/{id}/plugins/catalog",
-    });
-    expect(parsed).toEqual(EMPTY_PLUGIN_CATALOG);
-    expect(parsed.supported).toBe(false);
   });
 });

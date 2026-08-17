@@ -1,20 +1,20 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import type { Agent, AgentRuntime } from "@multica/core/types";
-import { useAgentPresenceDetail } from "@multica/core/agents";
-import { useWorkspaceId } from "@multica/core/hooks";
+import type { Agent, AgentRuntime } from "@liexiu/core/types";
+import { useAgentPresenceDetail } from "@liexiu/core/agents";
+import { useWorkspaceId } from "@liexiu/core/hooks";
 import {
   deriveRuntimeHealth,
   runtimeDisplayLabel,
   type RuntimeHealth,
-} from "@multica/core/runtimes";
-import { agentListOptions, memberListOptions } from "@multica/core/workspace/queries";
-import { resolvePublicFileUrl } from "@multica/core/workspace/avatar-url";
-import { runtimeListOptions } from "@multica/core/runtimes/queries";
-import { useWorkspacePaths } from "@multica/core/paths";
-import { ActorAvatar as ActorAvatarBase } from "@multica/ui/components/common/actor-avatar";
-import { Skeleton } from "@multica/ui/components/ui/skeleton";
+} from "@liexiu/core/runtimes";
+import { agentListOptions, memberListOptions } from "@liexiu/core/workspace/queries";
+import { resolvePublicFileUrl } from "@liexiu/core/workspace/avatar-url";
+import { runtimeListOptions } from "@liexiu/core/runtimes/queries";
+import { useWorkspacePaths } from "@liexiu/core/paths";
+import { ActorAvatar as ActorAvatarBase } from "@liexiu/ui/components/common/actor-avatar";
+import { Skeleton } from "@liexiu/ui/components/ui/skeleton";
 import { AppLink } from "../../navigation";
 import { HealthIcon } from "../../runtimes/components/shared";
 import { availabilityConfig } from "../presence";

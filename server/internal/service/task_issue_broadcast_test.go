@@ -6,10 +6,10 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
-	"github.com/multica-ai/multica/server/internal/events"
-	"github.com/multica-ai/multica/server/internal/util"
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
-	"github.com/multica-ai/multica/server/pkg/protocol"
+	"github.com/kailonyang/liexiu/server/internal/events"
+	"github.com/kailonyang/liexiu/server/internal/util"
+	db "github.com/kailonyang/liexiu/server/pkg/db/generated"
+	"github.com/kailonyang/liexiu/server/pkg/protocol"
 )
 
 // noRowsDBTX makes every read return pgx.ErrNoRows so getIssuePrefix's

@@ -8,14 +8,14 @@ import (
 	"sync"
 	"time"
 
-	"github.com/multica-ai/multica/server/internal/cli"
+	"github.com/kailonyang/liexiu/server/internal/cli"
 )
 
 // Background
 //
 // Hermes persists every ACP session — the actual conversation transcript — in
 // the SQLite database at `<HERMES_HOME>/state.db` (acp_adapter/session.py).
-// Because Multica has to take over HERMES_HOME to inject bound skills, that
+// Because LieXiu has to take over HERMES_HOME to inject bound skills, that
 // database landed inside the per-task overlay, which made a Hermes agent's
 // conversation last exactly one task.
 //
@@ -30,9 +30,9 @@ import (
 //
 // The store is keyed by (agent, hermes profile, conversation):
 //
-//	<multica profile dir>/hermes-sessions/<agent>/<hermes profile>/<conversation>/state.db
+//	<liexiu profile dir>/hermes-sessions/<agent>/<hermes profile>/<conversation>/state.db
 //
-// Keying to the conversation — the issue, or `chat_<id>` for a chat session —
+// Keying to the issue keeps each durable task transcript in its own shard.
 // is what makes this safe to share where #6693 could not. Its stated reason
 // for leaving state.db task-local was concurrency: one agent's parallel tasks
 // would write one live SQLite database, which needs lock and consistency work
@@ -55,7 +55,7 @@ import (
 // database rather than in the task directory, and a task teardown can never
 // take the write-ahead log with it.
 
-// hermesSessionStoreRoot is the directory under the daemon's Multica profile
+// hermesSessionStoreRoot is the directory under the daemon's LieXiu profile
 // dir that holds every agent's persistent Hermes conversation shards.
 const hermesSessionStoreRoot = "hermes-sessions"
 
@@ -65,8 +65,8 @@ const hermesSessionDBEntry = "state.db"
 
 // HermesSessionStorePath returns the persistent session store for
 // (daemonProfile, agentID, sourceHome, conversation), or "" when the session
-// database must stay task-local — no agent to key on, no conversation to key
-// on (neither an issue nor a chat session), or an unresolvable Multica profile
+// database must stay task-local — no agent to key on, no issue to key
+// on, or an unresolvable LieXiu profile
 // dir. The daemon marks the returned path in-use for the task's duration so
 // PruneHermesSessionStores never reclaims it mid-mount.
 func HermesSessionStorePath(daemonProfile, agentID, sourceHome string, task TaskContextForEnv) string {
@@ -86,19 +86,12 @@ func HermesSessionStorePath(daemonProfile, agentID, sourceHome string, task Task
 		hermesMemoryProfileSegment(sourceHome), conversation)
 }
 
-// hermesConversationSegment maps a task to the conversation its transcript
-// belongs to: the issue it runs on, or the chat session when there is no
-// issue. Same derivation as the per-issue Codex session store
-// (codexSessionStoreKey), so both providers agree on what "one conversation"
-// means. Returns "" for a task that belongs to neither, which keeps its
-// session database task-local rather than inventing a shard nothing will
-// resume.
+// hermesConversationSegment maps a task to the issue its transcript belongs
+// to. Returns "" for a task without an issue, which keeps its session database
+// task-local rather than inventing a shard nothing will resume.
 func hermesConversationSegment(task TaskContextForEnv) string {
 	if issue := sanitizePathSegment(task.IssueID); issue != "" {
 		return issue
-	}
-	if chat := sanitizePathSegment(task.ChatSessionID); chat != "" {
-		return "chat_" + chat
 	}
 	return ""
 }
@@ -207,7 +200,7 @@ func mountHermesSessionDB(hermesHome, storeDir string, logger *slog.Logger) (her
 // published over state.db. Dot-prefixed so isHermesTaskLocalStateEntry does not
 // match it and the family cleanup cannot remove the link it is about to
 // publish.
-const hermesSessionLinkStagingEntry = ".multica-session-link"
+const hermesSessionLinkStagingEntry = ".liexiu-session-link"
 
 // hermesStoreHasSessionDB reports whether storeDir holds a session database
 // with content. A zero-length file is what SQLite leaves after an `open` that

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { RuntimeModel } from "@multica/core/types";
+import type { RuntimeModel } from "@liexiu/core/types";
 import {
   findModelCapabilityEntry,
   modelIdForCapabilityLookup,

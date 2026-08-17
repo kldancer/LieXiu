@@ -203,7 +203,7 @@ describe("deriveWorkloadDetail", () => {
 
   it("ignores terminal statuses entirely (no historical state in workload)", () => {
     // Failed / completed / cancelled tasks contribute no count and don't
-    // change the verdict — Recent Work + Inbox handle history, not workload.
+    // change the verdict — Recent Work + Issues handle history, not workload.
     const r = deriveWorkloadDetail([
       makeTask({
         id: "t-failed",

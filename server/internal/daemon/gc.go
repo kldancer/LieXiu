@@ -10,9 +10,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/multica-ai/multica/server/internal/daemon/execenv"
-	"github.com/multica-ai/multica/server/internal/daemon/processtree"
-	"github.com/multica-ai/multica/server/internal/daemon/repocache"
+	"github.com/kailonyang/liexiu/server/internal/daemon/execenv"
+	"github.com/kailonyang/liexiu/server/internal/daemon/processtree"
+	"github.com/kailonyang/liexiu/server/internal/daemon/repocache"
 )
 
 // reposDirName is the bare-repo cache directory inside the workspaces root.
@@ -321,14 +321,14 @@ type gcAction int
 const (
 	gcActionSkip                  gcAction = iota
 	gcActionClean                          // issue is done/cancelled and stale
-	gcActionOrphan                         // no meta or unknown issue and dir is old
+	gcActionOrphan                         // no meta or unknown parent and dir is old
 	gcActionCleanArtifacts                 // task completed long enough ago; drop regenerable artifacts only
 	gcActionCleanManagedArtifacts          // preserve the task and drop exact daemon-managed artifacts only
 )
 
 // shouldCleanTaskDir decides whether a task directory should be removed.
-// Dispatches on meta.Kind so chat / autopilot / quick-create tasks each
-// follow the parent record that actually governs their lifecycle.
+// Supported metadata kinds follow their Issue or Task lifecycle; historical
+// unsupported kinds use the conservative orphan-by-mtime fallback.
 func (d *Daemon) shouldCleanTaskDir(ctx context.Context, taskDir string) gcAction {
 	// A task currently running on this env root must never be reclaimed —
 	// not even on the done/cancelled or orphan-404 paths. A re-dispatched or
@@ -351,17 +351,7 @@ func (d *Daemon) shouldCleanTaskDir(ctx context.Context, taskDir string) gcActio
 }
 
 // applyManagedArtifactFallback upgrades a skip into managed-artifact cleanup
-// once the task's own regenerable Codex cache is past GCArtifactTTL.
-//
-// Whether a task's *data* may be removed is a per-kind question: it depends on
-// the parent record, and shouldCleanTaskDirForKind is what answers it. Whether
-// the daemon's *own regenerable cache* may be reclaimed is not a per-kind
-// question at all — codex-home/.sandbox-bin is a ~285 MiB copy of the Codex
-// binary that the next run re-provisions on demand, whoever the parent is.
-// Wiring that reclaim into the issue path alone (#5654) left every other kind
-// holding the cache indefinitely; for chat that is genuinely unbounded, since a
-// session stays "active" with no time limit and Desktop's chat is the main
-// interactive surface (#6782).
+// once the task.s own regenerable Codex cache is past GCArtifactTTL.
 //
 // Deliberately a one-way upgrade from gcActionSkip. Clean and Orphan already
 // remove strictly more than this, and applyLocalDirectoryGCOverride owns the
@@ -412,7 +402,7 @@ func (d *Daemon) applyLocalDirectoryGCOverride(meta *execenv.GCMeta, action gcAc
 	//                     (and especially the logbook) survives.
 	//   gcActionOrphan  → exact managed-artifact cleanup only; we don't ever
 	//                     wipe a local_directory envRoot via the mtime path,
-	//                     since the parent issue / chat record going away
+	//                     since the parent issue going away
 	//                     should not collateral-delete the user's audit trail.
 	//
 	// Artifact cleanup remains disabled when GCArtifactTTL is explicitly zero.
@@ -431,17 +421,13 @@ func (d *Daemon) applyLocalDirectoryGCOverride(meta *execenv.GCMeta, action gcAc
 	}
 }
 
-// shouldCleanTaskDirForKind runs the per-Kind dispatch without applying the
-// local_directory override. Split out so shouldCleanTaskDir can intercept
-// the result.
+// shouldCleanTaskDirForKind runs the supported parent dispatch without applying
+// the local_directory override. Unknown metadata follows the conservative
+// orphan-by-mtime path below.
 func (d *Daemon) shouldCleanTaskDirForKind(ctx context.Context, taskDir string, meta *execenv.GCMeta) gcAction {
 	switch meta.Kind {
 	case execenv.GCKindIssue:
 		return d.gcDecisionIssue(ctx, taskDir, meta)
-	case execenv.GCKindChat:
-		return d.gcDecisionChat(ctx, taskDir, meta)
-	case execenv.GCKindAutopilotRun:
-		return d.gcDecisionAutopilotRun(ctx, taskDir, meta)
 	case execenv.GCKindQuickCreate:
 		return d.gcDecisionQuickCreate(ctx, taskDir, meta)
 	default:
@@ -557,119 +543,6 @@ func gcMetaFileAge(taskDir string) (time.Duration, bool) {
 	return time.Since(info.ModTime()), true
 }
 
-func (d *Daemon) gcDecisionChat(ctx context.Context, taskDir string, meta *execenv.GCMeta) gcAction {
-	if strings.TrimSpace(meta.ChatSessionID) == "" {
-		return d.orphanByMTime(taskDir, "empty chat session id")
-	}
-
-	status, err := d.client.GetChatSessionGCCheck(ctx, meta.ChatSessionID)
-	if err != nil {
-		if isAccessNotFound(err) {
-			// 404 means the chat_session row is gone — DeleteChatSession is
-			// a real DELETE, so a hard delete propagates here as soon as
-			// the user clicks the button. This is the strongest reclaim
-			// signal we get and it's exactly acceptance criterion #3:
-			// reclaim within one GC cycle (≤ GCInterval), not 72h.
-			//
-			// We don't gate on mtime: every chat_session_id in a meta file
-			// was written by this daemon under its current token, so there
-			// is no cross-workspace probe to defend against.
-			d.logger.Info("gc: eligible for cleanup",
-				"dir", filepath.Base(taskDir),
-				"kind", "chat",
-				"chat_session", meta.ChatSessionID,
-				"reason", "session not accessible (hard-deleted)",
-			)
-			return gcActionClean
-		}
-		return gcActionSkip
-	}
-
-	switch status.Status {
-	case "active":
-		// An active chat session's directory must never be reclaimed by mtime
-		// — that would silently kill a user's idle session and break
-		// "PriorWorkDir" resume on their next message.
-		//
-		// This protects the session's own data, not the daemon's regenerable
-		// caches. shouldCleanTaskDir layers applyManagedArtifactFallback on top
-		// of this skip, so a session idle past GCArtifactTTL gives back
-		// codex-home/.sandbox-bin and the next message re-provisions it. That
-		// costs a ~285 MiB Codex bootstrap on resume and is the same trade-off
-		// gcDecisionIssueResult already makes for a completed task whose issue
-		// is still open — without it an active session pins the cache forever
-		// (#6782).
-		return gcActionSkip
-	case "archived":
-		if time.Since(status.UpdatedAt) > d.cfg.GCTTL {
-			d.logger.Info("gc: eligible for cleanup",
-				"dir", filepath.Base(taskDir),
-				"kind", "chat",
-				"chat_session", meta.ChatSessionID,
-				"status", status.Status,
-				"updated_at", status.UpdatedAt.Format(time.RFC3339),
-			)
-			return gcActionClean
-		}
-	}
-	return gcActionSkip
-}
-
-func (d *Daemon) gcDecisionAutopilotRun(ctx context.Context, taskDir string, meta *execenv.GCMeta) gcAction {
-	if strings.TrimSpace(meta.AutopilotRunID) == "" {
-		return d.orphanByMTime(taskDir, "empty autopilot run id")
-	}
-
-	status, err := d.client.GetAutopilotRunGCCheck(ctx, meta.AutopilotRunID)
-	if err != nil {
-		if isAccessNotFound(err) {
-			return d.orphanByMTime(taskDir, "autopilot run not accessible")
-		}
-		return gcActionSkip
-	}
-
-	// Terminal states per the autopilot_run CHECK constraint:
-	//   completed, failed, skipped — the run finished its own work.
-	//   issue_created            — the run produced an issue task that owns
-	//                              its own workdir; this run's workdir is
-	//                              dead weight from here on.
-	// Non-terminal: pending, running. Skip until they reach a terminal state
-	// rather than trying to bound them by mtime — long autopilots are real.
-	//
-	// An autopilot run's workdir is never reused: unlike issue/chat tasks there
-	// is no PriorWorkDir path that hands a later run the same directory, so every
-	// run gets a fresh one. Whatever the run produced already lives server-side
-	// (and an issue_created run handed its work to an issue task that owns its own
-	// envRoot). So the moment the run reaches a terminal state the directory is
-	// dead weight and we reclaim it immediately, without waiting out GCTTL — the
-	// same reasoning gcDecisionQuickCreate applies to quick-create dirs. The
-	// active-env-root short-circuit in shouldCleanTaskDir still protects a run
-	// that is mid-flight, so this can't pull the rug from under live work.
-	if isAutopilotRunTerminal(status.Status) {
-		d.logger.Info("gc: eligible for cleanup",
-			"dir", filepath.Base(taskDir),
-			"kind", "autopilot_run",
-			"autopilot_run", meta.AutopilotRunID,
-			"status", status.Status,
-		)
-		return gcActionClean
-	}
-	return gcActionSkip
-}
-
-// isAutopilotRunTerminal mirrors the run.status CHECK in
-// migrations/042_autopilot.up.sql. Non-terminal states are pending/running;
-// every other value the schema allows is a final resting state from the
-// daemon's POV (the run is no longer producing work in this workdir).
-func isAutopilotRunTerminal(status string) bool {
-	switch status {
-	case "completed", "failed", "skipped", "issue_created":
-		return true
-	default:
-		return false
-	}
-}
-
 func (d *Daemon) gcDecisionQuickCreate(ctx context.Context, taskDir string, meta *execenv.GCMeta) gcAction {
 	if strings.TrimSpace(meta.TaskID) == "" {
 		return d.orphanByMTime(taskDir, "empty task id")
@@ -762,8 +635,8 @@ func (d *Daemon) cleanTaskArtifacts(taskDir string, patterns []string) (removed 
 // The managed set is a list of exact relative paths, so these are addressed
 // directly rather than searched for. Walking the whole task tree to find a
 // directory whose location is already known costs a full repo checkout's worth
-// of stat calls, and a task that stays non-terminal — an active chat session —
-// pays it on every GC cycle for as long as it lives, long after the cache is
+// of stat calls, and a task that stays non-terminal pays it on every GC cycle
+// for as long as it lives, long after the cache is
 // gone. cleanTaskArtifacts still walks, because its basename patterns can match
 // at any depth; this one has nothing to search for.
 func (d *Daemon) cleanManagedTaskArtifacts(taskDir string) (removed int, bytes int64, perPattern map[string]int) {
@@ -949,7 +822,7 @@ func dirSizeContext(ctx context.Context, root string) (int64, error) {
 const (
 	gitCmdTimeout         = 30 * time.Second
 	gitMaintenanceTimeout = 10 * time.Minute
-	repoMaintenanceMarker = ".multica-maintenance-pending"
+	repoMaintenanceMarker = ".liexiu-maintenance-pending"
 )
 
 // pruneRepoWorktrees runs `git worktree prune` on all bare repos in the cache,

@@ -161,10 +161,10 @@ func TestRedactBearerToken(t *testing.T) {
 	}
 }
 
-// TestRedactBearerMCPToken is a regression guard for the Composio MCP session
-// headers (MUL-3720): the SDK attaches the project key as `Bearer mcp_...` on
-// some MCP transports, so the generic Bearer pattern must mask it before it can
-// reach a log line or WS broadcast.
+// TestRedactBearerMCPToken is a regression guard for MCP session headers
+// (MUL-3720): an MCP transport can attach a project key as `Bearer mcp_...`,
+// so the generic Bearer pattern must mask it before it can reach a log line or
+// WS broadcast.
 func TestRedactBearerMCPToken(t *testing.T) {
 	t.Parallel()
 	input := "connecting with Authorization: Bearer mcp_AbCdEf0123456789-_token"

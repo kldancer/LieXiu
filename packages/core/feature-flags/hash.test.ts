@@ -11,9 +11,9 @@ describe("feature-flags hash", () => {
   });
 
   it("bucketFor is deterministic for the same (key, id)", () => {
-    const first = bucketFor("billing_new_invoice", "user-42");
+    const first = bucketFor("feature_a", "user-1");
     for (let i = 0; i < 100; i++) {
-      expect(bucketFor("billing_new_invoice", "user-42")).toBe(first);
+      expect(bucketFor("feature_a", "user-1")).toBe(first);
     }
   });
 
@@ -35,7 +35,6 @@ describe("feature-flags hash", () => {
   it("cross-language golden: bucket values match the Go side exactly", () => {
     const cases: ReadonlyArray<[string, string, number]> = [
       // ASCII baseline.
-      ["billing_new_invoice", "user-42", 97],
       ["feature_a", "user-1", 50],
       ["checkout_algo", "u-7f8a", 11],
       ["ws_rollout", "workspace-1", 62],

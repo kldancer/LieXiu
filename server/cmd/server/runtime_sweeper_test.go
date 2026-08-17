@@ -7,9 +7,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/multica-ai/multica/server/internal/events"
-	"github.com/multica-ai/multica/server/internal/service"
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
+	"github.com/kailonyang/liexiu/server/internal/events"
+	"github.com/kailonyang/liexiu/server/internal/service"
+	db "github.com/kailonyang/liexiu/server/pkg/db/generated"
 )
 
 // setupSweeperTestFixture creates an issue and a task in the given status with
@@ -591,9 +591,21 @@ func TestSweepResetsInProgressIssueToTodo(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create test issue: %v", err)
 	}
+	var orchestrationIssueID string
+	if err := testPool.QueryRow(ctx, `
+		INSERT INTO issue (workspace_id, title, status, priority, creator_type, creator_id, number)
+		SELECT $1, 'Orchestration projection issue', 'in_progress', 'none', 'member', m.user_id,
+			(SELECT COALESCE(MAX(number), 0) + 1 FROM issue WHERE workspace_id = $1)
+		FROM member m WHERE m.workspace_id = $1 LIMIT 1
+		RETURNING id
+	`, testWorkspaceID).Scan(&orchestrationIssueID); err != nil {
+		t.Fatalf("failed to create orchestration projection issue: %v", err)
+	}
 	t.Cleanup(func() {
 		testPool.Exec(ctx, `DELETE FROM agent_task_queue WHERE issue_id = $1`, issueID)
+		testPool.Exec(ctx, `DELETE FROM agent_task_queue WHERE issue_id = $1`, orchestrationIssueID)
 		testPool.Exec(ctx, `DELETE FROM issue WHERE id = $1`, issueID)
+		testPool.Exec(ctx, `DELETE FROM issue WHERE id = $1`, orchestrationIssueID)
 	})
 
 	// Create a stale running task for the issue (3 hours old — beyond any timeout).
@@ -605,6 +617,16 @@ func TestSweepResetsInProgressIssueToTodo(t *testing.T) {
 	`, agentID, runtimeID, issueID).Scan(&taskID)
 	if err != nil {
 		t.Fatalf("failed to create stale task: %v", err)
+	}
+	if _, err := testPool.Exec(ctx, `
+		INSERT INTO agent_task_queue (
+			agent_id, runtime_id, issue_id, status, priority, dispatched_at,
+			started_at, orchestration_run_id
+		)
+		VALUES ($1, $2, $3, 'running', 0, now() - interval '3 hours',
+			now() - interval '3 hours', gen_random_uuid())
+	`, agentID, runtimeID, orchestrationIssueID); err != nil {
+		t.Fatalf("failed to create stale orchestration task: %v", err)
 	}
 
 	queries := db.New(testPool)
@@ -645,6 +667,12 @@ func TestSweepResetsInProgressIssueToTodo(t *testing.T) {
 	}
 	if issueStatus != "todo" {
 		t.Fatalf("expected issue status 'todo' after sweep, got '%s' — issue is stuck", issueStatus)
+	}
+	if err := testPool.QueryRow(ctx, `SELECT status FROM issue WHERE id = $1`, orchestrationIssueID).Scan(&issueStatus); err != nil {
+		t.Fatalf("failed to query orchestration projection issue status: %v", err)
+	}
+	if issueStatus != "in_progress" {
+		t.Fatalf("execution plane reset orchestration projection issue to %q, want in_progress", issueStatus)
 	}
 }
 

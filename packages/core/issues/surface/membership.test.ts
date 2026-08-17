@@ -28,7 +28,6 @@ function makeIssue(overrides: Partial<Issue> = {}): Issue {
     due_date: null,
     labels: [],
     metadata: {},
-  properties: {},
     created_at: "2025-01-01T00:00:00Z",
     updated_at: "2025-01-01T00:00:00Z",
     ...overrides,
@@ -63,7 +62,7 @@ describe("issueMatchesListFilter", () => {
       issueMatchesListFilter(
         makeIssue({ assignee_type: null, assignee_id: null }),
         "workspace:agents",
-        { assignee_types: ["agent", "squad"] },
+        { assignee_types: ["agent"] },
       ),
     ).toBe(false);
   });

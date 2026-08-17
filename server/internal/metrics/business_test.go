@@ -8,8 +8,8 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 
-	"github.com/multica-ai/multica/server/internal/analytics"
-	"github.com/multica-ai/multica/server/pkg/taskfailure"
+	"github.com/kailonyang/liexiu/server/internal/analytics"
+	"github.com/kailonyang/liexiu/server/pkg/taskfailure"
 )
 
 func TestBusinessMetricsLifecycleCountersAndGauge(t *testing.T) {
@@ -69,18 +69,18 @@ func TestBusinessMetricsFailureReasonUsesCanonicalClassifier(t *testing.T) {
 func TestBusinessMetricsLLMPricingAndUnpricedTokens(t *testing.T) {
 	m := NewBusinessMetrics()
 
-	m.RecordLLMUsage("chat", "cloud", "codex", "gpt-5.4", 1_000_000, 2_000_000, 3_000_000, 4_000_000, 0)
+	m.RecordLLMUsage("issue", "cloud", "codex", "gpt-5.4", 1_000_000, 2_000_000, 3_000_000, 4_000_000, 0)
 
-	if got := testutil.ToFloat64(m.llmTokens.WithLabelValues("openai", "gpt-5.4", "input", "cloud", "chat")); got != 1_000_000 {
+	if got := testutil.ToFloat64(m.llmTokens.WithLabelValues("openai", "gpt-5.4", "input", "cloud", "issue")); got != 1_000_000 {
 		t.Fatalf("priced input tokens = %v, want 1000000", got)
 	}
-	if got := testutil.ToFloat64(m.llmTokens.WithLabelValues("openai", "gpt-5.4", "output", "cloud", "chat")); got != 2_000_000 {
+	if got := testutil.ToFloat64(m.llmTokens.WithLabelValues("openai", "gpt-5.4", "output", "cloud", "issue")); got != 2_000_000 {
 		t.Fatalf("priced output tokens = %v, want 2000000", got)
 	}
-	if got := testutil.ToFloat64(m.llmCostUSD.WithLabelValues("openai", "gpt-5.4", "input", "cloud", "chat")); got != 2.5 {
+	if got := testutil.ToFloat64(m.llmCostUSD.WithLabelValues("openai", "gpt-5.4", "input", "cloud", "issue")); got != 2.5 {
 		t.Fatalf("priced input cost = %v, want 2.5", got)
 	}
-	if got := testutil.ToFloat64(m.llmCostUSD.WithLabelValues("openai", "gpt-5.4", "output", "cloud", "chat")); got != 30 {
+	if got := testutil.ToFloat64(m.llmCostUSD.WithLabelValues("openai", "gpt-5.4", "output", "cloud", "issue")); got != 30 {
 		t.Fatalf("priced output cost = %v, want 30", got)
 	}
 	if got := testutil.ToFloat64(m.llmRequests.WithLabelValues("openai", "gpt-5.4", "cloud")); got != 1 {
@@ -123,31 +123,19 @@ func TestBusinessMetricsRegistryExposesAllFamilies(t *testing.T) {
 	exerciseEvent(m, analytics.EventOnboardingCompleted, map[string]any{"completion_path": "full"})
 	exerciseEvent(m, analytics.EventCloudWaitlistJoined, nil)
 	exerciseEvent(m, analytics.EventIssueCreated, map[string]any{"source": "manual", "platform": "web"})
-	exerciseEvent(m, analytics.EventChatMessageSent, map[string]any{"platform": "web"})
 	exerciseEvent(m, analytics.EventAgentCreated, map[string]any{"runtime_mode": "local", "source": "manual"})
-	exerciseEvent(m, analytics.EventSquadCreated, nil)
-	exerciseEvent(m, analytics.EventAutopilotCreated, map[string]any{"cadence": "manual"})
 	exerciseEvent(m, analytics.EventIssueExecuted, map[string]any{"source": "manual"})
 	exerciseEvent(m, analytics.EventRuntimeRegistered, map[string]any{"runtime_mode": "local", "provider": "claude"})
 	exerciseEvent(m, analytics.EventRuntimeReady, map[string]any{"runtime_mode": "local", "provider": "claude", "ready_duration_ms": int64(1000)})
 	exerciseEvent(m, analytics.EventRuntimeFailed, map[string]any{"runtime_mode": "local", "provider": "claude", "failure_reason": "timeout", "recoverable": true})
 	exerciseEvent(m, analytics.EventRuntimeOffline, map[string]any{"runtime_mode": "local", "provider": "claude"})
-	exerciseEvent(m, analytics.EventAutopilotRunStarted, map[string]any{"cadence": "manual", "trigger_kind": "manual"})
-	exerciseEvent(m, analytics.EventAutopilotRunCompleted, map[string]any{"cadence": "manual", "trigger_kind": "manual"})
-	exerciseEvent(m, analytics.EventAutopilotRunFailed, map[string]any{"cadence": "manual", "trigger_kind": "manual"})
-	exerciseEvent(m, analytics.EventFeedbackSubmitted, map[string]any{"kind": "general", "platform": "web"})
-	exerciseEvent(m, analytics.EventContactSalesSubmitted, map[string]any{"form_source": "page"})
 
-	// Direct Record* helpers (no PostHog event source).
-	m.RecordAutopilotRunSkipped("manual", "throttled")
-	m.RecordWebhookDelivery("github", "dispatched")
-	m.RecordWebhookRateLimited("absolute_ip")
+	// Direct typed Record* helpers.
 	m.RecordGithubEventReceived("pull_request", "opened")
 	m.RecordGithubPRReview("approved")
 	m.ObserveGithubPRMergeSeconds(120)
 	m.RecordCloudRuntimeRequest("provision", "ok", 0.5)
 	m.RecordDaemonWSMessageReceived("heartbeat")
-	m.RecordChatOutputLocalPath("file_url")
 
 	families, err := registry.Gather()
 	if err != nil {

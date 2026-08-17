@@ -3,9 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   resolveBrowserApiBaseUrl,
   resolveBrowserWsUrl,
-  resolveDevDocsUrl,
   resolveDevRemoteApiUrl,
-  resolveDocsUrl,
   resolveRemoteApiUrl,
   runtimeRewriteDestination,
 } from "./runtime-urls";
@@ -84,23 +82,6 @@ describe("resolveRemoteApiUrl", () => {
   });
 });
 
-describe("resolveDocsUrl", () => {
-  it("uses DOCS_URL when configured", () => {
-    expect(resolveDocsUrl({ DOCS_URL: " http://docs:4000/ " })).toBe(
-      "http://docs:4000",
-    );
-  });
-
-  it("returns undefined when no docs origin is configured", () => {
-    expect(resolveDocsUrl({})).toBeUndefined();
-  });
-
-  it("ignores relative or invalid docs URL values", () => {
-    expect(resolveDocsUrl({ DOCS_URL: "/docs" })).toBeUndefined();
-    expect(resolveDocsUrl({ DOCS_URL: "ftp://docs.example.com" })).toBeUndefined();
-  });
-});
-
 describe("browser runtime URLs", () => {
   it("exposes NEXT_PUBLIC_API_URL at server render time", () => {
     expect(
@@ -133,9 +114,9 @@ describe("browser runtime URLs", () => {
   it("keeps a non-/api path prefix so prefix-mounted backends still work", () => {
     expect(
       resolveBrowserApiBaseUrl({
-        NEXT_PUBLIC_API_URL: "https://app.example.com/multica",
+        NEXT_PUBLIC_API_URL: "https://app.example.com/liexiu",
       }),
-    ).toBe("https://app.example.com/multica");
+    ).toBe("https://app.example.com/liexiu");
   });
 
   it("does not mistake an `api` host for an /api path suffix", () => {
@@ -217,7 +198,6 @@ describe("runtimeRewriteDestination", () => {
       runtimeRewriteDestination("/uploads/workspaces/a.png", {}),
     ).toBeUndefined();
     expect(runtimeRewriteDestination("/ws", {})).toBeUndefined();
-    expect(runtimeRewriteDestination("/docs/zh", {})).toBeUndefined();
   });
 
   it("keeps same-origin fallback for runtime API paths when only frontend PORT is configured", () => {
@@ -243,10 +223,10 @@ describe("runtimeRewriteDestination", () => {
       }),
     ).toBe("http://backend:8080/api/config");
     expect(
-      runtimeRewriteDestination("/auth/send-code", {
+      runtimeRewriteDestination("/auth/logout", {
         REMOTE_API_URL: "http://backend:8080",
       }),
-    ).toBe("http://backend:8080/auth/send-code");
+    ).toBe("http://backend:8080/auth/logout");
     expect(
       runtimeRewriteDestination("/uploads/workspaces/a.png", {
         REMOTE_API_URL: "http://backend:8080",
@@ -254,19 +234,9 @@ describe("runtimeRewriteDestination", () => {
     ).toBe("http://backend:8080/uploads/workspaces/a.png");
   });
 
-  it("does not rewrite frontend auth callback pages", () => {
+  it("does not rewrite removed public auth paths", () => {
     expect(runtimeRewriteDestination("/auth/callback", {})).toBeUndefined();
-    expect(
-      runtimeRewriteDestination("/auth/hg-sso/callback", {}),
-    ).toBeUndefined();
-  });
-
-  it("maps docs paths to the runtime docs origin", () => {
-    expect(
-      runtimeRewriteDestination("/docs/zh/agents", {
-        DOCS_URL: "http://multica-docs:3000",
-      }),
-    ).toBe("http://multica-docs:3000/docs/zh/agents");
+    expect(runtimeRewriteDestination("/auth/send-code", {})).toBeUndefined();
   });
 
   it("maps websocket paths to the runtime API origin", () => {
@@ -308,12 +278,5 @@ describe("dev-only fallbacks", () => {
     expect(
       resolveDevRemoteApiUrl({ REMOTE_API_URL: "http://backend:8080" }),
     ).toBe("http://backend:8080");
-    expect(resolveDevDocsUrl({ DOCS_URL: "http://docs:4000" })).toBe(
-      "http://docs:4000",
-    );
-  });
-
-  it("falls back to the local docs port", () => {
-    expect(resolveDevDocsUrl({})).toBe("http://localhost:4000");
   });
 });

@@ -17,8 +17,8 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/multica-ai/multica/server/internal/util"
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
+	"github.com/kailonyang/liexiu/server/internal/util"
+	db "github.com/kailonyang/liexiu/server/pkg/db/generated"
 )
 
 const (
@@ -89,7 +89,6 @@ type issueTableFiltersRequest struct {
 	ProjectIDs        []string                     `json:"project_ids,omitempty"`
 	IncludeNoProject  bool                         `json:"include_no_project,omitempty"`
 	LabelIDs          []string                     `json:"label_ids,omitempty"`
-	Properties        map[string][]string          `json:"properties,omitempty"`
 	Date              *issueTableDateFilterRequest `json:"date,omitempty"`
 	WorkingOnly       bool                         `json:"working_only,omitempty"`
 	WorkingIssueIDs   []string                     `json:"working_issue_ids,omitempty"`
@@ -110,7 +109,6 @@ type issueTableQuerySpec struct {
 
 type issueTableGroupSpec struct {
 	Kind            string   `json:"kind"`
-	PropertyID      string   `json:"property_id,omitempty"`
 	IncludeEmpty    bool     `json:"include_empty,omitempty"`
 	Primary         string   `json:"primary,omitempty"`
 	Secondary       string   `json:"secondary,omitempty"`
@@ -142,8 +140,7 @@ type issueTableRowsRequest struct {
 }
 
 type issueTableFacetSpec struct {
-	Kind       string `json:"kind"`
-	PropertyID string `json:"property_id,omitempty"`
+	Kind string `json:"kind"`
 }
 
 type issueTableFacetsRequest struct {
@@ -258,9 +255,6 @@ func canonicalIssueTableFingerprint(workspaceID string, spec issueTableQuerySpec
 	normalized.Filters.Assignees = sortedUniqueActors(normalized.Filters.Assignees)
 	normalized.Filters.WorkingIssueIDs = sortedUniqueStrings(normalized.Filters.WorkingIssueIDs)
 	normalized.Filters.Creators = sortedUniqueActors(normalized.Filters.Creators)
-	for key, values := range normalized.Filters.Properties {
-		normalized.Filters.Properties[key] = sortedUniqueStrings(values)
-	}
 	encoded, err := json.Marshal(struct {
 		WorkspaceID                string              `json:"workspace_id"`
 		Query                      issueTableQuerySpec `json:"query"`
@@ -362,35 +356,11 @@ func parseIssueTableActor(w http.ResponseWriter, actor issueTableActorRef, field
 func appendIssueTableInvolvedPredicate(where []string, addArg func(any) string, userID pgtype.UUID) []string {
 	ref := addArg(userID)
 	return append(where, fmt.Sprintf(`(
-    (i.assignee_type = 'agent' AND i.assignee_id IN (
+    i.assignee_type = 'agent' AND i.assignee_id IN (
        SELECT a.id FROM agent a
         WHERE a.workspace_id = $1
           AND a.owner_id     = %[1]s::uuid
-    ))
-    OR (i.assignee_type = 'squad' AND i.assignee_id IN (
-       SELECT sm.squad_id
-         FROM squad_member sm
-         JOIN squad s ON s.id = sm.squad_id
-        WHERE s.workspace_id = $1
-          AND sm.member_type = 'member'
-          AND sm.member_id   = %[1]s::uuid
-       UNION
-       SELECT s.id
-         FROM squad s
-         JOIN agent a ON a.id = s.leader_id
-        WHERE s.workspace_id = $1
-          AND a.workspace_id = $1
-          AND a.owner_id     = %[1]s::uuid
-       UNION
-       SELECT sm.squad_id
-         FROM squad_member sm
-         JOIN squad s ON s.id = sm.squad_id
-         JOIN agent a ON a.id = sm.member_id
-        WHERE s.workspace_id = $1
-          AND sm.member_type = 'agent'
-          AND a.workspace_id = $1
-          AND a.owner_id     = %[1]s::uuid
-    ))
+    )
 )`, ref))
 }
 
@@ -571,21 +541,6 @@ func (h *Handler) compileIssueTableQuery(w http.ResponseWriter, r *http.Request,
 	}
 	if len(labelIDs) > 0 {
 		where = append(where, fmt.Sprintf("EXISTS (SELECT 1 FROM issue_to_label itl WHERE itl.issue_id = i.id AND itl.label_id = ANY(%s::uuid[]))", addArg(labelIDs)))
-	}
-
-	if len(spec.Filters.Properties) > 0 {
-		raw, err := json.Marshal(spec.Filters.Properties)
-		if err != nil {
-			writeError(w, http.StatusBadRequest, "invalid filters.properties")
-			return issueTableSQL{}, false
-		}
-		compiled, ok := parsePropertiesFilterParam(w, string(raw))
-		if !ok {
-			return issueTableSQL{}, false
-		}
-		if len(compiled) > 0 {
-			where = append(where, propertiesFilterPredicate(compiled, addArg))
-		}
 	}
 
 	if spec.Filters.Date != nil {

@@ -16,8 +16,8 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/multica-ai/multica/server/internal/storage"
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
+	"github.com/kailonyang/liexiu/server/internal/storage"
+	db "github.com/kailonyang/liexiu/server/pkg/db/generated"
 )
 
 // extContentTypes overrides http.DetectContentType for extensions it gets wrong.
@@ -55,17 +55,16 @@ const maxPreviewTextSize = 2 << 20 // 2 MB
 // ---------------------------------------------------------------------------
 
 type AttachmentResponse struct {
-	ID            string  `json:"id"`
-	WorkspaceID   string  `json:"workspace_id"`
-	IssueID       *string `json:"issue_id"`
-	CommentID     *string `json:"comment_id"`
-	ChatSessionID *string `json:"chat_session_id"`
-	ChatMessageID *string `json:"chat_message_id"`
-	UploaderType  string  `json:"uploader_type"`
-	UploaderID    string  `json:"uploader_id"`
-	Filename      string  `json:"filename"`
-	URL           string  `json:"url"`
-	DownloadURL   string  `json:"download_url"`
+	ID           string  `json:"id"`
+	WorkspaceID  string  `json:"workspace_id"`
+	IssueID      *string `json:"issue_id"`
+	CommentID    *string `json:"comment_id"`
+	TaskID       *string `json:"task_id,omitempty"`
+	UploaderType string  `json:"uploader_type"`
+	UploaderID   string  `json:"uploader_id"`
+	Filename     string  `json:"filename"`
+	URL          string  `json:"url"`
+	DownloadURL  string  `json:"download_url"`
 	// AttachmentDownloadURL is a credential-free URL that forces a
 	// Content-Disposition: attachment across every storage mode, for the
 	// download BUTTON — unlike DownloadURL, which is load-intent and keeps
@@ -77,12 +76,12 @@ type AttachmentResponse struct {
 	// mode; clients fall back to DownloadURL. (MUL follow-up to #6092 / #6713.)
 	AttachmentDownloadURL string `json:"attachment_download_url,omitempty"`
 	// MarkdownURL is the durable, absolute-when-possible URL the client
-	// SHOULD persist into markdown bodies (issue descriptions, comments,
-	// chat messages). It is computed per deployment policy by
+	// SHOULD persist into markdown bodies (issue descriptions and comments).
+	// It is computed per deployment policy by
 	// buildMarkdownURL — preferring the storage URL when it is already a
 	// public, durable absolute URL (public CDN / LocalStorage with
-	// MULTICA_LOCAL_UPLOAD_BASE_URL), and otherwise prefixing
-	// MULTICA_PUBLIC_URL onto the stable per-attachment endpoint that the
+	// LIEXIU_LOCAL_UPLOAD_BASE_URL), and otherwise prefixing
+	// LIEXIU_PUBLIC_URL onto the stable per-attachment endpoint that the
 	// server self-resigns / proxies on every request.
 	//
 	// Why a separate field from URL / DownloadURL:
@@ -185,13 +184,9 @@ func (h *Handler) attachmentToResponse(a db.Attachment, mode attachmentURLMode) 
 		s := uuidToString(a.CommentID)
 		resp.CommentID = &s
 	}
-	if a.ChatSessionID.Valid {
-		s := uuidToString(a.ChatSessionID)
-		resp.ChatSessionID = &s
-	}
-	if a.ChatMessageID.Valid {
-		s := uuidToString(a.ChatMessageID)
-		resp.ChatMessageID = &s
+	if a.TaskID.Valid {
+		s := uuidToString(a.TaskID)
+		resp.TaskID = &s
 	}
 	return resp
 }
@@ -224,11 +219,11 @@ func attachmentDownloadPath(id string) string {
 //     against a private bucket without a CDN domain, raw S3 / R2 /
 //     MinIO, LocalStorage with no `LOCAL_UPLOAD_BASE_URL` — uses the
 //     stable per-attachment endpoint that the server self-signs /
-//     proxies on every request, anchored on `MULTICA_PUBLIC_URL` so the
+//     proxies on every request, anchored on `LIEXIU_PUBLIC_URL` so the
 //     persisted URL keeps working for clients that don't share the
 //     document origin (Desktop / mobile webview).
 //
-//  3. Last-resort fallback (no `MULTICA_PUBLIC_URL` configured): emit
+//  3. Last-resort fallback (no `LIEXIU_PUBLIC_URL` configured): emit
 //     the site-relative path. Web's Next.js rewrite handles this; non-
 //     web clients on a deployment without `PublicURL` configured were
 //     already broken before MUL-3192 and stay broken here, but we
@@ -344,30 +339,6 @@ func (h *Handler) groupAttachments(r *http.Request, commentIDs []pgtype.UUID) ma
 	for _, a := range attachments {
 		cid := uuidToString(a.CommentID)
 		grouped[cid] = append(grouped[cid], h.attachmentToResponse(a, mode))
-	}
-	return grouped
-}
-
-// groupChatMessageAttachments loads attachments for multiple chat messages
-// and groups them by chat_message_id. Mirrors groupAttachments — used so the
-// chat message list can surface attachment metadata to the UI bubble (file
-// cards, click-through download) without an N+1 query per message.
-func (h *Handler) groupChatMessageAttachments(ctx context.Context, workspaceID string, messageIDs []pgtype.UUID) map[string][]AttachmentResponse {
-	if len(messageIDs) == 0 {
-		return nil
-	}
-	attachments, err := h.Queries.ListAttachmentsByChatMessageIDs(ctx, db.ListAttachmentsByChatMessageIDsParams{
-		Column1:     messageIDs,
-		WorkspaceID: parseUUID(workspaceID),
-	})
-	if err != nil {
-		slog.Error("failed to load attachments for chat messages", "error", err)
-		return nil
-	}
-	grouped := make(map[string][]AttachmentResponse, len(messageIDs))
-	for _, a := range attachments {
-		mid := uuidToString(a.ChatMessageID)
-		grouped[mid] = append(grouped[mid], h.attachmentToResponse(a, attachmentURLModeSigned))
 	}
 	return grouped
 }
@@ -489,33 +460,22 @@ func (h *Handler) UploadFile(w http.ResponseWriter, r *http.Request) {
 			}
 			params.CommentID = comment.ID
 		}
-		if chatSessionID := r.FormValue("chat_session_id"); chatSessionID != "" {
-			// Require the member-visible Chat projection as well as private-agent
-			// access. A cached command-only session id must not accept uploads that
-			// could later be attached by an old client and resurrect the session.
-			session, ok := h.gatePublicChatSessionForUser(w, r, userID, workspaceID, chatSessionID)
-			if !ok {
-				return
-			}
-			params.ChatSessionID = session.ID
-		}
-		// task_id upload: an agent producing an image/file for its chat reply.
-		// The row is tagged with the producing task and its chat session so
-		// CompleteTask can bind it to the assistant message it synthesizes.
+		// task_id upload: an agent producing an attachment for its task.
+		// The row remains task-owned until a retained Issue/TaskMessage/Artifact
+		// projection claims it; it has no separate product-specific ownership
+		// path.
 		// Gate: the request must come from a task-scoped token, the form task_id
 		// must equal that token's task, the caller must be that task's agent,
-		// and it must be a chat task (has a chat_session_id).
+		// and the task must belong to the selected workspace.
 		if taskID := r.FormValue("task_id"); taskID != "" {
-			// Authoritative task-token boundary (load-bearing, mirrors
-			// chat_history.go:chatHistorySession). X-Task-ID is only trustworthy
+			// Authoritative task-token boundary. X-Task-ID is only trustworthy
 			// when the auth middleware set it from a task-scoped `mat_` token —
 			// that path is also the ONLY one that stamps X-Actor-Source=task_token
 			// and strips a client-forged X-Task-ID. A normal JWT / `mul_` PAT
 			// leaves X-Actor-Source empty and does NOT strip a forged X-Task-ID,
 			// and resolveActor's fallback will accept a real X-Agent-ID +
 			// X-Task-ID pair. So without this gate a member who learns a task ID
-			// could forge both headers and inject an attachment onto another chat
-			// task's assistant reply — a cross-session/privacy leak.
+			// could forge both headers and inject an attachment onto another task.
 			if r.Header.Get("X-Actor-Source") != "task_token" {
 				writeError(w, http.StatusForbidden, "task_id upload is only available from within an agent task")
 				return
@@ -526,9 +486,7 @@ func (h *Handler) UploadFile(w http.ResponseWriter, r *http.Request) {
 			}
 			// Pin to the run's own task: the middleware-injected X-Task-ID is the
 			// single source of truth for which task this token may act on, so a
-			// run authorized for task A cannot tag an attachment onto task B —
-			// even another chat task of the same agent, whose session may belong
-			// to a different user.
+			// run authorized for task A cannot tag an attachment onto task B.
 			boundTaskID := strings.TrimSpace(r.Header.Get("X-Task-ID"))
 			if boundTaskID == "" || !strings.EqualFold(boundTaskID, strings.TrimSpace(taskID)) {
 				writeError(w, http.StatusForbidden, "task_id must match the request's task token")
@@ -546,14 +504,7 @@ func (h *Handler) UploadFile(w http.ResponseWriter, r *http.Request) {
 				writeError(w, http.StatusForbidden, "task_id upload requires the task's own agent")
 				return
 			}
-			if !task.ChatSessionID.Valid {
-				writeError(w, http.StatusBadRequest, "task_id upload requires a chat task")
-				return
-			}
 			params.TaskID = task.ID
-			// Bind the session too so reads (groupChatMessageAttachments) and
-			// GC classify the row consistently before it gains a message id.
-			params.ChatSessionID = task.ChatSessionID
 		}
 
 		link, err := h.Storage.Upload(r.Context(), key, data, contentType, header.Filename)
@@ -907,7 +858,7 @@ func shouldProxyAttachmentURL(rawURL string) bool {
 		return addr.IsLoopback() ||
 			addr.IsPrivate() ||
 			addr.IsLinkLocalUnicast() ||
-			addr.IsLinkLocalMulticast() ||
+		addr.IsLinkLocalMulticast() ||
 			addr.IsUnspecified()
 	}
 	return false

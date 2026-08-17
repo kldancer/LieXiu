@@ -2,19 +2,19 @@
 
 import { useMemo, useState } from "react";
 import { TriangleAlert } from "lucide-react";
-import type { CommentTriggerPreviewAgent, CommentTriggerOutcome } from "@multica/core/types";
-import { useAgentPresenceDetail } from "@multica/core/agents";
-import { mentionLabelsByTarget } from "@multica/core/issues/comment-trigger-outcomes";
-import { useCurrentWorkspace } from "@multica/core/paths";
-import { ActorAvatar as ActorAvatarBase } from "@multica/ui/components/common/actor-avatar";
-import { AVATAR_SIZE_PX } from "@multica/ui/lib/avatar-size";
+import type { CommentTriggerPreviewAgent, CommentTriggerOutcome } from "@liexiu/core/types";
+import { useAgentPresenceDetail } from "@liexiu/core/agents";
+import { mentionLabelsByTarget } from "@liexiu/core/issues/comment-trigger-outcomes";
+import { useCurrentWorkspace } from "@liexiu/core/paths";
+import { ActorAvatar as ActorAvatarBase } from "@liexiu/ui/components/common/actor-avatar";
+import { AVATAR_SIZE_PX } from "@liexiu/ui/lib/avatar-size";
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
-} from "@multica/ui/components/ui/popover";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@multica/ui/components/ui/tooltip";
-import { cn } from "@multica/ui/lib/utils";
+} from "@liexiu/ui/components/ui/popover";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@liexiu/ui/components/ui/tooltip";
+import { cn } from "@liexiu/ui/lib/utils";
 import { AgentStatusDot } from "../../common/actor-avatar";
 import { useT } from "../../i18n";
 import { blockedReasonLabel, blockedShortReasonLabel } from "../blocked-trigger-copy";
@@ -34,7 +34,7 @@ const MAX_STACK_HEADS = 4;
 
 interface CommentTriggerChipsProps {
   agents: CommentTriggerPreviewAgent[];
-  // Explicit @agent / @squad mentions that will NOT trigger if posted as-is
+  // Explicit @agent mentions that will NOT trigger if posted as-is
   // (MUL-4525 §2). Each renders as a named warning chip so the user sees WHICH
   // target won't run and why, not a silent no-op after sending.
   blocked?: CommentTriggerOutcome[];
@@ -54,8 +54,6 @@ function sourceLabel(source: string, t: IssuesT): string {
       return t(($) => $.comment.trigger_source_issue_assignee);
     case "mention_agent":
       return t(($) => $.comment.trigger_source_mention_agent);
-    case "mention_squad_leader":
-      return t(($) => $.comment.trigger_source_mention_squad_leader);
     default:
       return t(($) => $.comment.trigger_source_unknown);
   }
@@ -63,15 +61,13 @@ function sourceLabel(source: string, t: IssuesT): string {
 
 // Assignee / @mention reasons are intentionally omitted: the header
 // (name · source) already says why they fire, so a reason line there would
-// just restate it. Only the squad-leader link (non-obvious) and the unknown
-// fallback carry information the header doesn't.
+// just restate it. Only the unknown fallback carries information the header
+// doesn't.
 function sourceReason(agent: CommentTriggerPreviewAgent, t: IssuesT): string | null {
   switch (agent.source) {
     case "issue_assignee":
     case "mention_agent":
       return null;
-    case "mention_squad_leader":
-      return t(($) => $.comment.trigger_reason_mention_squad_leader);
     default:
       return agent.reason || t(($) => $.comment.trigger_reason_unknown);
   }

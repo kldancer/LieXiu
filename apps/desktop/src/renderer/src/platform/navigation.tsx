@@ -3,16 +3,15 @@ import {
   NavigationProvider,
   type LinkClickIntent,
   type NavigationAdapter,
-} from "@multica/views/navigation";
-import { useAuthStore } from "@multica/core/auth";
-import { isReservedSlug } from "@multica/core/paths";
+} from "@liexiu/views/navigation";
+import { useAuthStore } from "@liexiu/core/auth";
+import { isReservedSlug } from "@liexiu/core/paths";
 import {
   useTabStore,
   getActiveTab,
   splitTabUrl,
   useActiveTabUrl,
 } from "@/stores/tab-store";
-import { useWindowOverlayStore } from "@/stores/window-overlay-store";
 
 function requireRuntimeAppUrl(scope: string): string {
   const runtimeConfig = window.desktopAPI.runtimeConfig;
@@ -36,48 +35,6 @@ function extractWorkspaceSlug(path: string): string | null {
 }
 
 /**
- * Intercept navigation to "transition" paths — pre-workspace flows that on
- * desktop are rendered as a window-level overlay instead of a tab route.
- * Returns `true` if the navigation was handled (caller should NOT proceed).
- *
- * MUL-4741 note: the old adapter also parked the tab's router at "/" when
- * opening these overlays. Under the session architecture the Coordinator
- * parks the single router automatically whenever `activeWorkspaceSlug` goes
- * null (the zero-workspace flows), and an overlay opened over a still-valid
- * workspace simply covers the mounted tab — no navigation happens at all.
- */
-function tryRouteToOverlay(path: string): boolean {
-  const overlay = useWindowOverlayStore.getState();
-  if (path === "/workspaces/new") {
-    overlay.open({ type: "new-workspace" });
-    return true;
-  }
-  if (path === "/onboarding") {
-    overlay.open({ type: "onboarding" });
-    return true;
-  }
-  if (path === "/invitations") {
-    overlay.open({ type: "invitations" });
-    return true;
-  }
-  if (path.startsWith("/invite/")) {
-    let id = "";
-    try {
-      id = decodeURIComponent(path.slice("/invite/".length));
-    } catch {
-      return true;
-    }
-    if (id) {
-      overlay.open({ type: "invite", invitationId: id });
-      return true;
-    }
-  }
-  // Any other navigation cancels a live overlay.
-  if (overlay.overlay) overlay.close();
-  return false;
-}
-
-/**
  * Intercept pushes that change workspace. Returns `true` if the navigation
  * was delegated to the tab store (caller should NOT proceed).
  *
@@ -97,7 +54,7 @@ function tryRouteToOtherWorkspace(path: string): boolean {
 }
 
 /**
- * Execute a content link (the `multica:navigate` event fired by the shared
+ * Execute a content link (the `liexiu:navigate` event fired by the shared
  * editor/markdown link handler) with the disposition the click resolved to:
  * a plain click navigates in place — the same thing a plain click means on
  * every other internal link — and modifier clicks open a background or
@@ -190,7 +147,6 @@ export function DesktopNavigationProvider({
           useAuthStore.getState().logout();
           return;
         }
-        if (tryRouteToOverlay(path)) return;
         const store = useTabStore.getState();
         const active = getActiveTab(store);
         if (active && active.url === path) return;
@@ -199,7 +155,6 @@ export function DesktopNavigationProvider({
         store.navigateActiveSession(path);
       },
       replace: (path: string) => {
-        if (tryRouteToOverlay(path)) return;
         if (tryRouteToOtherWorkspace(path)) return;
         useTabStore.getState().navigateActiveSession(path, { replace: true });
       },

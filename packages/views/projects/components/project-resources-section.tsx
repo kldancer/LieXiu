@@ -18,33 +18,33 @@ import {
   useCreateProjectResource,
   useDeleteProjectResource,
   useUpdateProjectResource,
-} from "@multica/core/projects";
-import { useWorkspaceId } from "@multica/core/hooks";
-import { useCurrentWorkspace } from "@multica/core/paths";
+} from "@liexiu/core/projects";
+import { useWorkspaceId } from "@liexiu/core/hooks";
+import { useCurrentWorkspace } from "@liexiu/core/paths";
 import type {
   GithubRepoResourceRef,
   LocalDirectoryExecutionMode,
   LocalDirectoryResourceRef,
   ProjectResource,
-} from "@multica/core/types";
+} from "@liexiu/core/types";
 import {
   MIN_LOCAL_WORKTREE_CLI_VERSION,
   daemonSupportsLocalWorktree,
   readRuntimeCliVersion,
   runtimeListOptions,
-} from "@multica/core/runtimes";
-import { Badge } from "@multica/ui/components/ui/badge";
-import { Button } from "@multica/ui/components/ui/button";
+} from "@liexiu/core/runtimes";
+import { Badge } from "@liexiu/ui/components/ui/badge";
+import { Button } from "@liexiu/ui/components/ui/button";
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
-} from "@multica/ui/components/ui/popover";
+} from "@liexiu/ui/components/ui/popover";
 import {
   Tooltip,
   TooltipTrigger,
   TooltipContent,
-} from "@multica/ui/components/ui/tooltip";
+} from "@liexiu/ui/components/ui/tooltip";
 import {
   isDesktopShell,
   pickDirectory,
@@ -63,7 +63,7 @@ import { githubShortLabel } from "../../common/github-url";
 //
 // Type-dispatched at the row + add-flow level. Add a new resource_type by:
 //   (1) extending the server validator
-//   (2) extending ProjectResourceType in @multica/core/types
+//   (2) extending ProjectResourceType in @liexiu/core/types
 //   (3) adding a render case in ResourceRow and an add-control here
 function isGithubRef(r: ProjectResource): r is ProjectResource & {
   resource_ref: GithubRepoResourceRef;

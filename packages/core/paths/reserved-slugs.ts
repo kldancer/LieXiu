@@ -33,13 +33,13 @@ export const RESERVED_SLUGS: ReadonlySet<string> = new Set([
   "onboarding",
 
   // Platform / marketing routes (current + likely-future)
-  // `multica` is reserved as the brand name to block impersonation workspaces.
+  // `liexiu` is reserved as the brand name to block impersonation workspaces.
   // `www`, `new`, `home`, `homepage`, `dashboard` are confusables or
   // likely-future global landing/entry routes; `homepage` matches the existing
   // `/homepage` landing variant in apps/web.
   "api",
   "admin",
-  "multica",
+  "liexiu",
   "www",
   "new",
   "home",
@@ -64,10 +64,9 @@ export const RESERVED_SLUGS: ReadonlySet<string> = new Set([
   "download",
   "usecases",
 
-  // Account / billing (likely-future global routes in the avatar menu)
+  // Account routes in the avatar menu
   "profile",
   "account",
-  "billing",
   "notifications",
   "search",
   "members",
@@ -79,10 +78,7 @@ export const RESERVED_SLUGS: ReadonlySet<string> = new Set([
   // page; `teams` is reserved for future team management.
   "issues",
   "projects",
-  "autopilots",
   "agents",
-  "squads",
-  "inbox",
   "my-issues",
   "usage",
   "runtimes",

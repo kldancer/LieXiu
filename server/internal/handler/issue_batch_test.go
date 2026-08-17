@@ -342,12 +342,10 @@ func TestBatchChildDoneCrossStage_OneComment(t *testing.T) {
 		if strings.Contains(content, "is next") || strings.Contains(content, "(next)") {
 			t.Errorf("comment must not carry a stale next-stage instruction, got: %s", content)
 		}
-		// Exactly one wake, pinned to the final comment.
-		if got := countPendingTasksForAgent(t, parentID, agentID); got != 1 {
-			t.Fatalf("expected exactly 1 pending parent task, got %d", got)
-		}
-		if trig, want := triggerCommentIDForAgentTask(t, parentID, agentID), systemCommentIDOn(t, parentID); trig != want {
-			t.Errorf("parent wake pinned to %s, want the final comment %s", trig, want)
+		// Child-done is a dependency fact only; execution requires an explicit
+		// Mission Role+Assignment.
+		if got := countPendingTasksForAgent(t, parentID, agentID); got != 0 {
+			t.Fatalf("expected no pending parent task, got %d", got)
 		}
 	}
 

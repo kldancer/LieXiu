@@ -1,14 +1,14 @@
 "use client";
 
-import type { TaskAttribution } from "@multica/core/types";
-import { Badge } from "@multica/ui/components/ui/badge";
-import { ActorAvatar } from "@multica/ui/components/common/actor-avatar";
+import type { TaskAttribution } from "@liexiu/core/types";
+import { Badge } from "@liexiu/ui/components/ui/badge";
+import { ActorAvatar } from "@liexiu/ui/components/common/actor-avatar";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
-} from "@multica/ui/components/ui/tooltip";
-import { cn } from "@multica/ui/lib/utils";
+} from "@liexiu/ui/components/ui/tooltip";
+import { cn } from "@liexiu/ui/lib/utils";
 import { useT } from "../../i18n";
 
 /** First + last initial, for the avatar fallback when there's no picture. */
@@ -75,12 +75,6 @@ export function AttributionBadge({
       break;
     case "comment_source":
       sourceLabel = t(($) => $.execution_log.attribution.source_comment_source);
-      break;
-    case "trigger_owner":
-      sourceLabel = t(($) => $.execution_log.attribution.source_trigger_owner);
-      break;
-    case "rule_owner":
-      sourceLabel = t(($) => $.execution_log.attribution.source_rule_owner);
       break;
     case "owner_fallback":
       sourceLabel = t(($) => $.execution_log.attribution.source_owner_fallback);

@@ -12,19 +12,19 @@ import {
   EMPTY_AGENT_DRAFT,
   isDraftDescriptionWithinLimit,
   type AgentDraft,
-} from "@multica/core/agents";
-import { useAuthStore } from "@multica/core/auth";
-import { useWorkspaceId } from "@multica/core/hooks";
-import { isRuntimeUsableForUser, runtimeListOptions } from "@multica/core/runtimes";
+} from "@liexiu/core/agents";
+import { useAuthStore } from "@liexiu/core/auth";
+import { useWorkspaceId } from "@liexiu/core/hooks";
+import { isRuntimeUsableForUser, runtimeListOptions } from "@liexiu/core/runtimes";
 import type {
   MemberWithUser,
   RuntimeDevice,
   SkillSummary,
-} from "@multica/core/types";
+} from "@liexiu/core/types";
 import {
   memberListOptions,
   skillListOptions,
-} from "@multica/core/workspace/queries";
+} from "@liexiu/core/workspace/queries";
 
 interface CreateAgentForm {
   draft: AgentDraft;
@@ -60,17 +60,14 @@ const IMMEDIATE_RUNTIME_SEED: RuntimeSeed = { ready: true, runtimeId: "" };
  * The state every agent-creation route shares: one draft plus the workspace
  * catalogs the form renders from.
  *
- * The draft itself is plain component state here. Making it survive navigation
- * is the caller's job, because the two routes answer it differently: the AI
- * route's configuration belongs to a conversation and lives on the server, the
- * manual route's has nothing to hang off and persists locally.
+ * The draft itself is plain component state here. The manual route owns its
+ * local draft persistence and duplicate seeding around this form.
  */
 export function useCreateAgentForm(options?: {
   /**
    * Where the runtime comes from for a draft that already exists somewhere. A
-   * resumed builder conversation runs on the runtime its carrier is bound to,
-   * and the picker must show THAT — showing the first usable one instead is how
-   * MUL-5163 presented runtime A while every message ran on B.
+   * A caller may seed a draft from an existing agent; the picker must preserve
+   * that runtime instead of replacing it with the first usable one.
    */
   runtimeSeed?: RuntimeSeed;
 }): CreateAgentForm {

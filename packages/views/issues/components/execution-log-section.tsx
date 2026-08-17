@@ -4,16 +4,16 @@ import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { ChevronRight, Loader2, RotateCcw, Square } from "lucide-react";
 import { toast } from "sonner";
-import { api, dispatchReasonCode } from "@multica/core/api";
-import { issueKeys } from "@multica/core/issues/queries";
-import { useCustomPricingStore } from "@multica/core/runtimes/custom-pricing-store";
-import type { AgentTask } from "@multica/core/types";
+import { api, dispatchReasonCode } from "@liexiu/core/api";
+import { issueKeys } from "@liexiu/core/issues/queries";
+import { useCustomPricingStore } from "@liexiu/core/runtimes/custom-pricing-store";
+import type { AgentTask } from "@liexiu/core/types";
 import { useTimeAgo } from "../../i18n";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
-} from "@multica/ui/components/ui/tooltip";
+} from "@liexiu/ui/components/ui/tooltip";
 import { ActorAvatar } from "../../common/actor-avatar";
 import { formatDuration } from "../../agents/components/agent-activity-hover-content";
 import { TranscriptButton } from "../../common/task-transcript";
@@ -471,7 +471,7 @@ function PastRow({ task, issueId }: { task: AgentTask; issueId: string }) {
   // task.id targets this specific row's agent — without it, the rerun
   // endpoint would fall back to the issue's current assignee and the
   // wrong agent would fire on rows whose agent has since been displaced
-  // (e.g. reassignment, squad worker, or a one-off @-mention agent).
+  // (e.g. reassignment or a one-off @-mention agent).
   const canRetry = task.status === "failed" || task.status === "cancelled";
 
   const handleRetry = async () => {

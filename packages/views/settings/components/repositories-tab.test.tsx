@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { I18nProvider } from "@multica/core/i18n/react";
+import { I18nProvider } from "@liexiu/core/i18n/react";
 import enCommon from "../../locales/en/common.json";
 import enSettings from "../../locales/en/settings.json";
 
@@ -16,7 +16,7 @@ const workspaceRef = vi.hoisted(() => ({
     id: "workspace-1",
     name: "Test Workspace",
     slug: "test-workspace",
-    repos: [{ url: "https://github.com/multica-ai/multica" }] as {
+    repos: [{ url: "https://github.com/kailonyang/liexiu" }] as {
       url: string;
       description?: string;
     }[],
@@ -83,27 +83,27 @@ vi.mock("@tanstack/react-query", () => ({
   infiniteQueryOptions: <T,>(options: T) => options,
 }));
 
-vi.mock("@multica/core/hooks", () => ({
+vi.mock("@liexiu/core/hooks", () => ({
   useWorkspaceId: () => "workspace-1",
 }));
 
-vi.mock("@multica/core/paths", () => ({
+vi.mock("@liexiu/core/paths", () => ({
   useCurrentWorkspace: () => workspaceRef.current,
 }));
 
-vi.mock("@multica/core/workspace/queries", () => ({
+vi.mock("@liexiu/core/workspace/queries", () => ({
   memberListOptions: () => ({ queryKey: ["members"], queryFn: vi.fn() }),
   workspaceKeys: { list: () => ["workspaces"] },
 }));
 
-vi.mock("@multica/core/api", () => ({
+vi.mock("@liexiu/core/api", () => ({
   api: {
     updateWorkspace: mockUpdateWorkspace,
     getGitHubConnectURL: mockGetGitHubConnectURL,
   },
 }));
 
-vi.mock("@multica/core/auth", () => {
+vi.mock("@liexiu/core/auth", () => {
   const useAuthStore = Object.assign(
     (selector?: (state: { user: { id: string } }) => unknown) =>
       selector ? selector({ user: { id: "user-1" } }) : { user: { id: "user-1" } },
@@ -149,7 +149,7 @@ describe("RepositoriesTab — automatic updates", () => {
       id: "workspace-1",
       name: "Test Workspace",
       slug: "test-workspace",
-      repos: [{ url: "https://github.com/multica-ai/multica" }],
+      repos: [{ url: "https://github.com/kailonyang/liexiu" }],
     };
     membersRef.current = [{ user_id: "user-1", role: "owner" }];
     githubRef.current = {
@@ -188,7 +188,7 @@ describe("RepositoriesTab — automatic updates", () => {
 
     const inputs = screen.getAllByRole("textbox") as HTMLInputElement[];
     expect(inputs).toHaveLength(2);
-    expect(inputs[0]!.value).toBe("https://github.com/multica-ai/multica");
+    expect(inputs[0]!.value).toBe("https://github.com/kailonyang/liexiu");
     expect(screen.queryByRole("button", { name: /^Save$/ })).toBeNull();
   });
 
@@ -198,12 +198,12 @@ describe("RepositoriesTab — automatic updates", () => {
 
     const urlInput = screen.getAllByRole("textbox")[0]!;
     await user.clear(urlInput);
-    await user.type(urlInput, "https://github.com/multica-ai/edited");
+    await user.type(urlInput, "https://github.com/kailonyang/edited");
     await user.tab();
 
     await waitFor(() => {
       expect(mockUpdateWorkspace).toHaveBeenCalledWith("workspace-1", {
-        repos: [{ url: "https://github.com/multica-ai/edited" }],
+        repos: [{ url: "https://github.com/kailonyang/edited" }],
       });
       expect(mockToastSuccess).toHaveBeenCalledWith("Repositories saved", {
         id: "settings-auto-save",
@@ -233,14 +233,14 @@ describe("RepositoriesTab — automatic updates", () => {
     expect(mockUpdateWorkspace).not.toHaveBeenCalled();
 
     const newUrlInput = screen.getAllByRole("textbox")[2]!;
-    await user.type(newUrlInput, "git@github.com:multica-ai/second.git");
+    await user.type(newUrlInput, "git@github.com:kailonyang/second.git");
     await user.tab();
 
     await waitFor(() => {
       expect(mockUpdateWorkspace).toHaveBeenCalledWith("workspace-1", {
         repos: [
-          { url: "https://github.com/multica-ai/multica" },
-          { url: "git@github.com:multica-ai/second.git" },
+          { url: "https://github.com/kailonyang/liexiu" },
+          { url: "git@github.com:kailonyang/second.git" },
         ],
       });
     });
@@ -268,14 +268,14 @@ describe("RepositoriesTab — automatic updates", () => {
 
     const urlInput = screen.getAllByRole("textbox")[0] as HTMLInputElement;
     await user.clear(urlInput);
-    await user.type(urlInput, "git@github.com:multica-ai/multica.git");
+    await user.type(urlInput, "git@github.com:kailonyang/liexiu.git");
     expect(urlInput.type).toBe("text");
     expect(urlInput.validity.valid).toBe(true);
     await user.tab();
 
     await waitFor(() => {
       expect(mockUpdateWorkspace).toHaveBeenCalledWith("workspace-1", {
-        repos: [{ url: "git@github.com:multica-ai/multica.git" }],
+        repos: [{ url: "git@github.com:kailonyang/liexiu.git" }],
       });
     });
   });
@@ -283,7 +283,7 @@ describe("RepositoriesTab — automatic updates", () => {
   it("includes the description in the automatic update payload", async () => {
     workspaceRef.current = {
       ...workspaceRef.current,
-      repos: [{ url: "https://github.com/multica-ai/multica", description: "Main app" }],
+      repos: [{ url: "https://github.com/kailonyang/liexiu", description: "Main app" }],
     };
     const user = setupUser();
     render(<RepositoriesTab />, { wrapper: I18nWrapper });
@@ -298,7 +298,7 @@ describe("RepositoriesTab — automatic updates", () => {
       expect(mockUpdateWorkspace).toHaveBeenCalledWith("workspace-1", {
         repos: [
           {
-            url: "https://github.com/multica-ai/multica",
+            url: "https://github.com/kailonyang/liexiu",
             description: "Updated description",
           },
         ],
@@ -318,7 +318,7 @@ describe("RepositoriesTab — automatic updates", () => {
     const user = setupUser();
     mockGetGitHubConnectURL.mockResolvedValue({
       configured: true,
-      url: "https://github.com/apps/multica/installations/new",
+      url: "https://github.com/apps/liexiu/installations/new",
     });
     const open = vi.spyOn(window, "open").mockImplementation(() => null);
     render(<RepositoriesTab />, { wrapper: I18nWrapper });
@@ -331,7 +331,7 @@ describe("RepositoriesTab — automatic updates", () => {
         "repositories",
       );
       expect(open).toHaveBeenCalledWith(
-        "https://github.com/apps/multica/installations/new",
+        "https://github.com/apps/liexiu/installations/new",
         "_blank",
         "noopener",
       );
@@ -359,10 +359,10 @@ describe("RepositoriesTab — automatic updates", () => {
   it("imports selected GitHub repositories and deduplicates HTTPS against SSH", async () => {
     workspaceRef.current = {
       ...workspaceRef.current,
-      repos: [{ url: "git@github.com:multica-ai/multica.git" }],
+      repos: [{ url: "git@github.com:kailonyang/liexiu.git" }],
     };
     githubRef.current = {
-      installations: [{ id: "installation-row-1", account_login: "multica-ai" }],
+      installations: [{ id: "installation-row-1", account_login: "kailonyang" }],
       configured: true,
       repository_browse_configured: true,
       can_manage: true,
@@ -370,9 +370,9 @@ describe("RepositoriesTab — automatic updates", () => {
     githubRepositoriesRef.current = [
       {
         id: 1,
-        full_name: "multica-ai/multica",
-        html_url: "https://github.com/multica-ai/multica",
-        clone_url: "https://github.com/multica-ai/multica.git",
+        full_name: "kailonyang/liexiu",
+        html_url: "https://github.com/kailonyang/liexiu",
+        clone_url: "https://github.com/kailonyang/liexiu.git",
         description: "Existing repository",
         private: false,
         archived: false,
@@ -380,9 +380,9 @@ describe("RepositoriesTab — automatic updates", () => {
       },
       {
         id: 2,
-        full_name: "multica-ai/console",
-        html_url: "https://github.com/multica-ai/console",
-        clone_url: "https://github.com/multica-ai/console.git",
+        full_name: "kailonyang/console",
+        html_url: "https://github.com/kailonyang/console",
+        clone_url: "https://github.com/kailonyang/console.git",
         description: "Console app",
         private: true,
         archived: false,
@@ -408,9 +408,9 @@ describe("RepositoriesTab — automatic updates", () => {
     await waitFor(() => {
       expect(mockUpdateWorkspace).toHaveBeenCalledWith("workspace-1", {
         repos: [
-          { url: "git@github.com:multica-ai/multica.git" },
+          { url: "git@github.com:kailonyang/liexiu.git" },
           {
-            url: "https://github.com/multica-ai/console.git",
+            url: "https://github.com/kailonyang/console.git",
             description: "Console app",
           },
         ],
@@ -429,7 +429,7 @@ describe("RepositoriesTab — automatic updates", () => {
 
   it("opens the picker after returning from a GitHub connection", async () => {
     githubRef.current = {
-      installations: [{ id: "installation-row-1", account_login: "multica-ai" }],
+      installations: [{ id: "installation-row-1", account_login: "kailonyang" }],
       configured: true,
       repository_browse_configured: true,
       can_manage: true,

@@ -9,9 +9,9 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/multica-ai/multica/server/internal/events"
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
-	"github.com/multica-ai/multica/server/pkg/taskfailure"
+	"github.com/kailonyang/liexiu/server/internal/events"
+	db "github.com/kailonyang/liexiu/server/pkg/db/generated"
+	"github.com/kailonyang/liexiu/server/pkg/taskfailure"
 )
 
 // mockRow implements pgx.Row, returning either a scanned task or pgx.ErrNoRows.
@@ -30,7 +30,6 @@ func (r *mockRow) Scan(dest ...any) error {
 		&t.DispatchedAt, &t.StartedAt, &t.CompletedAt, &t.Result,
 		&t.Error, &t.CreatedAt, &t.Context, &t.RuntimeID,
 		&t.SessionID, &t.WorkDir, &t.TriggerCommentID,
-		&t.ChatSessionID, &t.AutopilotRunID,
 	}
 	for i, p := range ptrs {
 		if i >= len(dest) {
@@ -213,7 +212,7 @@ func TestProviderNetworkRetrySchedule(t *testing.T) {
 	}
 
 	// Eligibility across the whole chain. mkTask has an issue link and no
-	// autopilot run so only the reason/attempt/ceiling gate is exercised.
+	// orchestration lineage so only the reason/attempt/ceiling gate is exercised.
 	mkTask := func(attempt, max int32) db.AgentTaskQueue {
 		return db.AgentTaskQueue{
 			Attempt:     attempt,

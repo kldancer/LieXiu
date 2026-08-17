@@ -1,5 +1,4 @@
 import type { Label } from "./label";
-import type { IssuePropertyValues } from "./property";
 
 export type IssueStatus =
   | "backlog"
@@ -12,16 +11,7 @@ export type IssueStatus =
 
 export type IssuePriority = "urgent" | "high" | "medium" | "low" | "none";
 
-export type IssueAssigneeType = "member" | "agent" | "squad";
-
-export interface IssueReaction {
-  id: string;
-  issue_id: string;
-  actor_type: string;
-  actor_id: string;
-  emoji: string;
-  created_at: string;
-}
+export type IssueAssigneeType = "member" | "agent";
 
 /**
  * Per-issue metadata is a flat KV map agents use to record pipeline state
@@ -54,15 +44,11 @@ export interface Issue {
   // finishes; see server/internal/handler/issue_child_done.go.
   stage: number | null;
   // Calendar days as date-only "YYYY-MM-DD" (no time, no timezone). Use the
-  // helpers in @multica/core/issues/date to format/compare — never `new Date()`
+  // helpers in @liexiu/core/issues/date to format/compare — never `new Date()`
   // + local formatting, which shifts the day by the viewer's offset.
   start_date: string | null;
   due_date: string | null;
   metadata: IssueMetadata;
-  // Custom property values keyed by property definition id. Always present
-  // in responses (empty object when unset), mirroring `metadata`.
-  properties: IssuePropertyValues;
-  reactions?: IssueReaction[];
   labels?: Label[];
   created_at: string;
   updated_at: string;

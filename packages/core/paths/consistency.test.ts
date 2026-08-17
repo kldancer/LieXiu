@@ -20,18 +20,12 @@ describe("paths.workspace() shape", () => {
         "usage",
         "issues",
         "projects",
-        "autopilots",
         "agents",
         "newAgent",
         "newAgentManual",
-        "newAgentAi",
-        "chat",
-        "squads",
-        "inbox",
         "myIssues",
         "runtimes",
         "skills",
-        "squads",
         "settings",
       ]),
     );
@@ -45,18 +39,12 @@ describe("paths.workspace() shape", () => {
       ["usage", "usage"],
       ["issues", "issues"],
       ["projects", "projects"],
-      ["autopilots", "autopilots"],
       ["agents", "agents"],
       ["newAgent", "agents/new"],
       ["newAgentManual", "agents/new/manual"],
-      ["newAgentAi", "agents/new/ai"],
-      ["chat", "chat"],
-      ["squads", "squads"],
-      ["inbox", "inbox"],
       ["myIssues", "my-issues"],
       ["runtimes", "runtimes"],
       ["skills", "skills"],
-      ["squads", "squads"],
       ["settings", "settings"],
     ];
     const wsAsAny = ws as unknown as Record<string, () => string>;
@@ -79,10 +67,6 @@ describe("global path / reserved slug consistency", () => {
   const globalPrefixes = [
     "/login",
     "/logout",
-    "/signup",
-    "/workspaces/",
-    "/invite/",
-    "/auth/",
   ];
 
   it("isGlobalPath agrees with the canonical global prefix list", () => {

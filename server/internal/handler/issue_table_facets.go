@@ -2,24 +2,19 @@ package handler
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
 	"sort"
 	"strings"
 
-	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/multica-ai/multica/server/internal/logger"
-	"github.com/multica-ai/multica/server/internal/util"
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
+	"github.com/kailonyang/liexiu/server/internal/logger"
+	"github.com/kailonyang/liexiu/server/internal/util"
 )
 
-// The workspace property catalog is capped at 20 active definitions. Six
-// built-in dimensions plus that catalog fit under this guard with headroom,
-// while preventing a single request from scheduling hundreds of sequential
-// aggregation scans inside one snapshot transaction.
+// Prevent a single request from scheduling hundreds of sequential aggregation
+// scans inside one snapshot transaction.
 const issueTableMaxFacets = 32
 
 type issueTableFacetValueResponse struct {
@@ -28,9 +23,8 @@ type issueTableFacetValueResponse struct {
 }
 
 type issueTableFacetResponse struct {
-	Kind       string                         `json:"kind"`
-	PropertyID string                         `json:"property_id,omitempty"`
-	Values     []issueTableFacetValueResponse `json:"values"`
+	Kind   string                         `json:"kind"`
+	Values []issueTableFacetValueResponse `json:"values"`
 }
 
 type issueTableFacetsResponse struct {
@@ -42,12 +36,6 @@ type issueTableFacetsResponse struct {
 func issueTableQueryWithoutFacet(input issueTableQuerySpec, facet issueTableFacetSpec) issueTableQuerySpec {
 	output := input
 	output.Filters = input.Filters
-	if input.Filters.Properties != nil {
-		output.Filters.Properties = make(map[string][]string, len(input.Filters.Properties))
-		for propertyID, values := range input.Filters.Properties {
-			output.Filters.Properties[propertyID] = append([]string(nil), values...)
-		}
-	}
 
 	switch facet.Kind {
 	case "status":
@@ -64,8 +52,6 @@ func issueTableQueryWithoutFacet(input issueTableQuerySpec, facet issueTableFace
 		output.Filters.IncludeNoProject = false
 	case "label":
 		output.Filters.LabelIDs = nil
-	case "property":
-		delete(output.Filters.Properties, facet.PropertyID)
 	case "working_agents":
 		// Disjunctive like every other facet: drop this facet's own dimension so
 		// the answer is "who would you see if you turned the agents-working
@@ -78,9 +64,6 @@ func issueTableQueryWithoutFacet(input issueTableQuerySpec, facet issueTableFace
 }
 
 func issueTableFacetIdentity(facet issueTableFacetSpec) string {
-	if facet.Kind == "property" {
-		return "property:" + facet.PropertyID
-	}
 	return facet.Kind
 }
 
@@ -124,9 +107,8 @@ func (h *Handler) issueTableBaseFacetQuery(
 		valueCases = append(valueCases, fmt.Sprintf("WHEN GROUPING(%s) = 0 THEN (%s)::text", expression, expression))
 		groupingSets = append(groupingSets, "("+expression+")")
 		responses[identity] = issueTableFacetResponse{
-			Kind:       facet.Kind,
-			PropertyID: facet.PropertyID,
-			Values:     []issueTableFacetValueResponse{},
+			Kind:   facet.Kind,
+			Values: []issueTableFacetValueResponse{},
 		}
 	}
 	if includeTotal {
@@ -182,7 +164,7 @@ GROUP BY GROUPING SETS (%s)`, strings.Join(markerCases, " "), strings.Join(value
 }
 
 func (h *Handler) issueTableFacetQuery(w http.ResponseWriter, r *http.Request, requestQuery issueTableQuerySpec, facet issueTableFacetSpec) (issueTableFacetResponse, bool) {
-	response := issueTableFacetResponse{Kind: facet.Kind, PropertyID: facet.PropertyID, Values: []issueTableFacetValueResponse{}}
+	response := issueTableFacetResponse{Kind: facet.Kind, Values: []issueTableFacetValueResponse{}}
 	compiled, ok := h.compileIssueTableQuery(w, r, issueTableQueryWithoutFacet(requestQuery, facet))
 	if !ok {
 		return response, false
@@ -205,8 +187,8 @@ func (h *Handler) issueTableFacetQuery(w http.ResponseWriter, r *http.Request, r
 	case "working_agents":
 		// One row per agent currently running issue work inside THIS surface,
 		// with its running-task count. Same predicate as
-		// ListWorkspaceWorkingAgents with type=issue (chat > autopilot > issue
-		// precedence, user-authored non-archived agents only), but the issue set
+		// ListWorkspaceWorkingAgents with type=issue (non-archived agents only),
+		// but the issue set
 		// comes from the surface's own compiled scope + filters instead of a
 		// second, independent workspace-wide definition. That is what keeps the
 		// header chip's count equal to the rows clicking it leaves (MUL-5525).
@@ -215,47 +197,9 @@ FROM issue i
 JOIN agent_task_queue atq ON atq.issue_id = i.id
 JOIN agent a ON a.id = atq.agent_id AND a.workspace_id = i.workspace_id
 WHERE %s
-  AND a.kind = 'user'
   AND a.archived_at IS NULL
   AND atq.status = 'running'
-  AND atq.chat_session_id IS NULL
-  AND atq.autopilot_run_id IS NULL
 GROUP BY a.id`, compiled.where)
-	case "property":
-		propertyID, err := util.ParseUUID(facet.PropertyID)
-		if err != nil {
-			writeError(w, http.StatusBadRequest, "invalid facets.property_id")
-			return response, false
-		}
-		property, err := h.Queries.GetIssueProperty(r.Context(), db.GetIssuePropertyParams{
-			ID:          propertyID,
-			WorkspaceID: compiled.workspaceID,
-		})
-		if err != nil {
-			if errors.Is(err, pgx.ErrNoRows) {
-				writeIssueTableUnsupportedGroup(w, "property_not_found", "The faceted property no longer exists.")
-				return response, false
-			}
-			slog.Warn("resolve table facet property failed", append(logger.RequestAttrs(r), "error", err)...)
-			writeIssueTableQueryFailure(w, r, "failed to resolve table facet")
-			return response, false
-		}
-		if property.ArchivedAt.Valid {
-			writeIssueTableUnsupportedGroup(w, "property_archived", "The faceted property is archived.")
-			return response, false
-		}
-		propertyKey := "'" + util.UUIDToString(property.ID) + "'"
-		switch property.Type {
-		case "select":
-			query = fmt.Sprintf(`SELECT i.properties ->> %s, COUNT(*)::bigint FROM issue i WHERE %s AND jsonb_typeof(i.properties -> %s) = 'string' GROUP BY 1`, propertyKey, compiled.where, propertyKey)
-		case "multi_select":
-			query = fmt.Sprintf(`SELECT property_value.value, COUNT(DISTINCT i.id)::bigint FROM issue i JOIN LATERAL jsonb_array_elements_text(CASE WHEN jsonb_typeof(i.properties -> %s) = 'array' THEN i.properties -> %s ELSE '[]'::jsonb END) AS property_value(value) ON TRUE WHERE %s GROUP BY property_value.value`, propertyKey, propertyKey, compiled.where)
-		case "checkbox":
-			query = fmt.Sprintf(`SELECT i.properties ->> %s, COUNT(*)::bigint FROM issue i WHERE %s AND jsonb_typeof(i.properties -> %s) = 'boolean' GROUP BY 1`, propertyKey, compiled.where, propertyKey)
-		default:
-			writeIssueTableUnsupportedGroup(w, "property_type_unsupported", "This property type cannot be used as a filter facet.")
-			return response, false
-		}
 	default:
 		writeError(w, http.StatusBadRequest, "invalid facets.kind")
 		return response, false
@@ -365,7 +309,6 @@ func (h *Handler) ListIssueTableFacets(w http.ResponseWriter, r *http.Request) {
 	normalizedFacets := make([]issueTableFacetSpec, len(request.Facets))
 	for index, facet := range request.Facets {
 		facet.Kind = strings.TrimSpace(facet.Kind)
-		facet.PropertyID = strings.TrimSpace(facet.PropertyID)
 		identity := issueTableFacetIdentity(facet)
 		if _, exists := seen[identity]; exists {
 			writeError(w, http.StatusBadRequest, "duplicate table facet")

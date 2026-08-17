@@ -27,9 +27,9 @@ export function openExternal(
     void desktopAPI.openExternal(url);
     return;
   }
-  // Async-created Stripe URLs are commonly returned after the original click
-  // task has finished, so opening a new tab can be blocked as a popup. The
-  // same-tab option keeps Checkout/Portal reliable on web while Electron still
+  // URLs returned after an async task may arrive after the original click, so
+  // opening a new tab can be blocked as a popup. The same-tab option remains
+  // reliable on web while Electron still
   // hands the URL to the system browser above.
   if (options?.webTarget === "same-tab") {
     window.location.assign(url);

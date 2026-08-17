@@ -64,17 +64,9 @@ describe("resolveTabPresentation — direct resources", () => {
       visual: { kind: "actor", actorType: "member", id: "m1" },
       title: { kind: "text", text: "Ada" },
     });
-    expect(present("/acme/squads/sq1")).toEqual({
-      visual: { kind: "actor", actorType: "squad", id: "sq1" },
-      title: { kind: "tab", tabKey: "squad" },
-    });
   });
 
-  it("autopilot / skill / machine / runtime use a type icon + name", () => {
-    expect(present("/acme/autopilots/a1", { autopilot: { title: "Nightly" } })).toEqual({
-      visual: { kind: "icon", icon: "Zap" },
-      title: { kind: "text", text: "Nightly" },
-    });
+  it("skill / machine / runtime use a type icon + name", () => {
     expect(present("/acme/skills/s1", { skill: { name: "Deploy" } })).toEqual({
       visual: { kind: "icon", icon: "BookOpenText" },
       title: { kind: "text", text: "Deploy" },
@@ -127,62 +119,6 @@ describe("resolveTabPresentation — direct resources", () => {
     expect(present("/acme/projects/p1").visual).toEqual({
       kind: "project-icon",
       icon: null,
-    });
-  });
-});
-
-describe("resolveTabPresentation — containers keep their icon, title tracks selection", () => {
-  it("inbox: icon is always Inbox; title is the selected item or Inbox", () => {
-    expect(present("/acme/inbox")).toEqual({
-      visual: { kind: "icon", icon: "Inbox" },
-      title: { kind: "nav", navKey: "inbox" },
-    });
-    // Selected but not yet resolved → still Inbox, never a stale title.
-    expect(present("/acme/inbox?issue=MUL-9")).toEqual({
-      visual: { kind: "icon", icon: "Inbox" },
-      title: { kind: "nav", navKey: "inbox" },
-    });
-    // Selected issue → Inbox icon + issue title (distinct from a direct issue,
-    // which would show a status icon).
-    expect(
-      present("/acme/inbox?issue=MUL-9", {
-        inboxSelection: { kind: "issue", identifier: "MUL-9", title: "Bug" },
-      }),
-    ).toEqual({
-      visual: { kind: "icon", icon: "Inbox" },
-      title: { kind: "text", text: "MUL-9: Bug" },
-    });
-    // Selected non-issue notification → its display title.
-    expect(
-      present("/acme/inbox?issue=n1", {
-        inboxSelection: { kind: "item", title: "Quick create failed" },
-      }),
-    ).toEqual({
-      visual: { kind: "icon", icon: "Inbox" },
-      title: { kind: "text", text: "Quick create failed" },
-    });
-  });
-
-  it("chat: icon is always MessageSquare; title is the session or Chat", () => {
-    expect(present("/acme/chat")).toEqual({
-      visual: { kind: "icon", icon: "MessageSquare" },
-      title: { kind: "nav", navKey: "chat" },
-    });
-    // New-chat draft (?agent=) has no session yet → stays Chat.
-    expect(present("/acme/chat?agent=ag1")).toEqual({
-      visual: { kind: "icon", icon: "MessageSquare" },
-      title: { kind: "nav", navKey: "chat" },
-    });
-    expect(
-      present("/acme/chat?session=s1", { chatSessionTitle: "Deploy plan" }),
-    ).toEqual({
-      visual: { kind: "icon", icon: "MessageSquare" },
-      title: { kind: "text", text: "Deploy plan" },
-    });
-    // Selected session still loading → Chat, not empty.
-    expect(present("/acme/chat?session=s1")).toEqual({
-      visual: { kind: "icon", icon: "MessageSquare" },
-      title: { kind: "nav", navKey: "chat" },
     });
   });
 });

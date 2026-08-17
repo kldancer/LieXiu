@@ -31,8 +31,6 @@ function makeAttachment(id: string): Attachment {
     workspace_id: "ws-1",
     issue_id: "issue-1",
     comment_id: null,
-    chat_session_id: null,
-    chat_message_id: null,
     uploader_type: "member",
     uploader_id: "alice",
     filename: `${id}.png`,
@@ -125,7 +123,7 @@ describe("comment draft store — attachments in the draft", () => {
 });
 
 describe("comment draft store — prune on rehydrate", () => {
-  const KEY = "multica_comment_drafts:acme";
+  const KEY = "liexiu_comment_drafts:acme";
 
   beforeEach(() => {
     localStorage.clear();

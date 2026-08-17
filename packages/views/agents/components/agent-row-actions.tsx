@@ -12,12 +12,12 @@ import {
 } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import type { Agent } from "@multica/core/types";
-import type { AgentPresenceDetail } from "@multica/core/agents";
-import { api } from "@multica/core/api";
-import { useWorkspaceId } from "@multica/core/hooks";
-import { useWorkspacePaths } from "@multica/core/paths";
-import { workspaceKeys } from "@multica/core/workspace/queries";
+import type { Agent } from "@liexiu/core/types";
+import type { AgentPresenceDetail } from "@liexiu/core/agents";
+import { api } from "@liexiu/core/api";
+import { useWorkspaceId } from "@liexiu/core/hooks";
+import { useWorkspacePaths } from "@liexiu/core/paths";
+import { workspaceKeys } from "@liexiu/core/workspace/queries";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -27,14 +27,14 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "@multica/ui/components/ui/alert-dialog";
+} from "@liexiu/ui/components/ui/alert-dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from "@multica/ui/components/ui/dropdown-menu";
+} from "@liexiu/ui/components/ui/dropdown-menu";
 import { useT } from "../../i18n";
 import { AppLink, useIntentNavigate } from "../../navigation";
 
@@ -89,11 +89,7 @@ export function AgentRowActions({
   // branches.
   const showStop = canManage && !isArchived && hasActiveWork;
   const showDuplicate = !isArchived; // any workspace member can duplicate
-  // Multica's built-in agents cannot be archived — the server refuses it, and
-  // the workspace's entry point runs through one. Hide the action rather than
-  // let it fail with a toast.
-  const isSystemAgent = !!agent.system_key;
-  const showArchive = canManage && !isArchived && !isSystemAgent;
+  const showArchive = canManage && !isArchived;
   const showRestore = canManage && isArchived;
 
   const invalidateAgents = () => {

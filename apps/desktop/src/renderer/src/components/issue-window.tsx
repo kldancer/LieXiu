@@ -7,15 +7,15 @@ import {
   useRouteError,
 } from "react-router-dom";
 import { AlertTriangle, RotateCw, X } from "lucide-react";
-import { useAuthStore } from "@multica/core/auth";
-import { setCurrentWorkspace } from "@multica/core/platform";
-import { WorkspaceSlugProvider } from "@multica/core/paths";
-import { workspaceBySlugOptions } from "@multica/core/workspace";
-import { Button } from "@multica/ui/components/ui/button";
-import { MulticaIcon } from "@multica/ui/components/common/multica-icon";
-import { ModalRegistry } from "@multica/views/modals/registry";
-import { WorkspacePresencePrefetch } from "@multica/views/layout";
-import { DragStrip } from "@multica/views/platform";
+import { useAuthStore } from "@liexiu/core/auth";
+import { setCurrentWorkspace } from "@liexiu/core/platform";
+import { WorkspaceSlugProvider } from "@liexiu/core/paths";
+import { workspaceBySlugOptions } from "@liexiu/core/workspace";
+import { Button } from "@liexiu/ui/components/ui/button";
+import { LieXiuIcon } from "@liexiu/ui/components/common/liexiu-icon";
+import { ModalRegistry } from "@liexiu/views/modals/registry";
+import { WorkspacePresencePrefetch } from "@liexiu/views/layout";
+import { DragStrip } from "@liexiu/views/platform";
 import type { IssueWindowContext } from "../../../shared/issue-window";
 import { IssueDetailPage } from "../pages/issue-detail-page";
 import { IssueWindowNavigationProvider } from "../platform/issue-window-navigation";
@@ -55,7 +55,7 @@ function IssueWindowRoute() {
     return (
       <IssueWindowFrame>
         <div className="flex min-h-0 flex-1 items-center justify-center">
-          <MulticaIcon className="size-6 animate-pulse" />
+          <LieXiuIcon className="size-6 animate-pulse" />
         </div>
       </IssueWindowFrame>
     );

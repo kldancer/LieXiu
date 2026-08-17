@@ -7,7 +7,7 @@
  * decision lives — icon and title no longer come from two unrelated code paths.
  *
  * It is pure and React-free: the visual is a descriptor (rendered by
- * `@multica/views`' `ResourceLeadingVisual`) and the title is a spec that is
+ * `@liexiu/views`' `ResourceLeadingVisual`) and the title is a spec that is
  * either literal text or a localization key (localized by the view layer).
  * Keeping it pure makes the whole "URL + data → icon + title" matrix unit
  * testable without React, which is exactly what the tab behavior needs guarded.
@@ -39,10 +39,8 @@ export type TabVisual =
 export type TabLabelKey =
   | "issue"
   | "project"
-  | "autopilot"
   | "agent"
   | "member"
-  | "squad"
   | "skill"
   | "machine"
   | "runtime"
@@ -64,11 +62,6 @@ export interface TabPresentation {
   title: TabTitleSpec;
 }
 
-/** Resolved inbox selection, as computed by the view layer from cache. */
-export type InboxSelectionData =
-  | { kind: "issue"; identifier: string; title: string }
-  | { kind: "item"; title: string };
-
 /**
  * Entity data the view layer has resolved from cache for the tab's subject.
  * Every field is optional: `undefined` means "not loaded yet" and yields the
@@ -77,16 +70,11 @@ export type InboxSelectionData =
 export interface TabEntityData {
   issue?: { identifier: string; title: string; status: IssueStatus };
   project?: { icon: string | null; title: string };
-  autopilot?: { title: string };
   /** Resolved display name for an actor subject. */
   actorName?: string;
   skill?: { name: string };
   machine?: { name: string };
   runtime?: { name: string };
-  /** Resolved chat session title (already includes the "New chat" fallback). */
-  chatSessionTitle?: string;
-  /** Resolved inbox selection (issue identifier/title or item title). */
-  inboxSelection?: InboxSelectionData;
 }
 
 /** Neutral visual used when nothing better can be resolved. */
@@ -101,7 +89,6 @@ function textOr(text: string | undefined | null, tabKey: TabLabelKey): TabTitleS
 const ACTOR_LABEL: Record<TabActorType, TabLabelKey> = {
   agent: "agent",
   member: "member",
-  squad: "squad",
 };
 
 // Extension → file-type icon. The preview URL only carries the filename, so the
@@ -164,11 +151,6 @@ export function resolveTabPresentation(
         visual: { kind: "project-icon", icon: data.project?.icon ?? null },
         title: textOr(data.project?.title, "project"),
       };
-    case "autopilot":
-      return {
-        visual: { kind: "icon", icon: "Zap" },
-        title: textOr(data.autopilot?.title, "autopilot"),
-      };
     case "actor":
       return {
         visual: { kind: "actor", actorType: subject.actorType, id: subject.id },
@@ -199,27 +181,6 @@ export function resolveTabPresentation(
           ? { kind: "text", text: subject.filename }
           : { kind: "tab", tabKey: "attachment" },
       };
-    case "inbox": {
-      // The container icon never changes; only the title tracks the selection.
-      const sel = subject.selectedKey ? data.inboxSelection : undefined;
-      let title: TabTitleSpec;
-      if (!sel) {
-        title = { kind: "nav", navKey: "inbox" };
-      } else if (sel.kind === "issue") {
-        title = { kind: "text", text: `${sel.identifier}: ${sel.title}` };
-      } else {
-        const text = sel.title.trim();
-        title = text ? { kind: "text", text } : { kind: "nav", navKey: "inbox" };
-      }
-      return { visual: { kind: "icon", icon: "Inbox" }, title };
-    }
-    case "chat": {
-      const title: TabTitleSpec =
-        subject.sessionId && data.chatSessionTitle?.trim()
-          ? { kind: "text", text: data.chatSessionTitle.trim() }
-          : { kind: "nav", navKey: "chat" };
-      return { visual: { kind: "icon", icon: "MessageSquare" }, title };
-    }
     case "flow":
       return {
         visual: { kind: "icon", icon: "Bot" },

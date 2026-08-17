@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { buildDuplicateDraft, type AgentDraft } from "@multica/core/agents";
-import type { Agent, RuntimeDevice } from "@multica/core/types";
+import { buildDuplicateDraft, type AgentDraft } from "@liexiu/core/agents";
+import type { Agent, RuntimeDevice } from "@liexiu/core/types";
 
 /**
  * Seeds the duplicate draft exactly once, and only from a runtime list that has

@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { I18nProvider } from "@multica/core/i18n/react";
+import { I18nProvider } from "@liexiu/core/i18n/react";
 import enCommon from "../../locales/en/common.json";
 import enSettings from "../../locales/en/settings.json";
 
@@ -20,12 +20,7 @@ const workspaceRef = vi.hoisted(() => ({
     repos: [] as { url: string }[],
   },
 }));
-const membersRef = vi.hoisted(() => ({
-  current: [{ user_id: "user-1", role: "owner" as "owner" | "admin" | "member" }],
-}));
-
 vi.mock("@tanstack/react-query", () => ({
-  useQuery: () => ({ data: membersRef.current, isFetched: true }),
   useQueryClient: () => ({
     setQueryData: vi.fn(),
     getQueryData: vi.fn(() => []),
@@ -33,39 +28,34 @@ vi.mock("@tanstack/react-query", () => ({
   }),
 }));
 
-vi.mock("@multica/core/paths", () => ({
+vi.mock("@liexiu/core/paths", () => ({
   useCurrentWorkspace: () => workspaceRef.current,
   useHasOnboarded: () => true,
   resolvePostAuthDestination: () => "/",
 }));
 
-vi.mock("@multica/core/platform", () => ({
+vi.mock("@liexiu/core/platform", () => ({
   setCurrentWorkspace: vi.fn(),
 }));
 
-vi.mock("@multica/core/workspace/queries", () => ({
+vi.mock("@liexiu/core/workspace/queries", () => ({
   memberListOptions: () => ({ queryKey: ["members"], queryFn: vi.fn() }),
   workspaceListOptions: () => ({ queryKey: ["workspaces"], queryFn: vi.fn() }),
   workspaceKeys: { list: () => ["workspaces"] },
 }));
 
-vi.mock("@multica/core/issues/queries", () => ({
+vi.mock("@liexiu/core/issues/queries", () => ({
   issueKeys: { all: (workspaceId: string) => ["issues", workspaceId] },
 }));
 
-vi.mock("@multica/core/workspace/mutations", () => ({
-  useLeaveWorkspace: () => ({ mutateAsync: vi.fn() }),
-  useDeleteWorkspace: () => ({ mutateAsync: vi.fn() }),
-}));
-
-vi.mock("@multica/core/api", () => ({
+vi.mock("@liexiu/core/api", () => ({
   api: {
     updateWorkspace: mockUpdateWorkspace,
     getBaseUrl: () => "http://127.0.0.1:8080",
   },
 }));
 
-vi.mock("@multica/core/auth", () => {
+vi.mock("@liexiu/core/auth", () => {
   const useAuthStore = Object.assign(
     (selector?: (state: { user: { id: string } }) => unknown) =>
       selector ? selector({ user: { id: "user-1" } }) : { user: { id: "user-1" } },
@@ -76,10 +66,6 @@ vi.mock("@multica/core/auth", () => {
 
 vi.mock("../../navigation", () => ({
   useNavigation: () => ({ push: vi.fn() }),
-}));
-
-vi.mock("./delete-workspace-dialog", () => ({
-  DeleteWorkspaceDialog: () => null,
 }));
 
 vi.mock("sonner", () => ({
@@ -113,7 +99,6 @@ describe("WorkspaceTab — automatic updates", () => {
       issue_prefix: "TES",
       repos: [],
     };
-    membersRef.current = [{ user_id: "user-1", role: "owner" }];
     mockUpdateWorkspace.mockImplementation(
       async (_id: string, payload: Record<string, unknown>) => ({
         ...workspaceRef.current,
@@ -238,11 +223,4 @@ describe("WorkspaceTab — automatic updates", () => {
     expect(mockUpdateWorkspace).not.toHaveBeenCalled();
   });
 
-  it("disables editable workspace controls for regular members", () => {
-    membersRef.current = [{ user_id: "user-1", role: "member" }];
-    render(<WorkspaceTab />, { wrapper: I18nWrapper });
-
-    expect(screen.getByPlaceholderText("TES")).toBeDisabled();
-    expect(screen.getByDisplayValue("Test Workspace")).toBeDisabled();
-  });
 });

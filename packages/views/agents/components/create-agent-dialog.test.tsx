@@ -3,11 +3,9 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen, fireEvent, cleanup } from "@testing-library/react";
-import type { Agent, MemberWithUser, RuntimeDevice } from "@multica/core/types";
-import { I18nProvider } from "@multica/core/i18n/react";
-import { WorkspaceSlugProvider } from "@multica/core/paths";
-import { configStore } from "@multica/core/config";
-import { COMPOSIO_MCP_APPS_FLAG } from "@multica/core/feature-flags";
+import type { Agent, MemberWithUser, RuntimeDevice } from "@liexiu/core/types";
+import { I18nProvider } from "@liexiu/core/i18n/react";
+import { WorkspaceSlugProvider } from "@liexiu/core/paths";
 import { NavigationProvider, type NavigationAdapter } from "../../navigation";
 import enCommon from "../../locales/en/common.json";
 import enAgents from "../../locales/en/agents.json";
@@ -23,7 +21,7 @@ const navigationStub: NavigationAdapter = {
 
 const TEST_RESOURCES = { en: { common: enCommon, agents: enAgents } };
 
-vi.mock("@multica/core/hooks", () => ({
+vi.mock("@liexiu/core/hooks", () => ({
   useWorkspaceId: () => "ws-1",
 }));
 
@@ -290,45 +288,17 @@ describe("CreateAgentDialog runtime visibility gate", () => {
   });
 });
 
-describe("CreateAgentDialog access picker (MUL-4010, feature-flag gated)", () => {
+describe("CreateAgentDialog access picker", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    // The dialog's default (workspace) still needs to be usable by ME:
-    // reset flags before every test so a stray "on" state in one test
-    // can't bleed into the next.
-    configStore.getState().setFeatureFlags({});
   });
 
   afterEach(() => {
     cleanup();
     document.body.innerHTML = "";
-    configStore.getState().setFeatureFlags({});
   });
 
-  it("keeps the legacy Workspace/Personal toggle when the flag is OFF", async () => {
-    configStore.getState().setFeatureFlags({ [COMPOSIO_MCP_APPS_FLAG]: false });
-    const mine = makeRuntime({ id: "rt-mine", name: "My Runtime", owner_id: ME });
-    const { onCreate } = renderDialog([mine]);
-
-    // Legacy copy is rendered — matches VISIBILITY_DESCRIPTION.
-    expect(screen.getByText(/All members can assign/i)).toBeInTheDocument();
-
-    fireEvent.change(screen.getByPlaceholderText("e.g. Deep Research Agent"), {
-      target: { value: "Legacy Agent" },
-    });
-    fireEvent.click(screen.getByText("Create"));
-    await new Promise((r) => setTimeout(r, 0));
-
-    const payload = onCreate.mock.calls[0]?.[0];
-    expect(payload).toBeDefined();
-    // Legacy path submits visibility, NOT permission_mode/invocation_targets.
-    expect(payload.visibility).toBe("workspace");
-    expect(payload.permission_mode).toBeUndefined();
-    expect(payload.invocation_targets).toBeUndefined();
-  });
-
-  it("submits permission_mode=public_to + workspace target when the flag is ON (default)", async () => {
-    configStore.getState().setFeatureFlags({ [COMPOSIO_MCP_APPS_FLAG]: true });
+  it("submits permission_mode=public_to + workspace target", async () => {
     const mine = makeRuntime({ id: "rt-mine", name: "My Runtime", owner_id: ME });
     const { onCreate } = renderDialog([mine]);
 
@@ -354,7 +324,6 @@ describe("CreateAgentDialog access picker (MUL-4010, feature-flag gated)", () =>
   });
 
   it("submits permission_mode=private with empty targets when Private is chosen", async () => {
-    configStore.getState().setFeatureFlags({ [COMPOSIO_MCP_APPS_FLAG]: true });
     const mine = makeRuntime({ id: "rt-mine", name: "My Runtime", owner_id: ME });
     const { onCreate } = renderDialog([mine]);
 
@@ -374,7 +343,6 @@ describe("CreateAgentDialog access picker (MUL-4010, feature-flag gated)", () =>
   });
 
   it("does not create when specific-people scope has no member", async () => {
-    configStore.getState().setFeatureFlags({ [COMPOSIO_MCP_APPS_FLAG]: true });
     const mine = makeRuntime({ id: "rt-mine", name: "My Runtime", owner_id: ME });
     const { onCreate } = renderDialog([mine]);
 
@@ -389,7 +357,6 @@ describe("CreateAgentDialog access picker (MUL-4010, feature-flag gated)", () =>
   });
 
   it("includes ticked members in the invocation_targets payload", async () => {
-    configStore.getState().setFeatureFlags({ [COMPOSIO_MCP_APPS_FLAG]: true });
     const mine = makeRuntime({ id: "rt-mine", name: "My Runtime", owner_id: ME });
     const { onCreate } = renderDialog([mine]);
 

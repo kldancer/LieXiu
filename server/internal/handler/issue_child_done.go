@@ -9,8 +9,8 @@ import (
 	"strings"
 
 	"github.com/jackc/pgx/v5/pgtype"
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
-	"github.com/multica-ai/multica/server/pkg/protocol"
+	db "github.com/kailonyang/liexiu/server/pkg/db/generated"
+	"github.com/kailonyang/liexiu/server/pkg/protocol"
 )
 
 // notifyParentOfChildDone posts a top-level system comment on the parent
@@ -38,7 +38,7 @@ import (
 //     issues manually; an automated system comment is pure noise for them
 //     and there is nothing to "trigger" on a human assignee. Skipping the
 //     comment entirely (Bohan's call on MUL-2538) also sidesteps the
-//     mention question — no comment, no mention, no inbox row.
+//     mention question — no comment, no mention, and no agent wake.
 //   - the completion must close a STAGE barrier (MUL-3508). Sub-issues under
 //     a parent can be grouped into ordered stages via issue.stage; the
 //     notification + wake fire only when every sibling in the lowest
@@ -51,16 +51,12 @@ import (
 //
 // The comment is inserted directly via db.Queries (not through the
 // CreateComment HTTP handler) so it bypasses the generic on_comment trigger
-// path. When the parent has an agent or squad assignee, the comment body
-// embeds a single `mention://{agent,squad}/<id>` link that targets the
-// parent assignee — Bohan's product call on MUL-2538 ("system child-done
-// comment 无脑 mention parent assignee，member/squad/agent 都覆盖", later
-// narrowed to skip member assignees outright). To keep the platform in
-// control of side effects, the cmd/server notification + subscriber
-// listeners still skip system comments wholesale, so smuggled mentions from
-// the child title cannot light up unrelated members. The parent assignee's
-// own trigger is fired explicitly by dispatchParentAssigneeTrigger below,
-// with the idempotency guard documented there.
+// path. When the parent has an agent assignee, the comment body embeds a
+// single `mention://agent/<id>` link that targets the parent assignee. To keep the platform in
+// control of side effects, system comments do not enter the ordinary mention
+// dispatch path, so smuggled mentions from the child title cannot light up
+// unrelated members. The parent assignee's own mention remains communication
+// only; it does not create an AgentTask.
 //
 // Errors are logged at warn level and swallowed: this is a best-effort
 // notification on the side of a successful status update; failing it must
@@ -100,7 +96,7 @@ func (h *Handler) notifyParentOfChildDone(ctx context.Context, prev, issue db.Is
 	}
 	// Human-assigned parents read their own timeline; an automated system
 	// comment is just noise and there is no agent task to trigger. Skip the
-	// whole notification (comment + mention + inbox row) — MUL-2538.
+	// whole notification (comment + mention + agent wake) — MUL-2538.
 	if parent.AssigneeType.Valid && parent.AssigneeType.String == "member" {
 		return
 	}
@@ -286,12 +282,12 @@ func (h *Handler) postChildDoneComment(ctx context.Context, parent, completed db
 	} else {
 		if batch {
 			content = fmt.Sprintf(
-				"%sAll sub-issues are complete — they just finished together in a batch update, most recently [%s](mention://issue/%s) — \"%s\". Continue the parent: synthesize the children's results and move it forward, or — if nothing remains — run `multica issue status %s in_review` to mark the parent ready for review.",
+				"%sAll sub-issues are complete — they just finished together in a batch update, most recently [%s](mention://issue/%s) — \"%s\". Continue the parent: synthesize the children's results and move it forward, or — if nothing remains — run `liexiu issue status %s in_review` to mark the parent ready for review.",
 				mentionPrefix, identifier, childID, title, parentID,
 			)
 		} else {
 			content = fmt.Sprintf(
-				"%sAll sub-issues are complete — the last one, [%s](mention://issue/%s) — \"%s\", just finished. Continue the parent: synthesize the children's results and move it forward, or — if nothing remains — run `multica issue status %s in_review` to mark the parent ready for review.",
+				"%sAll sub-issues are complete — the last one, [%s](mention://issue/%s) — \"%s\", just finished. Continue the parent: synthesize the children's results and move it forward, or — if nothing remains — run `liexiu issue status %s in_review` to mark the parent ready for review.",
 				mentionPrefix, identifier, childID, title, parentID,
 			)
 		}
@@ -318,20 +314,13 @@ func (h *Handler) postChildDoneComment(ctx context.Context, parent, completed db
 	}
 
 	h.publish(protocol.EventCommentCreated, uuidToString(parent.WorkspaceID), "system", "", map[string]any{
-		"comment":             commentToResponse(comment, nil, nil),
+		"comment":             commentToResponse(comment, nil),
 		"issue_title":         parent.Title,
 		"issue_assignee_type": textToPtr(parent.AssigneeType),
 		"issue_assignee_id":   uuidToPtr(parent.AssigneeID),
 		"issue_status":        parent.Status,
 	})
 
-	// Dispatch the explicit trigger / inbox row for the parent assignee.
-	// Listener-level mention parsing is intentionally NOT involved (the
-	// notification + subscriber listeners both short-circuit on
-	// author_type='system'); this keeps smuggled mentions from the child
-	// title inert and gives the platform a single place to apply the loop
-	// and idempotency guards.
-	h.dispatchParentAssigneeTrigger(ctx, parent, comment)
 }
 
 // isTerminalChildStatus reports whether a child issue status counts as
@@ -452,18 +441,18 @@ func stageProgressSummary(children []db.Issue, closedStage int32) (summary strin
 func stageAdvanceInstruction(nextStage int32, parentID string) string {
 	if nextStage > 0 {
 		return fmt.Sprintf(
-			" Stage %d is next. Review the full layout with `multica issue children %s`, and if Stage %d's dependencies are satisfied promote its `backlog` sub-issues to `todo` to continue. Read each sub-issue's description first and only promote items whose stated dependencies are already met — do not rely on this parent's higher-level breakdown alone. If a description conflicts with that breakdown, leave it `backlog` and post a comment to confirm first.",
+			" Stage %d is next. Review the full layout with `liexiu issue children %s`, and if Stage %d's dependencies are satisfied promote its `backlog` sub-issues to `todo` to continue. Read each sub-issue's description first and only promote items whose stated dependencies are already met — do not rely on this parent's higher-level breakdown alone. If a description conflicts with that breakdown, leave it `backlog` and post a comment to confirm first.",
 			nextStage, parentID, nextStage,
 		)
 	}
-	return fmt.Sprintf(" Completing this stage does not mean the whole issue is done. Decide whether the issue is actually complete — if so, synthesize the results and run `multica issue status %s in_review` to mark the parent ready for review — or whether the next stage still needs to be created, in which case create that stage and its sub-issues now.", parentID)
+	return fmt.Sprintf(" Completing this stage does not mean the whole issue is done. Decide whether the issue is actually complete — if so, synthesize the results and run `liexiu issue status %s in_review` to mark the parent ready for review — or whether the next stage still needs to be created, in which case create that stage and its sub-issues now.", parentID)
 }
 
 // sanitizeChildTitleForSystemComment removes mention-style markdown from a
 // child issue's title before it is embedded into the parent's system
 // comment. Smuggled mentions are already harmless on the listener path
-// (notification + subscriber listeners both skip system comments), but the
-// timeline still renders the title verbatim — stripping the markdown keeps
+// (realtime consumers skip system comments), but the timeline still renders
+// the title verbatim — stripping the markdown keeps
 // the rendered comment readable and stops a maliciously titled child issue
 // from looking like a directive ("@all please look").
 func sanitizeChildTitleForSystemComment(title string) string {
@@ -507,15 +496,6 @@ func (h *Handler) resolveAssigneeMentionLabel(ctx context.Context, workspaceID p
 			return "", false
 		}
 		return sanitizeMentionLabel(agent.Name), true
-	case "squad":
-		squad, err := h.Queries.GetSquadInWorkspace(ctx, db.GetSquadInWorkspaceParams{
-			ID:          assigneeID,
-			WorkspaceID: workspaceID,
-		})
-		if err != nil {
-			return "", false
-		}
-		return sanitizeMentionLabel(squad.Name), true
 	}
 	return "", false
 }
@@ -531,165 +511,4 @@ func sanitizeMentionLabel(name string) string {
 		return "assignee"
 	}
 	return cleaned
-}
-
-// dispatchParentAssigneeTrigger fires the explicit side effect that pairs
-// with the @mention link in the system comment body — an agent task for
-// agent or squad-leader assignees. Member assignees never reach this code
-// path; notifyParentOfChildDone skips them outright. The generic comment
-// listener is intentionally bypassed (it short-circuits on
-// author_type='system'), so this is the single place where the platform
-// applies the idempotency guard for the child-done notification.
-//
-// Side-effect semantics (intentionally narrower than a normal @mention):
-//   - agent parent: one EnqueueTaskForMention on the parent assignee, same
-//     trigger surface as a real @-mention so dedupe and readiness checks
-//     match what users already rely on.
-//   - squad parent: one EnqueueTaskForSquadLeader on the squad LEADER only.
-//     Unlike a human @squad mention, this does NOT fan out to squad members
-//     — child-done is a coordination signal, the leader decides whether
-//     and how to wake the rest of the squad. Documented here so reviewers
-//     don't read "system mention" as inheriting the full member fan-out. The
-//     actor that closed the child is irrelevant to routing: the target is the
-//     parent's own leader, chosen (and permission-checked) at squad-assign
-//     time, so no actor identity is threaded in — see triggerChildDoneSquad.
-//   - notification_preference is not consulted: this is a platform routing
-//     signal targeted at the assignee that already owns the parent, not a
-//     general notification. Per-user mute settings are evaluated by the
-//     downstream agent_task / inbox pipeline once the task is dispatched.
-//   - notification_listeners.go short-circuits on author_type='system', so
-//     subscriber emails and member-inbox rows from smuggled mentions in the
-//     child title are inert — only the explicit dispatch below runs.
-//
-// Guards applied here:
-//   - No-op when the parent has no assignee row.
-//   - NO self-trigger guard on either the agent OR the squad path. Waking the
-//     parent assignee when one of its children finishes is a serial sub-task
-//     handoff across two DIFFERENT issues, not a self-loop — legitimate per
-//     isAgentRunningOnIssue and the @mention self-trigger path
-//     (computeMentionedAgentCommentTriggers). The squad path used to skip a
-//     same-squad or shared-leader child on the theory that the leader had
-//     already observed the work through its own coordination cycle on the
-//     child. That stranded the common pattern where a squad decomposes its
-//     parent into sub-issues assigned to its own squad: the stage-barrier
-//     system comment lands on the PARENT carrying the "advance the next stage /
-//     wrap up" instruction, which a child-side wake never delivers — so the
-//     parent silently stalled in in_progress (MUL-3969). The squad path now
-//     mirrors the agent path (MUL-2808): always dispatch, bounded only by
-//     idempotency.
-//   - Idempotency: HasPendingTaskForIssueAndAgent dedupes rapid-fire enqueues
-//     for the same parent (e.g. two children finishing back-to-back). It also
-//     bounds any re-trigger, since a leader waking on the parent does not by
-//     itself push a child back into a terminal transition.
-//   - Readiness: archived agents / missing runtimes are silently skipped
-//     so a closed-out agent does not surface as a phantom assignee.
-func (h *Handler) dispatchParentAssigneeTrigger(ctx context.Context, parent db.Issue, systemComment db.Comment) {
-	if !parent.AssigneeType.Valid || !parent.AssigneeID.Valid {
-		return
-	}
-
-	switch parent.AssigneeType.String {
-	case "agent":
-		h.triggerChildDoneAgent(ctx, parent, systemComment.ID)
-	case "squad":
-		h.triggerChildDoneSquad(ctx, parent, systemComment.ID)
-	}
-}
-
-// triggerChildDoneAgent enqueues a mention-style task for the parent's
-// agent assignee.
-//
-// There is intentionally NO same-agent self-trigger guard here, unlike the
-// squad path. Waking the parent agent when one of its children finishes is a
-// serial sub-task handoff between two DIFFERENT issues, which the platform
-// loop model treats as legitimate ("not a loop and must fire" — see
-// isAgentRunningOnIssue); only re-entering the SAME issue is a loop. A lone
-// agent that decomposes its parent into sub-issues it owns itself has no
-// other wake path, so the old "child owner == parent agent" guard silently
-// stranded those parents (MUL-2808). Runaway re-triggering is prevented by
-// the HasPendingTaskForIssueAndAgent dedup below, exactly as the @mention
-// self-trigger path relies on it (see computeMentionedAgentCommentTriggers).
-func (h *Handler) triggerChildDoneAgent(ctx context.Context, parent db.Issue, triggerCommentID pgtype.UUID) {
-	agent, err := h.Queries.GetAgentInWorkspace(ctx, db.GetAgentInWorkspaceParams{
-		ID:          parent.AssigneeID,
-		WorkspaceID: parent.WorkspaceID,
-	})
-	if err != nil || !agent.RuntimeID.Valid || agent.ArchivedAt.Valid {
-		return
-	}
-
-	hasPending, err := h.Queries.HasPendingTaskForIssueAndAgent(ctx, db.HasPendingTaskForIssueAndAgentParams{
-		IssueID: parent.ID,
-		AgentID: parent.AssigneeID,
-		// Key dedup on the reviewed head (TEN-356).
-		HeadSha: h.TaskService.ResolveIssueReviewSHAParam(ctx, parent.ID),
-	})
-	if err != nil || hasPending {
-		return
-	}
-
-	if _, err := h.TaskService.EnqueueTaskForMention(ctx, parent, parent.AssigneeID, triggerCommentID); err != nil {
-		slog.Warn("child done: enqueue parent agent task failed",
-			"error", err,
-			"parent_id", uuidToString(parent.ID),
-			"agent_id", uuidToString(parent.AssigneeID))
-	}
-}
-
-// triggerChildDoneSquad enqueues a leader-role task for the parent's squad
-// assignee. It mirrors the agent path (see triggerChildDoneAgent) exactly:
-//
-//   - NO self-trigger guard: even when the finished child is owned by the same
-//     squad or by another squad sharing this leader, the leader must still be
-//     woken on the PARENT to advance the next stage or wrap up. The prior
-//     same-squad / shared-leader guards assumed the leader had already observed
-//     the child via its own coordination cycle, but that wake lands on the
-//     CHILD and never carries the parent-level stage-barrier instruction, so it
-//     stranded the common "squad decomposes its parent into sub-issues assigned
-//     to its own squad" pattern (MUL-3969).
-//   - NO leader-invocation gate. Waking the parent's OWN squad leader on
-//     child-done is a coordination handoff on an issue the leader already owns,
-//     not a fresh invocation — invocation permission was already enforced when
-//     the parent was assigned to the squad (validateAssigneePair). The agent
-//     path has never gated this. Re-checking it here on behalf of the child's
-//     completer — an agent/system actor with no resolvable human originator —
-//     failed closed for the DEFAULT private leader, silently stranding every
-//     process-squad pipeline after its first stage while direct-to-leader-agent
-//     parents advanced fine (MUL-4063 / GH #4928). Removed so agent and squad
-//     child-done follow one path; if invocation permission is ever reintroduced
-//     it must be added to BOTH paths together.
-//
-// Re-triggering is bounded by the HasPendingTaskForIssueAndAgent idempotency
-// check below, exactly as the agent path relies on it.
-func (h *Handler) triggerChildDoneSquad(ctx context.Context, parent db.Issue, triggerCommentID pgtype.UUID) {
-	squad, err := h.Queries.GetSquadInWorkspace(ctx, db.GetSquadInWorkspaceParams{
-		ID:          parent.AssigneeID,
-		WorkspaceID: parent.WorkspaceID,
-	})
-	if err != nil {
-		return
-	}
-
-	agent, err := h.Queries.GetAgent(ctx, squad.LeaderID)
-	if err != nil || !agent.RuntimeID.Valid || agent.ArchivedAt.Valid {
-		return
-	}
-
-	hasPending, err := h.Queries.HasPendingTaskForIssueAndAgent(ctx, db.HasPendingTaskForIssueAndAgentParams{
-		IssueID: parent.ID,
-		AgentID: squad.LeaderID,
-		// Key dedup on the reviewed head (TEN-356).
-		HeadSha: h.TaskService.ResolveIssueReviewSHAParam(ctx, parent.ID),
-	})
-	if err != nil || hasPending {
-		return
-	}
-
-	if _, err := h.TaskService.EnqueueTaskForSquadLeader(ctx, parent, squad.LeaderID, squad.ID, triggerCommentID); err != nil {
-		slog.Warn("child done: enqueue parent squad leader task failed",
-			"error", err,
-			"parent_id", uuidToString(parent.ID),
-			"squad_id", uuidToString(squad.ID),
-			"leader_id", uuidToString(squad.LeaderID))
-	}
 }

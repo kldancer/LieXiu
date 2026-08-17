@@ -40,6 +40,7 @@ func (q *Queries) AttachLabelToAgent(ctx context.Context, arg AttachLabelToAgent
 }
 
 const attachLabelToIssue = `-- name: AttachLabelToIssue :exec
+
 INSERT INTO issue_to_label (issue_id, label_id)
 SELECT $1::uuid, $2::uuid
 WHERE EXISTS (
@@ -62,6 +63,11 @@ type AttachLabelToIssueParams struct {
 	WorkspaceID pgtype.UUID `json:"workspace_id"`
 }
 
+// The single-entity cleanups above cover one agent/skill at a time. The runtime
+// variant below covers runtime and runtime-profile bulk hard deletes, where the
+// owning agents disappear without passing through a per-entity delete.
+// Workspace-wide cleanup lives in DeleteWorkspace so it is atomic with that
+// workspace's existing multi-table teardown.
 // Workspace-guarded INSERT: the WHERE EXISTS clauses ensure both the issue
 // and the label belong to the given workspace. A future caller that forgets
 // handler-level prechecks still cannot attach labels across workspaces.
@@ -149,26 +155,6 @@ DELETE FROM agent_to_label WHERE label_id = $1
 
 func (q *Queries) DeleteAgentLabelAssignmentsByLabel(ctx context.Context, labelID pgtype.UUID) error {
 	_, err := q.db.Exec(ctx, deleteAgentLabelAssignmentsByLabel, labelID)
-	return err
-}
-
-const deleteAgentLabelAssignmentsBySystemRuntimeAgents = `-- name: DeleteAgentLabelAssignmentsBySystemRuntimeAgents :exec
-
-DELETE FROM agent_to_label
-WHERE agent_id IN (SELECT id FROM agent WHERE runtime_id = $1 AND kind = 'system')
-`
-
-// The single-entity cleanups above cover one agent/skill at a time. The runtime
-// variant below covers runtime and runtime-profile bulk hard deletes, where the
-// owning agents disappear without passing through a per-entity delete.
-// Workspace-wide cleanup lives in DeleteWorkspace so it is atomic with that
-// workspace's existing multi-table teardown.
-// Runtime teardown hard-deletes the system agents bound to the runtime (user
-// agents are unbound and kept since MUL-5559). Clear only those agents' label
-// links so none survive the agent hard-delete — a surviving unbound agent must
-// keep its labels.
-func (q *Queries) DeleteAgentLabelAssignmentsBySystemRuntimeAgents(ctx context.Context, runtimeID pgtype.UUID) error {
-	_, err := q.db.Exec(ctx, deleteAgentLabelAssignmentsBySystemRuntimeAgents, runtimeID)
 	return err
 }
 

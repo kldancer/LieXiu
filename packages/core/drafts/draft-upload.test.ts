@@ -14,8 +14,6 @@ function makeAttachment(id: string): Attachment {
     workspace_id: "ws-1",
     issue_id: "issue-1",
     comment_id: null,
-    chat_session_id: null,
-    chat_message_id: null,
     uploader_type: "member",
     uploader_id: "alice",
     filename: `${id}.png`,

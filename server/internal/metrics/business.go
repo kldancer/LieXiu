@@ -3,7 +3,7 @@ package metrics
 import (
 	"sync"
 
-	"github.com/multica-ai/multica/server/pkg/taskfailure"
+	"github.com/kailonyang/liexiu/server/pkg/taskfailure"
 	"github.com/prometheus/client_golang/prometheus"
 )
 
@@ -50,125 +50,125 @@ func NewBusinessMetrics() *BusinessMetrics {
 	validateBusinessMetricLabels()
 	m := &BusinessMetrics{
 		taskEnqueued: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Namespace: "multica",
+			Namespace: "liexiu",
 			Subsystem: "agent_task",
 			Name:      "enqueued_total",
 			Help:      "Total agent tasks enqueued.",
-		}, metricLabels("multica_agent_task_enqueued_total")),
+		}, metricLabels("liexiu_agent_task_enqueued_total")),
 		taskDispatched: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Namespace: "multica",
+			Namespace: "liexiu",
 			Subsystem: "agent_task",
 			Name:      "dispatched_total",
 			Help:      "Total agent tasks dispatched to a runtime.",
-		}, metricLabels("multica_agent_task_dispatched_total")),
+		}, metricLabels("liexiu_agent_task_dispatched_total")),
 		taskStarted: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Namespace: "multica",
+			Namespace: "liexiu",
 			Subsystem: "agent_task",
 			Name:      "started_total",
 			Help:      "Total agent tasks that reached running state.",
-		}, metricLabels("multica_agent_task_started_total")),
+		}, metricLabels("liexiu_agent_task_started_total")),
 		taskTerminal: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Namespace: "multica",
+			Namespace: "liexiu",
 			Subsystem: "agent_task",
 			Name:      "terminal_total",
 			Help:      "Total agent tasks that reached a terminal state.",
-		}, metricLabels("multica_agent_task_terminal_total")),
+		}, metricLabels("liexiu_agent_task_terminal_total")),
 		taskFailed: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Namespace: "multica",
+			Namespace: "liexiu",
 			Subsystem: "agent_task",
 			Name:      "failed_total",
 			Help:      "Total failed agent tasks by canonical failure reason.",
-		}, metricLabels("multica_agent_task_failed_total")),
+		}, metricLabels("liexiu_agent_task_failed_total")),
 		taskQueueWait: prometheus.NewHistogramVec(prometheus.HistogramOpts{
-			Namespace: "multica",
+			Namespace: "liexiu",
 			Subsystem: "agent_task",
 			Name:      "queue_wait_seconds",
 			Help:      "Time agent tasks spent queued before dispatch.",
 			Buckets:   taskDurationBuckets,
-		}, metricLabels("multica_agent_task_queue_wait_seconds")),
+		}, metricLabels("liexiu_agent_task_queue_wait_seconds")),
 		taskRunSeconds: prometheus.NewHistogramVec(prometheus.HistogramOpts{
-			Namespace: "multica",
+			Namespace: "liexiu",
 			Subsystem: "agent_task",
 			Name:      "run_seconds",
 			Help:      "Time agent tasks spent running before a terminal state.",
 			Buckets:   taskDurationBuckets,
-		}, metricLabels("multica_agent_task_run_seconds")),
+		}, metricLabels("liexiu_agent_task_run_seconds")),
 		taskTotalSeconds: prometheus.NewHistogramVec(prometheus.HistogramOpts{
-			Namespace: "multica",
+			Namespace: "liexiu",
 			Subsystem: "agent_task",
 			Name:      "total_seconds",
 			Help:      "Total time from agent task creation to terminal state.",
 			Buckets:   taskDurationBuckets,
-		}, metricLabels("multica_agent_task_total_seconds")),
+		}, metricLabels("liexiu_agent_task_total_seconds")),
 		taskInProgress: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: "multica",
+			Namespace: "liexiu",
 			Subsystem: "agent_task",
 			Name:      "in_progress",
 			Help:      "Current agent tasks dispatched by this process and not yet terminal.",
-		}, metricLabels("multica_agent_task_in_progress")),
+		}, metricLabels("liexiu_agent_task_in_progress")),
 		taskIterations: prometheus.NewHistogramVec(prometheus.HistogramOpts{
-			Namespace: "multica",
+			Namespace: "liexiu",
 			Subsystem: "agent_task",
 			Name:      "iteration_count",
 			Help:      "Retry attempt count observed when an agent task reaches a terminal state.",
 			Buckets:   []float64{1, 2, 3, 4, 5, 10},
-		}, metricLabels("multica_agent_task_iteration_count")),
+		}, metricLabels("liexiu_agent_task_iteration_count")),
 		llmTokens: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Namespace: "multica",
+			Namespace: "liexiu",
 			Subsystem: "llm",
 			Name:      "tokens_total",
 			Help:      "Total priced LLM tokens by provider, model, token type, runtime mode, and task source.",
-		}, metricLabels("multica_llm_tokens_total")),
+		}, metricLabels("liexiu_llm_tokens_total")),
 		llmCostUSD: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Namespace: "multica",
+			Namespace: "liexiu",
 			Subsystem: "llm",
 			Name:      "cost_usd_total",
 			Help:      "Total estimated priced LLM token cost in USD.",
-		}, metricLabels("multica_llm_cost_usd_total")),
+		}, metricLabels("liexiu_llm_cost_usd_total")),
 		llmUnpricedTokens: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Namespace: "multica",
+			Namespace: "liexiu",
 			Subsystem: "llm",
 			Name:      "unpriced_tokens_total",
 			Help:      "Total LLM tokens for model aliases without a fixed TSR price.",
-		}, metricLabels("multica_llm_unpriced_tokens_total")),
+		}, metricLabels("liexiu_llm_unpriced_tokens_total")),
 		llmRequests: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Namespace: "multica",
+			Namespace: "liexiu",
 			Subsystem: "llm",
 			Name:      "request_total",
 			Help:      "Total task usage reports by normalized LLM provider and model.",
-		}, metricLabels("multica_llm_request_total")),
+		}, metricLabels("liexiu_llm_request_total")),
 		taskQueuedExpired: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Namespace: "multica",
+			Namespace: "liexiu",
 			Subsystem: "task",
 			Name:      "queued_expired_total",
 			Help:      "Total queued tasks expired by the scheduler.",
-		}, metricLabels("multica_task_queued_expired_total")),
+		}, metricLabels("liexiu_task_queued_expired_total")),
 		taskLeaseExpired: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Namespace: "multica",
+			Namespace: "liexiu",
 			Subsystem: "task",
 			Name:      "lease_expired_total",
 			Help:      "Total dispatched or running task leases expired by the scheduler.",
-		}, metricLabels("multica_task_lease_expired_total")),
+		}, metricLabels("liexiu_task_lease_expired_total")),
 		runtimeGCDeleted: prometheus.NewCounter(prometheus.CounterOpts{
-			Namespace: "multica",
+			Namespace: "liexiu",
 			Subsystem: "runtime_gc",
 			Name:      "deleted_total",
 			Help:      "Total stale offline runtimes safely deleted by garbage collection.",
 		}),
 		runtimeGCFailed: prometheus.NewCounter(prometheus.CounterOpts{
-			Namespace: "multica",
+			Namespace: "liexiu",
 			Subsystem: "runtime_gc",
 			Name:      "failed_total",
 			Help:      "Total runtime garbage-collection operations that failed.",
 		}),
 		runtimeGCBlocked: prometheus.NewGauge(prometheus.GaugeOpts{
-			Namespace: "multica",
+			Namespace: "liexiu",
 			Subsystem: "runtime_gc",
 			Name:      "blocked_runtimes",
 			Help:      "Bounded count of stale offline runtimes blocked from garbage collection by non-terminal tasks.",
 		}),
 		runtimeGCBlockedObservationFailed: prometheus.NewCounter(prometheus.CounterOpts{
-			Namespace: "multica",
+			Namespace: "liexiu",
 			Subsystem: "runtime_gc",
 			Name:      "blocked_observation_failed_total",
 			Help:      "Total failures while observing stale runtimes blocked from garbage collection.",
@@ -432,7 +432,7 @@ func (m *BusinessMetrics) clearTaskInProgress(taskID string) {
 }
 
 func (m *BusinessMetrics) prewarmFailureReasons() {
-	for _, source := range []string{"issue", "chat", "autopilot", "autopilot_issue", "quick_create", "other"} {
+	for _, source := range []string{"issue", "quick_create", "other"} {
 		for _, runtimeMode := range []string{"local", "cloud", "unknown"} {
 			for _, reason := range taskfailure.AllReasons() {
 				m.taskFailed.WithLabelValues(source, runtimeMode, reason.String()).Add(0)

@@ -32,11 +32,8 @@ jobs:
         id: filter
         uses: dorny/paths-filter@v3
         with:
-          # apps/docs is excluded from the frontend turbo run, so a
-          # docs-only change does not need this job. apps/mobile has its
-          # own mobile-verify workflow. Everything else the frontend job
-          # touches is listed here; bias toward over-matching since a
-          # missed path silently skips validation.
+          # Everything the frontend job touches is listed here; bias toward
+          # over-matching since a missed path silently skips validation.
           filters: |
             frontend:
               - 'apps/web/**'
@@ -86,7 +83,7 @@ jobs:
           fi
 
   # The frontend validation is split across two runners on purpose. Both
-  # `@multica/web:build` (a webpack production build) and `@multica/views:test`
+  # `@liexiu/web:build` (a webpack production build) and `@liexiu/views:test`
   # (259 jsdom files) are CPU-saturating, and a standard runner only has
   # 4 vCPUs. Running them in one job made them starve each other: the views
   # suite needs ~104s wall when it owns 4 cores but took ~500s sharing them,
@@ -121,7 +118,7 @@ jobs:
 
       - name: Install dependencies
         if: ${{ needs.changes.outputs.frontend == 'true' }}
-        run: pnpm install
+        run: pnpm install --frozen-lockfile
 
       # `node-version: 22` above floats across patch releases, and turbo's
       # global hash does not include the interpreter at all (`engines` is null
@@ -168,12 +165,7 @@ jobs:
 
       - name: Build, type check, and lint
         if: ${{ needs.changes.outputs.frontend == 'true' }}
-        # Mobile lives in a parallel mobile-verify workflow (path-filtered
-        # to apps/mobile/** + packages/core/**) so it doesn't add
-        # ~50s of expo-lint + tsc to every web/desktop PR. Keep this
-        # filter in sync with the root package.json scripts, which also
-        # exclude @multica/mobile.
-        run: pnpm exec turbo build typecheck lint --filter='!@multica/docs' --filter='!@multica/mobile'
+        run: pnpm exec turbo build typecheck lint
 
   frontend-test:
     needs: changes
@@ -198,7 +190,7 @@ jobs:
 
       - name: Install dependencies
         if: ${{ needs.changes.outputs.frontend == 'true' }}
-        run: pnpm install
+        run: pnpm install --frozen-lockfile
 
       - name: Resolve runtime for cache key
         id: runtime
@@ -220,11 +212,11 @@ jobs:
 
       - name: Test
         if: ${{ needs.changes.outputs.frontend == 'true' }}
-        # Same filter rationale as frontend-build. Type errors are not this
+        # Type errors are not this
         # job's responsibility -- frontend-build owns the `typecheck` task.
         # `test` reaches dependency sources through the hash-only
         # `^cache-inputs` edge (see turbo.json), so no `tsc` runs here.
-        run: pnpm exec turbo test --filter='!@multica/docs' --filter='!@multica/mobile'
+        run: pnpm exec turbo test
 
   # Aggregate gate. `frontend` is the status-check name the repository's
   # branch rules refer to, so it has to survive the split above: this job
@@ -258,13 +250,13 @@ jobs:
       postgres:
         image: pgvector/pgvector:pg17
         env:
-          POSTGRES_DB: multica
-          POSTGRES_USER: multica
-          POSTGRES_PASSWORD: multica
+          POSTGRES_DB: liexiu
+          POSTGRES_USER: liexiu
+          POSTGRES_PASSWORD: liexiu
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U multica -d multica"
+          --health-cmd "pg_isready -U liexiu -d liexiu"
           --health-interval 5s
           --health-timeout 5s
           --health-retries 20
@@ -278,7 +270,7 @@ jobs:
           --health-timeout 5s
           --health-retries 10
     env:
-      DATABASE_URL: postgres://multica:multica@localhost:5432/multica?sslmode=disable
+      DATABASE_URL: postgres://liexiu:liexiu@localhost:5432/liexiu?sslmode=disable
       # Wires up the RedisLocalSkill*_test.go suite. Distinct from REDIS_URL
       # (which would flip the server binary itself onto the Redis-backed
       # realtime relay + request stores); the tests talk to this Redis
@@ -293,12 +285,6 @@ jobs:
         with:
           go-version: "1.26.1"
           cache-dependency-path: server/go.sum
-
-      - name: Setup Helm
-        uses: azure/setup-helm@v4
-
-      - name: Test Helm chart
-        run: bash scripts/helm-config.test.sh
 
       - name: Build
         run: cd server && go build ./...
@@ -449,7 +435,7 @@ jobs:
 
       - name: Build Windows CLI helper entrypoint
         working-directory: server
-        run: go build ./cmd/multica
+        run: go build ./cmd/liexiu
 
   installer:
     # Stub-driven shell tests for scripts/install.sh and scripts/install.ps1.

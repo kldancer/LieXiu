@@ -1,10 +1,9 @@
 package metrics_test
 
-// PR3 lint test: enforces that every PostHog event constant declared in
-// server/internal/analytics/events.go has a paired Prometheus counter
-// reachable through metrics.RecordEvent — and that every
-// h.Analytics.Capture(analytics.<Helper>(...)) call site goes through
-// metrics.RecordEvent (no naked Capture allowed). The agent task lifecycle is
+// Static boundary: every local event constant declared in
+// server/internal/analytics/events.go has a paired Prometheus counter reachable
+// through metrics.RecordEvent, and direct compatibility Capture calls remain
+// forbidden. The agent task lifecycle is
 // no longer an analytics.Event — it is recorded straight to Prometheus via the
 // typed BusinessMetrics.RecordTask* methods — so there is no longer an
 // AgentTask* allow-list here.
@@ -19,8 +18,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/multica-ai/multica/server/internal/analytics"
-	"github.com/multica-ai/multica/server/internal/metrics"
+	"github.com/kailonyang/liexiu/server/internal/analytics"
+	"github.com/kailonyang/liexiu/server/internal/metrics"
 )
 
 // frontendOnlyEvents are declared in events.go but emitted from the frontend,
@@ -65,9 +64,8 @@ func TestEveryAnalyticsEventHasPrometheusCounter(t *testing.T) {
 // TestNoNakedAnalyticsCaptureInHandlersOrServices walks every Go file under
 // server/internal/handler and server/internal/service and asserts that every
 // `<x>.Analytics.Capture(analytics.<Helper>(...))` call goes through
-// metrics.RecordEvent. There are no exceptions: every server-side PostHog
-// event must flow through RecordEvent so the Prometheus and PostHog sides
-// cannot drift.
+// metrics.RecordEvent. There are no exceptions: local event facts must flow
+// through the bounded Prometheus dispatcher.
 func TestNoNakedAnalyticsCaptureInHandlersOrServices(t *testing.T) {
 	t.Parallel()
 
@@ -127,7 +125,7 @@ func TestNoNakedAnalyticsCaptureInHandlersOrServices(t *testing.T) {
 
 	if len(offenders) > 0 {
 		sort.Strings(offenders)
-		t.Errorf("found %d naked Analytics.Capture(...) calls — wrap them in metrics.RecordEvent so the Prometheus and PostHog sides cannot drift:\n  %s", len(offenders), strings.Join(offenders, "\n  "))
+		t.Errorf("found %d naked Analytics.Capture(...) calls — wrap them in metrics.RecordEvent so local metrics remain bounded:\n  %s", len(offenders), strings.Join(offenders, "\n  "))
 	}
 }
 
@@ -276,7 +274,7 @@ func repoRoot(t *testing.T) string {
 }
 
 // analyticsEventNames parses analytics/events.go and returns every Event*
-// constant value (the literal string passed to PostHog).
+// constant value used by the local metric dispatcher.
 func analyticsEventNames(t *testing.T) map[string]struct{} {
 	t.Helper()
 
@@ -329,8 +327,7 @@ func constantNameForEvent(name string) string {
 	return "Event" + strings.Join(parts, "")
 }
 
-// dispatchIncrementsCounter sends ev through RecordEvent (with a noop
-// PostHog client) and returns true when at least one Prometheus counter
+// dispatchIncrementsCounter sends ev through RecordEvent and returns true when at least one Prometheus counter
 // receives a non-zero increment. We use a fresh BusinessMetrics per event
 // so a leftover prewarm value from another counter cannot mask a missing
 // dispatch case.
@@ -356,24 +353,14 @@ func defaultPropsForEvent(name string) map[string]any {
 		return map[string]any{"completion_path": "full"}
 	case analytics.EventIssueCreated:
 		return map[string]any{"source": "manual", "platform": "web"}
-	case analytics.EventChatMessageSent:
-		return map[string]any{"platform": "web"}
 	case analytics.EventAgentCreated:
 		return map[string]any{"runtime_mode": "local", "source": "manual"}
-	case analytics.EventAutopilotCreated:
-		return map[string]any{"cadence": "manual"}
 	case analytics.EventIssueExecuted:
 		return map[string]any{"source": "manual"}
 	case analytics.EventRuntimeRegistered, analytics.EventRuntimeReady, analytics.EventRuntimeOffline:
 		return map[string]any{"runtime_mode": "local", "provider": "claude"}
 	case analytics.EventRuntimeFailed:
 		return map[string]any{"runtime_mode": "local", "provider": "claude", "failure_reason": "unknown", "recoverable": false}
-	case analytics.EventAutopilotRunStarted, analytics.EventAutopilotRunCompleted, analytics.EventAutopilotRunFailed:
-		return map[string]any{"cadence": "manual", "trigger_kind": "manual"}
-	case analytics.EventFeedbackSubmitted:
-		return map[string]any{"kind": "general", "platform": "web"}
-	case analytics.EventContactSalesSubmitted:
-		return map[string]any{"form_source": "page"}
 	}
 	return map[string]any{}
 }

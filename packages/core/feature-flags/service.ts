@@ -33,10 +33,10 @@ export class FeatureFlagService {
    * flag is unknown the caller's default is returned.
    *
    * @example
-   *   if (flags.isEnabled("billing_new_invoice_email", { userId }, false)) {
-   *     return <NewInvoiceEmail />;
+   *   if (flags.isEnabled("new_dashboard", { userId }, false)) {
+   *     return <NewDashboard />;
    *   }
-   *   return <LegacyInvoiceEmail />;
+   *   return <CurrentDashboard />;
    */
   isEnabled(key: string, ctx: EvalContext, defaultValue: boolean): boolean {
     return this.decision(key, ctx, defaultValue).enabled;

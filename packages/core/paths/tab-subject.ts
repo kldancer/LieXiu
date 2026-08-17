@@ -6,16 +6,15 @@
  * unrecognized — is what decides how it should look (icon + title). This module
  * turns a URL into that semantic {@link TabSubject}. It is pure: no React, no
  * Lucide, no query — only URL parsing. The visual/title mapping lives in
- * `tab-presentation.ts`; the React glue lives in `@multica/views`.
+ * `tab-presentation.ts`; the React glue lives in `@liexiu/views`.
  *
  * Workspace URLs are `/{slug}/{segment}/...`. The slug is index 0, the route
- * segment index 1, and any resource id index 2. Container selection (Inbox,
- * Chat) rides in the query string, so it is parsed too — the URL is the single
- * source of truth for what a tab has open, including which item.
+ * segment index 1, and any resource id index 2. Resource selection rides in
+ * the query string, so it is parsed too — the URL is the single source of truth.
  */
 import { pageForSegment, type WorkspacePageKey } from "./route-icons";
 
-export type TabActorType = "agent" | "member" | "squad";
+export type TabActorType = "agent" | "member";
 
 export type TabSubject =
   /** A collection or tool page with no specific resource. */
@@ -24,9 +23,7 @@ export type TabSubject =
   | { kind: "issue"; id: string }
   /** A single project detail. */
   | { kind: "project"; id: string }
-  /** A single autopilot detail. */
-  | { kind: "autopilot"; id: string }
-  /** An agent / member / squad detail (has an avatar identity). */
+  /** An agent or member detail (has an avatar identity). */
   | { kind: "actor"; actorType: TabActorType; id: string }
   /** A single skill detail. */
   | { kind: "skill"; id: string }
@@ -36,13 +33,6 @@ export type TabSubject =
   | { kind: "runtime"; machineId: string; runtimeId: string }
   /** An attachment preview. `filename` is the `?name=` hint, or null. */
   | { kind: "attachment"; id: string; filename: string | null }
-  /**
-   * The Inbox container; `selectedKey` is the `?issue=` selection or null,
-   * `archived` is the `?view=archived` sub-list (its own list/cache).
-   */
-  | { kind: "inbox"; selectedKey: string | null; archived: boolean }
-  /** The Chat container; `sessionId` is the `?session=` selection or null. */
-  | { kind: "chat"; sessionId: string | null }
   /** A creation flow that has not produced a resource yet. */
   | { kind: "flow"; flow: "create-agent" }
   /** An unrecognized URL. Never impersonate a real page. */
@@ -82,8 +72,6 @@ export function parseTabSubject(url: string): TabSubject {
       return { kind: "page", page: "myIssues" };
     case "projects":
       return id ? { kind: "project", id } : { kind: "page", page: "projects" };
-    case "autopilots":
-      return id ? { kind: "autopilot", id } : { kind: "page", page: "autopilots" };
     case "agents":
       if (id === "new") return { kind: "flow", flow: "create-agent" };
       return id
@@ -92,20 +80,8 @@ export function parseTabSubject(url: string): TabSubject {
     case "members":
       // No members collection route exists; only `/members/:id`.
       return id ? { kind: "actor", actorType: "member", id } : { kind: "unknown" };
-    case "squads":
-      return id
-        ? { kind: "actor", actorType: "squad", id }
-        : { kind: "page", page: "squads" };
     case "usage":
       return { kind: "page", page: "usage" };
-    case "inbox":
-      return {
-        kind: "inbox",
-        selectedKey: query.get("issue") || null,
-        archived: query.get("view") === "archived",
-      };
-    case "chat":
-      return { kind: "chat", sessionId: query.get("session") || null };
     case "runtimes":
       if (!id) return { kind: "page", page: "runtimes" };
       // `/runtimes/:machineId/runtime/:runtimeId` — nested runtime.
@@ -145,8 +121,6 @@ export function tabSubjectKey(subject: TabSubject): string {
       return `issue:${subject.id}`;
     case "project":
       return `project:${subject.id}`;
-    case "autopilot":
-      return `autopilot:${subject.id}`;
     case "actor":
       return `actor:${subject.actorType}:${subject.id}`;
     case "skill":
@@ -157,10 +131,6 @@ export function tabSubjectKey(subject: TabSubject): string {
       return `runtime:${subject.machineId}:${subject.runtimeId}`;
     case "attachment":
       return `attachment:${subject.id}:${subject.filename ?? ""}`;
-    case "inbox":
-      return `inbox:${subject.archived ? "archived" : "inbox"}:${subject.selectedKey ?? ""}`;
-    case "chat":
-      return `chat:${subject.sessionId ?? ""}`;
     case "flow":
       return `flow:${subject.flow}`;
     case "unknown":

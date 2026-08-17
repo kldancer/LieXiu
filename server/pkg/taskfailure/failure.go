@@ -1,5 +1,5 @@
 // Package taskfailure is the canonical, refined taxonomy of values written
-// into agent_task_queue.failure_reason and chat_message.failure_reason.
+// into agent_task_queue.failure_reason.
 //
 // History: until MUL-1949, server/daemon code wrote one of a small handful
 // of coarse failure_reason values ("agent_error", "timeout",
@@ -13,7 +13,7 @@
 // stored failure_reason is already refined when the row is first
 // persisted, and so server / daemon / cloud share a single source of
 // truth for the canonical 22 values. PR1 of the Grafana board plan
-// ([MUL-2946](https://multica/issues/MUL-2946)). Subsequent PRs use
+// ([MUL-2946](https://liexiu/issues/MUL-2946)). Subsequent PRs use
 // AllReasons() to pre-warm the Prometheus failure_reason label set.
 //
 // The 22 canonical values fall into two groups:
@@ -54,7 +54,7 @@ type Reason string
 const agentErrorPrefix = "agent_error."
 
 const (
-	// Platform / scheduler side: failure attributable to Multica
+	// Platform / scheduler side: failure attributable to LieXiu
 	// infrastructure rather than anything the agent process did. These
 	// are emitted by server-side sweepers (ExpireStaleQueuedTasks,
 	// FailStaleTasks, FailTasksForOfflineRuntimes,
@@ -63,7 +63,7 @@ const (
 	// IsAgentError returns false for all of these.
 
 	// ReasonQueuedExpired: task sat in 'queued' past the TTL without
-	// being claimed (typically autopilot backlog while the assignee's
+	// being claimed (typically queued work while the assignee's
 	// runtime is offline). Written by ExpireStaleQueuedTasks.
 	ReasonQueuedExpired Reason = "queued_expired"
 
@@ -83,7 +83,7 @@ const (
 
 	// ReasonIterationLimit: the agent reached its per-run iteration
 	// cap and emitted a fallback "I reached the iteration limit"
-	// message. Treated as platform-side because it is a Multica-imposed
+	// message. Treated as platform-side because it is a LieXiu-imposed
 	// budget rather than an external API rejection.
 	ReasonIterationLimit Reason = "iteration_limit"
 

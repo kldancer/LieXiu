@@ -7,8 +7,8 @@ import {
 } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useState, type ReactElement } from "react";
-import type { Attachment } from "@multica/core/types";
-import { collectImageSequence } from "@multica/core/attachments/image-sequence";
+import type { Attachment } from "@liexiu/core/types";
+import { collectImageSequence } from "@liexiu/core/attachments/image-sequence";
 
 const { downloadMock, getBaseUrlMock, toastErrorMock } = vi.hoisted(() => ({
   downloadMock: vi.fn(),
@@ -18,7 +18,7 @@ const { downloadMock, getBaseUrlMock, toastErrorMock } = vi.hoisted(() => ({
 
 vi.mock("../platform", () => ({ openExternal: vi.fn() }));
 
-vi.mock("@multica/core/api", () => ({
+vi.mock("@liexiu/core/api", () => ({
   api: { getBaseUrl: getBaseUrlMock, getAttachmentTextContent: vi.fn() },
   PreviewTooLargeError: class extends Error {},
   PreviewUnsupportedError: class extends Error {},
@@ -102,8 +102,6 @@ function imageAttachment(n: number): Attachment {
     workspace_id: "ws-1",
     issue_id: null,
     comment_id: null,
-    chat_session_id: null,
-    chat_message_id: null,
     uploader_type: "member",
     uploader_id: "u-1",
     filename: `shot-${n}.png`,

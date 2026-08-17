@@ -1,19 +1,19 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { I18nProvider } from "@multica/core/i18n/react";
-import { configStore } from "@multica/core/config";
+import { I18nProvider } from "@liexiu/core/i18n/react";
+import { configStore } from "@liexiu/core/config";
 import enCommon from "../../locales/en/common.json";
 import enRuntimes from "../../locales/en/runtimes.json";
 import { ConnectRemoteDialog } from "./connect-remote-dialog";
 
 const TEST_RESOURCES = { en: { common: enCommon, runtimes: enRuntimes } };
 
-vi.mock("@multica/core/hooks", () => ({
+vi.mock("@liexiu/core/hooks", () => ({
   useWorkspaceId: () => "ws-test",
 }));
 
-vi.mock("@multica/core/paths", () => ({
+vi.mock("@liexiu/core/paths", () => ({
   paths: {
     workspace: () => ({
       agents: () => "/agents",
@@ -27,7 +27,7 @@ const wsEventState = vi.hoisted(() => ({
   handler: null as ((payload: unknown) => void) | null,
 }));
 
-vi.mock("@multica/core/realtime", () => ({
+vi.mock("@liexiu/core/realtime", () => ({
   useWSEvent: (_event: string, handler: (payload: unknown) => void) => {
     wsEventState.handler = handler;
   },
@@ -40,11 +40,10 @@ vi.mock("../../navigation", () => ({
 function resetConfigStore() {
   configStore.setState({
     cdnDomain: "",
-    allowSignup: true,
-    googleClientId: "",
+    cdnSigned: false,
     daemonServerUrl: "",
     daemonAppUrl: "",
-    workspaceCreationDisabled: false,
+    vcsIntegrationAvailable: false,
   });
 }
 
@@ -79,13 +78,13 @@ describe("ConnectRemoteDialog", () => {
   it("uses cloud setup commands by default", () => {
     const { baseElement } = renderDialog();
 
-    expect(baseElement).toHaveTextContent("multica setup");
-    expect(baseElement).not.toHaveTextContent("multica setup self-host");
+    expect(baseElement).toHaveTextContent("liexiu setup");
+    expect(baseElement).not.toHaveTextContent("liexiu setup self-host");
     expect(baseElement).toHaveTextContent(
-      "multica config set server_url https://api.multica.ai",
+      "liexiu config set server_url https://api.liexiu.ai",
     );
     expect(baseElement).toHaveTextContent(
-      "multica config set app_url https://multica.ai",
+      "liexiu config set app_url https://liexiu.ai",
     );
   });
 
@@ -96,13 +95,13 @@ describe("ConnectRemoteDialog", () => {
     });
 
     expect(baseElement).toHaveTextContent(
-      "multica setup self-host --server-url https://api.example.com --app-url https://app.example.com",
+      "liexiu setup self-host --server-url https://api.example.com --app-url https://app.example.com",
     );
     expect(baseElement).toHaveTextContent(
-      "multica config set server_url https://api.example.com",
+      "liexiu config set server_url https://api.example.com",
     );
     expect(baseElement).toHaveTextContent(
-      "multica config set app_url https://app.example.com",
+      "liexiu config set app_url https://app.example.com",
     );
   });
 
@@ -110,7 +109,7 @@ describe("ConnectRemoteDialog", () => {
     const { baseElement } = renderDialog();
 
     const setupCode = Array.from(baseElement.querySelectorAll("code")).find((node) =>
-      node.textContent?.includes("multica setup"),
+      node.textContent?.includes("liexiu setup"),
     );
 
     expect(setupCode).toHaveClass(...ligatureClasses);
@@ -120,7 +119,7 @@ describe("ConnectRemoteDialog", () => {
     const { baseElement } = renderDialog();
 
     const tokenCode = Array.from(baseElement.querySelectorAll("code")).find((node) =>
-      node.textContent?.includes("multica login --token <YOUR_TOKEN>"),
+      node.textContent?.includes("liexiu login --token <YOUR_TOKEN>"),
     );
 
     expect(tokenCode).toHaveClass(...ligatureClasses);
@@ -129,7 +128,7 @@ describe("ConnectRemoteDialog", () => {
   it("transitions from setup instructions to the connected state", async () => {
     const { baseElement } = renderDialog();
 
-    expect(baseElement).toHaveTextContent("multica setup");
+    expect(baseElement).toHaveTextContent("liexiu setup");
     act(() => {
       wsEventState.handler?.({ runtime_id: "rt-test" });
     });
@@ -140,6 +139,6 @@ describe("ConnectRemoteDialog", () => {
         screen.getByRole("button", { name: "Create an agent" }),
       ).toBeInTheDocument();
     });
-    expect(baseElement).not.toHaveTextContent("multica setup");
+    expect(baseElement).not.toHaveTextContent("liexiu setup");
   });
 });

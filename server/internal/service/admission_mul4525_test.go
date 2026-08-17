@@ -3,16 +3,12 @@ package service
 import (
 	"context"
 	"errors"
-	"fmt"
-	"strings"
 	"testing"
-	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/multica-ai/multica/server/internal/dispatch"
-	"github.com/multica-ai/multica/server/internal/events"
-	"github.com/multica-ai/multica/server/internal/util"
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
+	"github.com/kailonyang/liexiu/server/internal/events"
+	"github.com/kailonyang/liexiu/server/internal/util"
+	db "github.com/kailonyang/liexiu/server/pkg/db/generated"
 )
 
 // TestRerunIssueBlockedBeforeMutationWhenInvokeDenied is the security acceptance
@@ -89,60 +85,5 @@ func TestRerunIssueBlockedBeforeMutationWhenInvokeDenied(t *testing.T) {
 	}
 	if util.UUIDToString(rerun.ID) == util.UUIDToString(orig.ID) {
 		t.Errorf("expected a new task id, got the original %s", util.UUIDToString(orig.ID))
-	}
-}
-
-// TestAutopilotDispatchAdmitsClickerNotCreator is the acceptance test for
-// MUL-4525 §3: a MANUAL "run now" admits on the CURRENT clicker's invoke
-// permission (not the autopilot creator's), while automation (no human actor)
-// still falls back to the creator gate. The two must not fork.
-func TestAutopilotDispatchAdmitsClickerNotCreator(t *testing.T) {
-	pool := newResolveOriginatorPool(t)
-	ctx := context.Background()
-	q := db.New(pool)
-	// Fixture agent is private and owned by ownerID.
-	workspaceID, ownerID, agentID, _ := seedAttributionFixture(t, pool)
-
-	// A different member owns the autopilot; they neither own the private agent
-	// nor sit on its allow-list, so the creator gate denies them.
-	var apCreatorID string
-	if err := pool.QueryRow(ctx, `INSERT INTO "user" (name, email) VALUES ('AP Creator', $1) RETURNING id`,
-		fmt.Sprintf("apc-%d@multica.test", time.Now().UnixNano())).Scan(&apCreatorID); err != nil {
-		t.Fatalf("seed ap creator: %v", err)
-	}
-	t.Cleanup(func() { pool.Exec(context.Background(), `DELETE FROM "user" WHERE id = $1`, apCreatorID) })
-	if _, err := pool.Exec(ctx, `INSERT INTO member (workspace_id, user_id, role) VALUES ($1, $2, 'admin')`,
-		workspaceID, apCreatorID); err != nil {
-		t.Fatalf("seed ap creator member: %v", err)
-	}
-
-	ap := db.Autopilot{
-		WorkspaceID:   util.MustParseUUID(workspaceID),
-		AssigneeID:    util.MustParseUUID(agentID),
-		AssigneeType:  "agent",
-		ExecutionMode: "run_only",
-		Status:        "active",
-		CreatedByType: "member",
-		CreatedByID:   util.MustParseUUID(apCreatorID),
-	}
-	svc := &AutopilotService{Queries: q}
-
-	// Manual dispatch by the agent owner (the clicker) is admitted.
-	if reason, _, skip := svc.shouldSkipDispatch(ctx, ap, util.MustParseUUID(ownerID)); skip {
-		t.Fatalf("manual dispatch by the agent owner should be admitted, got skip: %q", reason)
-	}
-
-	// Automation (no human actor) falls back to the creator gate, which denies
-	// the admin-but-non-owner creator on a private agent — and the typed reason
-	// code is decided at that branch, not guessed from text.
-	reason, code, skip := svc.shouldSkipDispatch(ctx, ap, pgtype.UUID{})
-	if !skip {
-		t.Fatalf("automation dispatch should be blocked by the creator gate")
-	}
-	if !strings.Contains(strings.ToLower(reason), "creator") {
-		t.Errorf("automation skip reason = %q, want creator-gate phrasing", reason)
-	}
-	if code != dispatch.ReasonInvocationNotAllowed {
-		t.Errorf("skip reason_code = %q, want invocation_not_allowed", code)
 	}
 }

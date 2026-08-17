@@ -17,17 +17,17 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/multica-ai/multica/server/internal/auth"
-	"github.com/multica-ai/multica/server/internal/storage"
-	"github.com/multica-ai/multica/server/internal/util"
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
+	"github.com/kailonyang/liexiu/server/internal/auth"
+	"github.com/kailonyang/liexiu/server/internal/storage"
+	"github.com/kailonyang/liexiu/server/internal/util"
+	db "github.com/kailonyang/liexiu/server/pkg/db/generated"
 )
 
 // ---------------------------------------------------------------------------
 // Avatar URLs (MUL-5393 / #6024)
 // ---------------------------------------------------------------------------
 //
-// `avatar_url` columns (user / agent / squad / workspace) store the raw
+// `avatar_url` columns (user / agent / workspace) store the raw
 // storage object URL the upload returned. On a deployment whose bucket is
 // public — S3/R2 behind a public CDN domain, or the LocalStorage backend
 // whose /uploads/* route is served publicly — that URL loads fine in an
@@ -63,7 +63,7 @@ import (
 //     the server never published as an avatar;
 //   - only image extensions resolve at all (see avatarContentType);
 //   - and the object must be AVATAR-CLASS — a standalone image upload that is
-//     not attached to an issue, comment, chat session, chat message, or task
+//     not attached to an issue, comment, or task
 //     (see avatarKeyIsPublishable).
 //
 // That last rule is the authorization boundary, and it is enforced on BOTH
@@ -74,21 +74,21 @@ import (
 // every workspace that user belongs to. The write side rejects such a value up
 // front; the read side re-checks per request, which is what makes the
 // guarantee hold for rows written before this check existed and revokes the
-// URL if an object is ever bound to a comment or chat afterwards.
+// URL if an object is ever bound to a comment afterwards.
 //
 // Uploader identity is deliberately NOT part of the rule. Duplicating an agent
 // legitimately reuses the source agent's avatar object, which a different
 // admin may have uploaded. The remaining theoretical case — publishing someone
 // else's *unbound* image — requires knowing that object's URL, and unbound
-// rows appear in no listing endpoint (ListAttachments is by issue,
-// groupAttachments by comment, chat attachments by message), so the only party
+// rows appear in no listing endpoint (ListAttachments is by issue and
+// groupAttachments by comment), so the only party
 // who ever sees one is its own uploader.
 
 const avatarURLPathPrefix = "/api/avatars/"
 
 // workspaceUploadNamespace is the storage prefix under which workspace-scoped
-// content lives — issue/comment/chat attachments, avatars, and channel media
-// ingest alike (see UploadFile and lark's mediaObjectKey). It is the only
+// content lives — issue/comment/task attachments, avatars, and other media
+// ingest alike (see UploadFile). It is the only
 // namespace where an object can belong to somebody other than whoever is
 // setting the avatar, so it is the only one that has to prove itself.
 const workspaceUploadNamespace = "workspaces/"
@@ -131,7 +131,7 @@ var (
 
 // avatarURLSigningKey derives an avatar-specific HMAC key from JWT_SECRET via
 // SHA-256, so this signing domain never shares an identical key with session
-// tokens. Mirrors composioStateSecret in the router.
+// tokens. Mirrors the integration signing secret in the router.
 func avatarURLSigningKey() []byte {
 	avatarSigningKeyOnce.Do(func() {
 		sum := sha256.Sum256(append([]byte("avatar-url:"), auth.JWTSecret()...))
@@ -264,7 +264,7 @@ func (h *Handler) acceptAvatarURL(w http.ResponseWriter, r *http.Request, raw, c
 		return value, true
 	}
 	if !h.avatarKeyIsPublishable(r.Context(), key) {
-		writeError(w, http.StatusForbidden, "avatar_url must reference a standalone image upload, not a file attached to an issue, comment, or chat")
+		writeError(w, http.StatusForbidden, "avatar_url must reference a standalone image upload, not a file attached to an issue, comment, or task")
 		return "", false
 	}
 	return value, true
@@ -291,9 +291,8 @@ func (h *Handler) avatarKeyIsPublishable(ctx context.Context, key string) bool {
 	}
 	attID, ok := attachmentIDFromStorageKey(key)
 	if !ok {
-		// Inside the workspace namespace but not an upload row — channel
-		// media ingest writes `workspaces/<ws>/lark/…` keys here too. Fail
-		// closed.
+		// Inside the workspace namespace but not an upload row — other media
+		// ingest may write workspace-scoped keys here too. Fail closed.
 		return false
 	}
 	att, err := h.Queries.GetAttachmentByIDOnly(ctx, attID)
@@ -307,12 +306,10 @@ func (h *Handler) avatarKeyIsPublishable(ctx context.Context, key string) bool {
 }
 
 // attachmentIsBound reports whether an upload is attached to workspace content.
-// A bound row is somebody's issue/comment/chat file — never an avatar.
+// A bound row is somebody's issue/comment/task file — never an avatar.
 func attachmentIsBound(att db.Attachment) bool {
 	return att.IssueID.Valid ||
 		att.CommentID.Valid ||
-		att.ChatSessionID.Valid ||
-		att.ChatMessageID.Valid ||
 		att.TaskID.Valid
 }
 
@@ -362,7 +359,7 @@ func (h *Handler) avatarObjectLoadsUnauthenticated(rawURL string) bool {
 	return h.storageURLIsPubliclyReadable(rawURL)
 }
 
-// absolutizeAvatarPath anchors the served path on MULTICA_PUBLIC_URL when it
+// absolutizeAvatarPath anchors the served path on LIEXIU_PUBLIC_URL when it
 // is configured, so clients that don't share the API's document origin
 // (Desktop, mobile webview) can load it. Same policy as buildMarkdownURL;
 // falling back to the site-relative path is safe because every client
@@ -400,7 +397,7 @@ func (h *Handler) ServeAvatar(w http.ResponseWriter, r *http.Request) {
 	// route is not an oracle for any of them. The publishable check runs on
 	// every request rather than only at write time: it is what bounds rows
 	// written before the write-side gate existed, and it revokes the URL if
-	// the object is later bound to a comment or chat.
+	// the object is later bound to a comment.
 	if contentType == "" ||
 		!avatarKeySignatureValid(key, chi.URLParam(r, "sig")) ||
 		!h.avatarKeyIsPublishable(r.Context(), key) {

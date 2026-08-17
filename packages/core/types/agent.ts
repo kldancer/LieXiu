@@ -1,4 +1,3 @@
-import type { ChatSession } from "./chat";
 
 export type AgentStatus = "idle" | "working" | "blocked" | "error" | "offline";
 
@@ -218,7 +217,7 @@ export interface WorkspaceWorkingAgent {
   issue_ids: string[];
 }
 
-export type WorkspaceWorkingAgentType = "issue" | "autopilot" | "chat";
+export type WorkspaceWorkingAgentType = "issue";
 
 export type WorkspaceWorkingAgentMineRelation =
   | "assigned"
@@ -239,7 +238,7 @@ export interface AttributionUser {
   avatar_url?: string;
 }
 
-/** The kind-tagged handle to a run's direct cause (comment, autopilot run, ...). */
+/** The kind-tagged handle to a run's direct cause. */
 export interface TaskEvidence {
   kind: string;
   ref_id: string;
@@ -260,11 +259,10 @@ export interface TaskAttribution {
   precise: boolean;
   /** The accountable human ("on behalf of"). Absent when unattributed. */
   initiator?: AttributionUser;
-  /** The authorization human; absent for autopilot runs (rule_owner / owner_fallback). */
+  /** The authorization human when the run was delegated or owner-resolved. */
   originator?: AttributionUser;
   /** The direct cause of the run, for a jump-to-evidence affordance. */
   evidence?: TaskEvidence;
-  rule_version_id?: string;
   delegated_from_task_id?: string;
   retry_of_task_id?: string;
   rerun_of_task_id?: string;
@@ -274,9 +272,8 @@ export interface AgentTask {
   id: string;
   agent_id: string;
   runtime_id: string;
-  // Empty string ("") when the task has no linked issue — either chat- or
-  // autopilot-spawned. Check chat_session_id / autopilot_run_id to tell
-  // which source produced it.
+  // Empty string ("") when the task has no linked issue, such as a quick-create
+  // task before the issue has been persisted.
   issue_id: string;
   // `waiting_local_directory` is the daemon-emitted hold state for the
   // local_directory flow: a task that has been dispatched but is parked
@@ -308,10 +305,6 @@ export interface AgentTask {
   // hints.
   failure_reason?: TaskFailureReason | (string & {}) | "";
   created_at: string;
-  /** Non-empty when the task was spawned from a chat session. */
-  chat_session_id?: string;
-  /** Non-empty when the task was spawned by an autopilot run. */
-  autopilot_run_id?: string;
   /** Set when this task was created as an auto-retry of a parent task. */
   parent_task_id?: string;
   /** 1-based attempt counter; >1 means this is a retry. */
@@ -336,10 +329,8 @@ export interface AgentTask {
   /**
    * Canonical short description of what triggered this task — snapshot
    * taken at creation time. For comment-triggered tasks it's the
-   * comment text (truncated to ~200 chars); for autopilot it's the
-   * autopilot title; NULL for direct assignments and chat tasks.
-   * Persists even if the source comment / autopilot is later edited
-   * or deleted.
+   * comment text (truncated to ~200 chars); NULL for direct assignments.
+   * Persists even if the source comment is later edited or deleted.
    */
   trigger_summary?: string;
   /**
@@ -354,7 +345,7 @@ export interface AgentTask {
    * tasks that have no linked issue (so e.g. quick-create tasks render
    * with a meaningful title instead of falling through to "Untracked").
    */
-  kind?: "comment" | "autopilot" | "chat" | "quick_create" | "direct";
+  kind?: "comment" | "quick_create" | "direct";
   /**
    * Local working directory pinned for this task by the daemon. Empty until
    * the daemon reports a work_dir (typically once execution starts). This is
@@ -430,17 +421,6 @@ export interface TaskUsage {
   cost_usd_ticks?: number;
 }
 
-/**
- * Response of the Mika bootstrap endpoint: the workspace's Mika plus the
- * caller's conversation with it, resolved together server-side so two clients
- * cannot each open their own onboarding session.
- */
-export interface MikaBootstrapResponse extends Agent {
-  /** Absent only when the server could not resolve the session; retry the
-   *  same call rather than creating one client-side. */
-  onboarding_session?: ChatSession;
-}
-
 export interface Agent {
   id: string;
   workspace_id: string;
@@ -456,16 +436,8 @@ export interface Agent {
   runtime_bound?: boolean;
   name: string;
   description: string;
-  /** What this agent's owner wrote. For a system agent this holds only the
-   *  workspace's own notes — the product half is `system_instructions`. */
+  /** What this agent's owner wrote. */
   instructions: string;
-  /** Set for product-defined agents (e.g. "mika"). Absent for user- and
-   *  template-created agents. Identity for "maintained by Multica" checks —
-   *  never the display name, which owners may change. */
-  system_key?: string;
-  /** Read-only product half of a system agent's prompt, served from the
-   *  backend binary. Absent for ordinary agents. */
-  system_instructions?: string;
   avatar_url: string | null;
   runtime_mode: AgentRuntimeMode;
   runtime_config: Record<string, unknown>;
@@ -510,24 +482,6 @@ export interface Agent {
    * Older backends omit this field; treat `undefined` as false.
    */
   mcp_config_redacted?: boolean;
-  /**
-   * The subset of Composio toolkit slugs this agent is allowed to mount as
-   * MCP servers at task dispatch — but only when the run originator is the
-   * agent owner (MUL-3869 / MUL-3721). `null`/`[]`/omitted all mean "no
-   * overlay regardless of who triggers". Owner-only data: the server hands
-   * it through verbatim to the owner and redacts it to `undefined` +
-   * `composio_toolkit_allowlist_redacted=true` for everyone else (same
-   * contract as `mcp_config`). Treat `undefined` as "unknown — assume none".
-   */
-  composio_toolkit_allowlist?: string[];
-  /**
-   * True when the server stripped `composio_toolkit_allowlist` from this
-   * response because the caller is not the agent owner. The MCP tab is
-   * creator-only so a redacted value should never reach the editor, but the
-   * UI renders a "hidden" fallback defensively. Older backends omit this
-   * field; treat `undefined` as false.
-   */
-  composio_toolkit_allowlist_redacted?: boolean;
   visibility: AgentVisibility;
   /**
    * Authoritative invocation permission mode (MUL-3963). The `visibility`
@@ -629,17 +583,10 @@ export interface CreateAgentRequest {
   thinking_level?: string;
   /** Optional Codex service-tier catalog ID. See `Agent.service_tier`. */
   service_tier?: string;
-  /** Optional creation-source attribution. Surfaced as the `template`
-   *  property on the `agent_created` PostHog event. */
+  /** Optional creation-source attribution for local audit facts. */
   template?: string;
   /** Workspace skill IDs attached atomically with the agent row. */
   skill_ids?: string[];
-}
-
-export interface AgentBuilderSession {
-  session_id: string;
-  builder_agent_id: string;
-  runtime_id: string;
 }
 
 /** Who may invoke the agent being created, as the creation form models it. */
@@ -670,33 +617,6 @@ export interface StoredAgentDraft {
   applied_message_id: string | null;
 }
 
-/** One unfinished agent-creation conversation, as listed by the studio. */
-export interface AgentBuilderSessionSummary {
-  session_id: string;
-  title: string;
-  /** The carrier's runtime — where this conversation actually executes. The
-   *  picker seeds from it so it can never disagree with what answers the next
-   *  message (MUL-5163). */
-  runtime_id: string;
-  created_at: string;
-  updated_at: string;
-  /** Still in the builder wire format; decode with the builder protocol helpers
-   *  before showing it to a human. */
-  last_message_content: string;
-  last_message_role: string;
-  last_message_at: string;
-  /** The stored configuration, or null when the conversation has never been
-   *  hand-edited — the client then replays the last `<agent_draft>` block. */
-  draft?: StoredAgentDraft | null;
-}
-
-/** Result of rebinding a live builder conversation to another runtime.
- *  `runtime_id` is the runtime the server actually bound — the caller must
- *  wait for it before showing the new runtime as selected. */
-export interface AgentBuilderRuntimeSwitch {
-  runtime_id: string;
-}
-
 export interface UpdateAgentRequest {
   name?: string;
   description?: string;
@@ -724,18 +644,6 @@ export interface UpdateAgentRequest {
    *     validate / translate it according to their own MCP integration
    */
   mcp_config?: unknown | null;
-  /**
-   * Composio toolkit allowlist. Tri-state semantics, mirroring the backend
-   * gate (MUL-3869):
-   *   - field omitted → no change
-   *   - `null` → clear the column (no MCP overlay for anyone)
-   *   - string[] → wholesale replace; the server lowercases / trims / dedupes
-   *     the slugs before persisting
-   * Writes are silently dropped server-side unless the caller is the agent
-   * owner, so the UI only ever exposes this field through the creator-only
-   * MCP tab.
-   */
-  composio_toolkit_allowlist?: string[] | null;
   visibility?: AgentVisibility;
   /**
    * Invocation permission mode (MUL-3963). When present it is authoritative;
@@ -795,7 +703,7 @@ export interface UpdateAgentEnvRequest {
  * `GET /api/agents/:id/skills`). The full SKILL.md `content` is intentionally
  * omitted — bodies routinely run 50–200KB each and shipping them in list
  * payloads tripped CLI timeouts on high-latency links (GH
- * multica-ai/multica#2174). Use `Skill` from a detail endpoint when you need
+ * kailonyang/liexiu#2174). Use `Skill` from a detail endpoint when you need
  * the body. For skills embedded in an `Agent` payload see `AgentSkillSummary`.
  */
 export interface SkillSummary {
@@ -1075,7 +983,7 @@ export interface RuntimeModelThinking {
   supported_levels: RuntimeModelThinkingLevel[];
   /** Informational: the level the upstream CLI documents as its built-in
    *  default when no `--effort` flag is passed. Surfaced by the daemon
-   *  but not actively rendered today — Multica's empty `thinking_level`
+   *  but not actively rendered today — LieXiu's empty `thinking_level`
    *  means "no override; let the local CLI config decide", which may
    *  itself differ from this value. */
   default_level?: string;

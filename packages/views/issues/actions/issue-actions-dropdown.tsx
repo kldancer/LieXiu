@@ -1,12 +1,12 @@
 "use client";
 
 import { useState, type ReactElement } from "react";
-import type { Issue } from "@multica/core/types";
+import type { Issue } from "@liexiu/core/types";
 import {
   DropdownMenu,
   DropdownMenuTrigger,
   DropdownMenuContent,
-} from "@multica/ui/components/ui/dropdown-menu";
+} from "@liexiu/ui/components/ui/dropdown-menu";
 import { useIssueActions } from "./use-issue-actions";
 import {
   IssueActionsMenuItems,
@@ -52,7 +52,7 @@ export function IssueActionsDropdown({
         </DropdownMenuContent>
       </DropdownMenu>
       {/* Mount the picker only once the user actually opens it. Otherwise
-          every row in a list/board would subscribe to members/agents/squads
+          every row in a list/board would subscribe to members/agents
           /frequency queries on mount, multiplying memory + render cost. */}
       {assigneeOpen && (
         <AssigneePicker

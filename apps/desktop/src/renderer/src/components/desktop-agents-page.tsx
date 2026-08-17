@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { AgentsPage } from "@multica/views/agents";
+import { AgentsPage } from "@liexiu/views/agents";
 import type { DaemonStatus } from "../../../shared/daemon-types";
 
 /**

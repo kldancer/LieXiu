@@ -38,17 +38,17 @@ func TestServiceNilProvider(t *testing.T) {
 func TestServiceUsesProvider(t *testing.T) {
 	t.Parallel()
 	sp := NewStaticProvider()
-	sp.Set("billing_new_invoice_email", Rule{Default: true})
+	sp.Set("demo_flag", Rule{Default: true})
 	s := NewService(sp)
 
-	if !s.IsEnabled(context.Background(), "billing_new_invoice_email", false) {
+	if !s.IsEnabled(context.Background(), "demo_flag", false) {
 		t.Fatalf("static provider should override the false default")
 	}
-	d := s.Decision(context.Background(), "billing_new_invoice_email", false)
+	d := s.Decision(context.Background(), "demo_flag", false)
 	if d.Reason != ReasonStatic || d.Source != "static" {
 		t.Fatalf("expected ReasonStatic from static source, got %+v", d)
 	}
-	if d.Key != "billing_new_invoice_email" {
+	if d.Key != "demo_flag" {
 		t.Fatalf("decision must echo the requested key, got %q", d.Key)
 	}
 }

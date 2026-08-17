@@ -2,7 +2,7 @@ import { ListTodo, Plus, Zap } from "lucide-react";
 import { within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
-import { SidebarProvider } from "@multica/ui/components/ui/sidebar";
+import { SidebarProvider } from "@liexiu/ui/components/ui/sidebar";
 import { renderWithI18n } from "../test/i18n";
 import {
   CollectionPageHeader,
@@ -33,7 +33,7 @@ describe("PageHeader title alignment", () => {
     const header = renderHeader(
       <CollectionPageHeader
         icon={Zap}
-        title="Autopilot"
+        title="Runs"
         count={2}
         actions={
           <CollectionPageHeaderAction icon={Plus} label="New autopilot" />
@@ -44,7 +44,7 @@ describe("PageHeader title alignment", () => {
     expectTitleLeftOfFreeSpace(header);
 
     const heading = within(header).getByRole("heading");
-    expect(heading.textContent).toBe("Autopilot");
+    expect(heading.textContent).toBe("Runs");
     expect(heading.parentElement).toHaveClass("flex-1");
   });
 
@@ -65,7 +65,7 @@ describe("PageHeader base chrome", () => {
   it("supplies the trigger, gap and gutter without per-page classes", () => {
     const header = renderHeader(
       <PageHeader>
-        <h1>Inbox</h1>
+        <h1>Issues</h1>
       </PageHeader>,
     );
 
@@ -78,7 +78,7 @@ describe("PageHeader base chrome", () => {
   it("does not let a call site override the shared gutter", () => {
     const header = renderHeader(
       <PageHeader className="px-8">
-        <h1>Inbox</h1>
+        <h1>Issues</h1>
       </PageHeader>,
     );
 
@@ -90,7 +90,7 @@ describe("PageHeader base chrome", () => {
   // spacing; both must resolve to the base gap and gutter.
   it("resolves the same gutter and gap for collection and issues headers", () => {
     const collection = renderHeader(
-      <CollectionPageHeader icon={Zap} title="Autopilot" count={2} />,
+      <CollectionPageHeader icon={Zap} title="Runs" count={2} />,
     );
     const issues = renderHeader(
       <PageHeader>

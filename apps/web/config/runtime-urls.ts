@@ -28,7 +28,7 @@ function cleanHttpUrl(raw: string | undefined): string | undefined {
 // upload — the most common self-hosting mistake (#6619, MUL-5922). Strip that
 // one suffix instead of honouring it. Any other path is preserved: a reverse
 // proxy may legitimately mount the whole backend under a prefix such as
-// `https://host/multica`.
+// `https://host/liexiu`.
 function stripApiPathSuffix(value: string): string {
   let url: URL;
   try {
@@ -63,12 +63,8 @@ export function resolveRemoteApiUrl(env: RuntimeEnv): string | undefined {
   return undefined;
 }
 
-export function resolveDocsUrl(env: RuntimeEnv): string | undefined {
-  return cleanHttpUrl(env.DOCS_URL);
-}
-
-// Dev-only fallbacks: `next dev` runs on a developer machine, where the
-// conventional localhost backend/docs ports are safe to assume when nothing
+// Dev-only fallback: `next dev` runs on a developer machine, where the
+// conventional localhost backend port is safe to assume when nothing
 // is configured. Builds and the runtime proxy keep the strict resolvers so a
 // prebuilt image never guesses an origin (#4787).
 export function resolveDevRemoteApiUrl(env: RuntimeEnv): string {
@@ -84,10 +80,6 @@ export function resolveDevRemoteApiUrl(env: RuntimeEnv): string {
     env.SERVER_PORT?.trim() ||
     "8080";
   return `http://localhost:${backendPort}`;
-}
-
-export function resolveDevDocsUrl(env: RuntimeEnv): string {
-  return resolveDocsUrl(env) ?? "http://localhost:4000";
 }
 
 // Same strictness as the server-side resolver above. A relative or otherwise
@@ -111,14 +103,6 @@ export function runtimeRewriteDestination(
   pathname: string,
   env: RuntimeEnv,
 ): string | undefined {
-  const docsUrl = resolveDocsUrl(env);
-  if (pathname === "/docs") {
-    return docsUrl ? appendPath(docsUrl, "/docs") : undefined;
-  }
-  if (pathname.startsWith("/docs/")) {
-    return docsUrl ? appendPath(docsUrl, pathname) : undefined;
-  }
-
   const remoteApiUrl = resolveRemoteApiUrl(env);
   if (!remoteApiUrl) return undefined;
 
@@ -139,11 +123,7 @@ export function runtimeRewriteDestination(
 }
 
 function isBackendAuthPath(pathname: string): boolean {
-  if (pathname === "/auth/callback") return false;
-  if (pathname.startsWith("/auth/callback/")) return false;
-  if (pathname === "/auth/hg-sso/callback") return false;
-  if (pathname.startsWith("/auth/hg-sso/callback/")) return false;
-  return pathname === "/auth" || pathname.startsWith("/auth/");
+  return pathname === "/auth/logout";
 }
 
 // `/ws` is appended to the api base's PATH, not to its origin, and that is

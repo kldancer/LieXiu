@@ -12,18 +12,18 @@ import {
   useQueryClient,
   type UseQueryResult,
 } from "@tanstack/react-query";
-import { ALL_STATUSES } from "@multica/core/issues/config";
+import { ALL_STATUSES } from "@liexiu/core/issues/config";
 import {
   issueKeys,
   issueTableRowPageOptions,
-} from "@multica/core/issues/queries";
+} from "@liexiu/core/issues/queries";
 import type {
   Issue,
   IssueStatus,
   IssueTableFacetsResponse,
   IssueTableQuerySpec,
   IssueTableRowsResponse,
-} from "@multica/core/types";
+} from "@liexiu/core/types";
 
 export interface IssueStatusPageState {
   total: number;

@@ -4,12 +4,6 @@ import { useEffect, type ReactNode } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { getApi } from "../api";
 import { useAuthStore } from "../auth";
-import {
-  captureSignupSource,
-  identify as identifyAnalytics,
-  initAnalytics,
-  resetAnalytics,
-} from "../analytics";
 import { configStore } from "../config";
 import { workspaceKeys } from "../workspace/queries";
 import { createLogger } from "../logger";
@@ -27,7 +21,6 @@ export function AuthInitializer({
   onLogout,
   storage = defaultStorage,
   cookieAuth,
-  identity,
 }: {
   children: ReactNode;
   onLogin?: () => void;
@@ -41,11 +34,7 @@ export function AuthInitializer({
   useEffect(() => {
     const api = getApi();
 
-    // Stamp attribution before anything else — the signup event (server-side)
-    // reads this cookie, so it has to be present before the user hits submit.
-    captureSignupSource();
-
-    // Fetch app config (CDN domain, PostHog key, …) in the background — non-blocking.
+    // Fetch app config (CDN domain and runtime settings) in the background — non-blocking.
     api
       .getConfig()
       .then((cfg) => {
@@ -57,11 +46,6 @@ export function AuthInitializer({
           });
         }
         configStore.getState().setAuthConfig({
-          allowSignup: cfg.allow_signup,
-          googleClientId: cfg.google_client_id,
-          // Old servers omit this field — treat that as "creation allowed"
-          // (the managed-cloud default) rather than blocking the UI.
-          workspaceCreationDisabled: cfg.workspace_creation_disabled === true,
           // Absent/false on the managed cloud and older servers → section hidden.
           vcsIntegrationAvailable: cfg.vcs_integration_available === true,
         });
@@ -71,14 +55,6 @@ export function AuthInitializer({
         });
         configStore.getState().setFeatureFlags(cfg.feature_flags);
         configStore.getState().setServerVersion(cfg.server_version);
-        if (cfg.posthog_key) {
-          initAnalytics({
-            key: cfg.posthog_key,
-            host: cfg.posthog_host || "",
-            appVersion: identity?.version,
-            environment: cfg.analytics_environment,
-          });
-        }
       })
       .catch(() => {
         /* config is optional — legacy file card matching degrades gracefully */
@@ -87,12 +63,10 @@ export function AuthInitializer({
     const onAuthSuccess = (user: User) => {
       onLogin?.();
       useAuthStore.setState({ user, isLoading: false });
-      identifyAnalytics(user.id, { email: user.email, name: user.name });
     };
 
     const onAuthFailure = () => {
       onLogout?.();
-      resetAnalytics();
       useAuthStore.setState({ user: null, isLoading: false });
     };
 
@@ -100,10 +74,10 @@ export function AuthInitializer({
       // Cookie mode: the HttpOnly cookie is sent automatically by the browser.
       // Call the API to check if the session is still valid.
       //
-      // Seed the workspace list into React Query so the URL-driven layout can
-      // resolve the slug without a second fetch. The active workspace itself
-      // is derived from the URL by [workspaceSlug]/layout.tsx — no imperative
-      // selection here.
+      // Seed the canonical workspace as the one-element internal cache shape
+      // so the URL-driven layout can resolve the slug without a second fetch.
+      // The active workspace itself is derived from the URL by
+      // [workspaceSlug]/layout.tsx — no imperative selection here.
       Promise.all([api.getMe(), api.listWorkspaces()])
         .then(([user, wsList]) => {
           onAuthSuccess(user);
@@ -117,7 +91,7 @@ export function AuthInitializer({
     }
 
     // Token mode: read from localStorage (Electron / legacy).
-    const token = storage.getItem("multica_token");
+    const token = storage.getItem("liexiu_token");
     if (!token) {
       onLogout?.();
       useAuthStore.setState({ isLoading: false });
@@ -129,15 +103,15 @@ export function AuthInitializer({
     Promise.all([api.getMe(), api.listWorkspaces()])
       .then(([user, wsList]) => {
         onAuthSuccess(user);
-        // Seed React Query cache so the URL-driven layout can resolve the
-        // slug without a second fetch.
+        // Seed the canonical workspace cache so the URL-driven layout can
+        // resolve the slug without a second fetch.
         qc.setQueryData(workspaceKeys.list(), wsList);
       })
       .catch((err) => {
         logger.error("auth init failed", err);
         api.setToken(null);
         setCurrentWorkspace(null, null);
-        storage.removeItem("multica_token");
+        storage.removeItem("liexiu_token");
         onAuthFailure();
       });
   // eslint-disable-next-line react-hooks/exhaustive-deps

@@ -85,13 +85,8 @@ func (a *localDirectoryAssignment) ValidateExecutionMode() error {
 }
 
 // localDirectoryAssignmentForTask returns the local_directory assignment a task
-// should execute inside. Squad-leader tasks are coordinators: they may create
-// child issues or comments, but should not bind to the user's repo worktree or
-// hold the path mutex while downstream workers are ready to write.
+// should execute inside.
 func localDirectoryAssignmentForTask(task Task, daemonID string) (*localDirectoryAssignment, error) {
-	if task.IsLeaderTask {
-		return nil, nil
-	}
 	return findLocalDirectoryAssignment(task.ProjectResources, daemonID)
 }
 
@@ -258,7 +253,7 @@ func validateLocalPath(absPath string) error {
 
 // isBlacklistedLocalPath rejects paths that map to the whole machine or an
 // entire user profile. The intent is to keep the daemon from accidentally
-// stamping context files (.agent_context/, .claude/skills/, .multica/) at
+// stamping context files (.agent_context/, .claude/skills/, .liexiu/) at
 // the root of a user's account or the OS — a misconfiguration on the UI
 // side should fail fast rather than litter the user's home.
 //
@@ -370,7 +365,7 @@ func checkDirReadWrite(dir string) error {
 	if _, err := os.ReadDir(dir); err != nil {
 		return fmt.Errorf("read %q: %w", dir, err)
 	}
-	probe, err := os.CreateTemp(dir, ".multica-rwcheck-*")
+	probe, err := os.CreateTemp(dir, ".liexiu-rwcheck-*")
 	if err != nil {
 		return fmt.Errorf("write %q: %w", dir, err)
 	}

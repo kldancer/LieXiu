@@ -40,7 +40,7 @@
   },
   "empty": {
     "title": "まだエージェントがいません",
-    "description": "チームメイトと同じように、エージェントを作成してタスクを割り当てましょう。ローカルエージェントは自分のマシンで、クラウドエージェントは Multica のランタイムで実行されます。"
+    "description": "チームメイトと同じように、エージェントを作成してタスクを割り当てましょう。ローカルエージェントは自分のマシンで、クラウドエージェントは LieXiu のランタイムで実行されます。"
   },
   "no_matches": {
     "title": "一致する結果なし",
@@ -249,8 +249,6 @@
     "environment": "環境",
     "custom_args": "カスタム引数",
     "mcp_config": "MCP",
-    "composio_mcp": "MCP アプリ",
-    "integrations": "連携",
     "runtime_config": "ルーティング",
     "discard_dialog_title": "保存していない変更を破棄しますか？",
     "discard_dialog_description": "このタブに保存していない変更があります。今移動すると変更は破棄されます。",
@@ -295,7 +293,6 @@
     "cancel": "キャンセル",
     "create_failed_toast": "エージェントを作成できませんでした",
     "skill_attach_failed_toast": "エージェントは作成されましたが、スキルを追加できませんでした: {{error}}",
-    "squad_join_failed_toast": "エージェント \"{{name}}\" は作成されましたが、スクワッドに参加できませんでした: {{error}}。メンバーから手動で追加できます。",
     "instructions": {
       "label": "指示",
       "placeholder_blank": "クリックして指示を作成...",
@@ -329,16 +326,9 @@
       "unsaved_changes": "保存していない変更"
     },
     "instructions": {
-      "intro": "すべての作業で使用する System Prompt を設定します。Markdown に対応しています。",
-      "system_prompt_label": "System Prompt",
-      "placeholder": "このエージェントの役割、専門分野、作業スタイルを定義してください。\n\n# 例\nあなたは React と TypeScript を専門とするフロントエンドエンジニアです。\n\n## 作業スタイル\n- 小さく焦点を絞った PR を作成する — 論理的な変更ごとに1コミット\n- 継承よりコンポジションを優先する\n- 新しいコンポーネントには必ずユニットテストを追加する\n\n## 制約\n- 明示的な承認なしに shared/ の型を変更しない\n- features/ の既存のコンポーネントパターンに従う",
-      "system_layer_label": "Multica が管理",
-      "system_layer_hint": "Multica のリリースごとに更新されます。編集はできず、下に書いた内容が上書きされることもありません。",
-      "system_layer_show": "表示",
-      "system_layer_hide": "隠す",
-      "workspace_notes_label": "ワークスペースの補足",
-      "workspace_notes_intro": "チームのコンテキストや好みを下に追加してください。Multica がこのエージェント向けに管理している指示の上に適用されます。Markdown が使えます。",
-      "workspace_notes_placeholder": "このエージェントが常に知っておくべきことを書きます。\n\n# 例\nメインリポジトリは github.com/acme/platform です。\nチャットが日本語でも、タスクは英語で書いてください。\n金曜日はデプロイしません。"
+      "intro": "このエージェントで使用する指示を設定します。Markdown に対応しています。",
+      "label": "指示",
+      "placeholder": "このエージェントの役割、専門分野、作業スタイルを定義してください。\n\n# 例\nあなたは React と TypeScript を専門とするフロントエンドエンジニアです。\n\n## 作業スタイル\n- 小さく焦点を絞った PR を作成する — 論理的な変更ごとに1コミット\n- 継承よりコンポジションを優先する\n- 新しいコンポーネントには必ずユニットテストを追加する\n\n## 制約\n- 明示的な承認なしに shared/ の型を変更しない\n- features/ の既存のコンポーネントパターンに従う"
     },
     "env": {
       "intro_readonly": "エージェントプロセスの起動時に注入されます。値の読み取りや編集ができるのはワークスペースのオーナーと admin のみで、すべての表示と編集はワークスペースの監査ログに記録されます。",
@@ -390,14 +380,14 @@
       "save_failed_toast": "カスタム引数を保存できませんでした"
     },
     "mcp_config": {
-      "intro": "このエージェントが使用できる MCP Server を管理します。Multica 管理の Server とローカル Runtime から継承した Server は統合して使用されます。",
-      "managed_title": "Multica で管理",
-      "managed_hint": "このエージェント用に Multica に保存されます。Runtime MCP と統合され、同名の場合は Multica の設定が優先されます。",
-      "managed_empty": "Multica で管理されている MCP Server はありません。",
+      "intro": "このエージェントが使用できる MCP Server を管理します。LieXiu 管理の Server とローカル Runtime から継承した Server は統合して使用されます。",
+      "managed_title": "LieXiu で管理",
+      "managed_hint": "このエージェント用に LieXiu に保存されます。Runtime MCP と統合され、同名の場合は LieXiu の設定が優先されます。",
+      "managed_empty": "LieXiu で管理されている MCP Server はありません。",
       "add_action": "MCP を追加",
       "agent_disabled_badge": "エージェントで無効",
       "runtime_disabled_badge": "ランタイムで無効",
-      "runtime_overridden_badge": "Multica で上書き",
+      "runtime_overridden_badge": "LieXiu で上書き",
       "runtime_title": "ランタイムから継承",
       "runtime_hint": "{{runtime}} から自動検出し、作業開始時にローカルで統合します。URL、ヘッダー、コマンド、環境変数はマシン外に送信されません。",
       "refresh_action": "更新",
@@ -455,22 +445,6 @@
       "save_failed_toast": "MCP config を保存できませんでした",
       "redacted_title": "設定済み — あなたには非表示",
       "redacted_hint": "この config を読み取れるのは、エージェントのオーナーまたはワークスペースの admin のみです。"
-    },
-    "composio_mcp": {
-      "subtitle": "ツールキットにチェックを入れると、あなた（この agent の作成者）が直接または下位 agent のチェーン経由でこの agent をトリガーしたときに限り、MCP サーバーとしてマウントされます。",
-      "loading": "接続を読み込み中…",
-      "load_failed": "接続済みアプリを読み込めませんでした。しばらくしてから再試行してください。",
-      "empty_title": "接続済みのアプリがありません",
-      "empty_hint": "サードパーティサービスをまだ接続していません。先に 1 つ認可してから、ここで許可してください。",
-      "empty_link_to_settings": "設定 → 連携 で接続する",
-      "connected": "接続済み",
-      "toggle_aria": "この agent に {{toolkit}} を許可",
-      "saving": "保存中…",
-      "save_failed_toast": "保存できませんでした。もう一度お試しください",
-      "redacted_title": "設定済み — あなたには非表示",
-      "redacted_hint": "この agent が使用できるアプリを閲覧・変更できるのは作成者のみです。",
-      "shared_warning": "このエージェントは共有されています。このエージェントを実行できる人は、ここで有効化した Composio アプリを利用できます。これらのアプリが機微なデータを扱う場合は、Private にするかアクセス範囲を絞ってください。",
-      "workspace_warning": "ワークスペースに公開：ワークスペースの全メンバーがこのエージェントを通じてこれらの Composio アプリを利用できます。"
     },
     "runtime_config": {
       "intro": "OpenClaw ランタイムがこのエージェントの各ターンをどのように実行するかを選択します。Local モードはエージェントを daemon プロセス内で実行します。Gateway モードは各ターンを OpenClaw Gateway に転送します — daemon のホストが軽量な調整役で、エージェントの実作業はより強力なマシンで動かしたい場合に有用です。",
@@ -537,10 +511,6 @@
       "add_dialog_cancel": "キャンセル",
       "add_failed_toast": "スキルを追加できませんでした"
     },
-    "integrations": {
-      "intro": "このエージェントを外部のチャットプラットフォームに接続し、普段使っているツールから直接やり取りできるようにします。",
-      "members_note": "エージェントを外部チャットプラットフォームに接続できるのはワークスペースのオーナーと管理者のみです。接続済みの Bot は「設定 → 連携」で確認できます。"
-    },
     "activity": {
       "status": {
         "queued": "待機中",
@@ -572,13 +542,9 @@
       "failed_count": "{{count}} 回失敗",
       "failed_label": "失敗",
       "source_issue": "タスク",
-      "source_chat": "チャット",
-      "source_autopilot": "オートパイロット",
       "source_untracked": "未追跡",
       "source_quick_create": "クイック作成",
       "source_creating_issue": "タスクを作成中",
-      "source_chat_session": "チャットセッション",
-      "source_autopilot_run": "オートパイロット実行",
       "issue_short_fallback": "タスク {{prefix}}...",
       "triggered_by": "トリガーした人",
       "open_issue_aria": "タスクを開く",
@@ -637,8 +603,7 @@
     "members_group": "メンバー",
     "public_group": "公開アクセス",
     "owner_only_readonly": "このエージェントを実行できる相手は、オーナーのみが変更できます。",
-    "members_empty": "選択できるワークスペースメンバーがいません",
-    "composio_switch_hint": "ご注意 — このエージェントは Composio アプリが有効です。共有すると、アクセス権を持つ全員がこのエージェントを通じてこれらのアプリを利用できます。"
+    "members_empty": "選択できるワークスペースメンバーがいません"
   },
   "profile_card": {
     "unavailable": "エージェントを利用できません",
@@ -694,9 +659,7 @@
     "status_waiting": "待機中",
     "trigger_initial": "初回実行",
     "trigger_comment": "コメントから",
-    "trigger_autopilot": "オートパイロット",
     "trigger_retry": "再試行",
-    "trigger_chat": "チャットから",
     "trigger_quick_create": "クイック作成",
     "trigger_direct": "直接アサイン",
     "run_info": "実行の詳細",
@@ -759,7 +722,6 @@
   },
   "creation_studio": {
     "title": "エージェントを作成",
-    "squad_title": "このスクワッド用のエージェントを作成",
     "duplicate_title": "{{name}} を複製",
     "back": "戻る",
     "eyebrow": "エージェント作成",
@@ -769,7 +731,6 @@
     "continue": "続ける",
     "step_choose": "開始方法を選択",
     "step_configure": "確認して設定",
-    "step_ai": "会話で作成",
     "modes": {
       "blank": {
         "title": "空白から始める",
@@ -778,28 +739,6 @@
       "template": {
         "title": "テンプレートを使用",
         "description": "整理された指示とスキルを基に、ワークスペースに合わせて詳細を調整します。"
-      },
-      "ai": {
-        "title": "AI で作成",
-        "description": "期待する成果を説明すると、Agent Builder が重要な質問を行い、下書きをリアルタイムで作成します。"
-      }
-    },
-    "sections": {
-      "identity": "基本情報",
-      "identity_hint": "識別しやすい名前と簡潔な目的を設定します。",
-      "behavior": "動作と機能",
-      "behavior_hint": "動作方法を定義し、利用できるワークスペースのスキルを追加します。",
-      "execution": "実行設定",
-      "execution_hint": "エージェントを実行する場所を選び、必要に応じてランタイムの既定モデル・思考レベル・速度を変更します。",
-      "access": "アクセス",
-      "access_hint": "このエージェントを実行できるユーザーを設定します。後から変更できます。"
-    },
-    "thinking_label": "思考",
-    "speed_label": "速度",
-    "access": {
-      "private": {
-        "title": "自分のみ",
-        "description": "このエージェントを実行できるのは自分だけです。"
       },
       "workspace": {
         "title": "ワークスペース全体",
@@ -811,36 +750,38 @@
         "required": "メンバーを1人以上選択してください。"
       }
     },
-    "builder": {
-      "setup_title": "Agent Builder のランタイムを選択",
-      "setup_description": "選択したオンラインのランタイムが設定会話を実行し、新しいエージェントの既定ランタイムになります。",
-      "start": "会話を開始",
-      "connect_runtime": "ランタイムを接続",
-      "start_failed": "Agent Builder を開始できませんでした。",
-      "send_failed": "メッセージを送信できませんでした。",
-      "stop_failed": "現在の生成を停止できませんでした。",
-      "switch_runtime_failed": "ランタイムを切り替えられませんでした。会話は引き続き元のランタイムで実行されています。",
-      "switch_runtime_pending": "現在の返信を停止するとランタイムを切り替えられます。",
-      "switch_runtime_success": "ランタイムを切り替えました。下書き設定はそのまま残り、以降の会話は新しいランタイムで新しいモデルセッションとして続きます。",
-      "chat_title": "Agent Builder",
-      "chat_hint": "会話で要件を整理し、隣の設定を調整します。",
-      "runtime_online": "ランタイムはオンライン",
-      "runtime_offline": "ランタイムはオフライン",
-      "empty_title": "このエージェントに何をさせますか？",
-      "empty_description": "役割、ワークフロー、出力、制約を説明してください。右側に最初の下書きが表示されます。",
-      "prompt_review": "フロントエンドの Pull Request をレビュー",
-      "prompt_research": "競合を調査して結果を要約",
-      "prompt_assistant": "チームのプロジェクト計画と文章作成を支援",
-      "thinking": "下書きを更新中…",
-      "placeholder": "必要なエージェントを説明…",
-      "send": "メッセージを送信"
-    },
+      "sections": {
+        "identity": "基本情報",
+        "identity_hint": "識別しやすい名前と簡潔な目的を設定します。",
+        "behavior": "動作と機能",
+        "behavior_hint": "動作方法を定義し、利用できるワークスペースのスキルを追加します。",
+        "execution": "実行設定",
+        "execution_hint": "エージェントを実行する場所を選び、必要に応じてランタイムの既定モデル・思考レベル・速度を変更します。",
+        "access": "アクセス",
+        "access_hint": "このエージェントを実行できるユーザーを設定します。後から変更できます。"
+      },
+      "thinking_label": "思考",
+      "speed_label": "速度",
+      "access": {
+        "private": {
+          "title": "自分のみ",
+          "description": "このエージェントを実行できるのは自分だけです。"
+        },
+        "workspace": {
+          "title": "ワークスペース全体",
+          "description": "すべてのワークスペースメンバーが実行できます。"
+        },
+        "members": {
+          "title": "特定のメンバー",
+          "description": "選択したメンバーだけが実行できます。",
+          "required": "メンバーを1人以上選択してください。"
+        }
+      },
     "live_draft": "エージェント設定",
     "live_draft_hint": "会話内容がここに反映され、各項目を直接調整できます。",
     "duplicate_env_notice": "指示、スキル、コマンド引数がコピーされます。環境変数、MCP サーバー、マシンローカルのランタイム設定はコピーされません。",
     "duplicate_runtime_reset_notice": "元のランタイムが利用できないため、このコピーは別のランタイムで実行されます。モデル・思考レベル・速度は選択したランタイムでのみ有効なため、クリアされました。",
     "create_and_open": "作成して開く",
-    "create_and_add": "作成してスクワッドに追加",
     "creating": "エージェントを作成中…",
     "create_failed": "エージェントを作成できませんでした。",
     "name_conflict": "同じ名前のエージェントがすでに存在します。",

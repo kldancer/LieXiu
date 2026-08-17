@@ -3,13 +3,13 @@ package handler
 import (
 	"net/http"
 
-	"github.com/multica-ai/multica/server/internal/dispatch"
+	"github.com/kailonyang/liexiu/server/internal/dispatch"
 )
 
 // Unified execution-admission contract (MUL-4525).
 //
-// Every synchronous enqueue entry point (comment mention, autopilot manual
-// "run now", issue assign / promotion / batch, manual rerun, direct chat) needs
+// Every synchronous enqueue entry point (comment mention, issue assign /
+// promotion / batch, manual rerun, explicit command) needs
 // to answer the SAME question in the SAME shape: given a user who explicitly
 // named an execution target, did the run get `queued`, `coalesced` onto an
 // existing task, `deferred`, or `blocked`? A silent no-op is never acceptable.
@@ -50,17 +50,16 @@ const (
 type DispatchReasonCode = dispatch.ReasonCode
 
 const (
-	ReasonQueued                = dispatch.ReasonQueued
-	ReasonCoalesced             = dispatch.ReasonCoalesced
-	ReasonDeferred              = dispatch.ReasonDeferred
-	ReasonInvocationNotAllowed  = dispatch.ReasonInvocationNotAllowed
-	ReasonTargetUnavailable     = dispatch.ReasonTargetUnavailable
-	ReasonRuntimeOffline        = dispatch.ReasonRuntimeOffline
-	ReasonAgentRuntimeRequired  = dispatch.ReasonAgentRuntimeRequired
-	ReasonAttributionBlocked    = dispatch.ReasonAttributionBlocked
-	ReasonAlreadyActive         = dispatch.ReasonAlreadyActive
-	ReasonSelfTriggerSuppressed = dispatch.ReasonSelfTriggerSuppressed
-	ReasonInternalError         = dispatch.ReasonInternalError
+	ReasonQueued               = dispatch.ReasonQueued
+	ReasonCoalesced            = dispatch.ReasonCoalesced
+	ReasonDeferred             = dispatch.ReasonDeferred
+	ReasonInvocationNotAllowed = dispatch.ReasonInvocationNotAllowed
+	ReasonTargetUnavailable    = dispatch.ReasonTargetUnavailable
+	ReasonRuntimeOffline       = dispatch.ReasonRuntimeOffline
+	ReasonAgentRuntimeRequired = dispatch.ReasonAgentRuntimeRequired
+	ReasonAttributionBlocked   = dispatch.ReasonAttributionBlocked
+	ReasonAlreadyActive        = dispatch.ReasonAlreadyActive
+	ReasonInternalError        = dispatch.ReasonInternalError
 )
 
 // DispatchTarget is the caller-visible reference to an execution target. Name
@@ -68,7 +67,7 @@ const (
 // private-agent invoke returns Type/ID (already known to the caller from their
 // own request) but never a Name they were not otherwise entitled to.
 type DispatchTarget struct {
-	Type string `json:"type"` // "agent" | "squad"
+	Type string `json:"type"` // "agent"
 	ID   string `json:"id"`
 	Name string `json:"name,omitempty"`
 }

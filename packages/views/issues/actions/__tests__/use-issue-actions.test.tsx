@@ -1,14 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { renderHook, act, waitFor } from "@testing-library/react";
+import { renderHook, act } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import type { Issue } from "@multica/core/types";
-
-vi.mock("@multica/core/hooks", () => ({
-  useWorkspaceId: () => "ws-1",
-}));
+import type { Issue } from "@liexiu/core/types";
 
 const mockOpenModal = vi.fn();
-vi.mock("@multica/core/modals", () => ({
+vi.mock("@liexiu/core/modals", () => ({
   useModalStore: Object.assign(
     (selector?: any) => {
       const state = { open: mockOpenModal };
@@ -18,38 +14,14 @@ vi.mock("@multica/core/modals", () => ({
   ),
 }));
 
-const mockAuthState = { user: { id: "user-1" }, isAuthenticated: true };
-vi.mock("@multica/core/auth", () => ({
-  useAuthStore: Object.assign(
-    (selector?: any) => (selector ? selector(mockAuthState) : mockAuthState),
-    { getState: () => mockAuthState },
-  ),
-  registerAuthStore: vi.fn(),
-}));
-
-// Mutable so individual tests can seed the pin list.
-const pinListRef: { value: Array<{ item_type: string; item_id: string }> } = {
-  value: [],
-};
-const mockCreatePinMutate = vi.fn();
-const mockDeletePinMutate = vi.fn();
-vi.mock("@multica/core/pins", () => ({
-  pinListOptions: () => ({
-    queryKey: ["pins", "ws-1", "user-1"],
-    queryFn: () => Promise.resolve(pinListRef.value),
-  }),
-  useCreatePin: () => ({ mutate: mockCreatePinMutate }),
-  useDeletePin: () => ({ mutate: mockDeletePinMutate }),
-}));
-
 const mockUpdateMutate = vi.fn();
-vi.mock("@multica/core/issues/mutations", () => ({
+vi.mock("@liexiu/core/issues/mutations", () => ({
   useUpdateIssue: () => ({ mutate: mockUpdateMutate }),
 }));
 
-vi.mock("@multica/core/paths", async () => {
-  const actual = await vi.importActual<typeof import("@multica/core/paths")>(
-    "@multica/core/paths",
+vi.mock("@liexiu/core/paths", async () => {
+  const actual = await vi.importActual<typeof import("@liexiu/core/paths")>(
+    "@liexiu/core/paths",
   );
   return {
     ...actual,
@@ -65,7 +37,7 @@ vi.mock("../../../navigation", () => ({
     searchParams: new URLSearchParams(),
     back: vi.fn(),
     replace: vi.fn(),
-    getShareableUrl: (p: string) => `https://app.multica.com${p}`,
+    getShareableUrl: (p: string) => `https://app.liexiu.com${p}`,
   }),
 }));
 
@@ -108,11 +80,8 @@ function wrapper({ children }: { children: React.ReactNode }) {
 beforeEach(() => {
   mockOpenModal.mockReset();
   mockUpdateMutate.mockReset();
-  mockCreatePinMutate.mockReset();
-  mockDeletePinMutate.mockReset();
   vi.mocked(toast.success).mockReset();
   vi.mocked(toast.error).mockReset();
-  pinListRef.value = [];
   localStorage.clear();
   Object.defineProperty(navigator, "clipboard", {
     configurable: true,
@@ -196,7 +165,7 @@ describe("useIssueActions", () => {
     });
 
     expect(navigator.clipboard.writeText).toHaveBeenCalledWith(
-      "https://app.multica.com/test/issues/TES-1",
+      "https://app.liexiu.com/test/issues/TES-1",
     );
   });
 
@@ -211,7 +180,7 @@ describe("useIssueActions", () => {
     });
 
     expect(navigator.clipboard.writeText).toHaveBeenCalledWith(
-      "https://app.multica.com/test/issues/issue-1",
+      "https://app.liexiu.com/test/issues/issue-1",
     );
   });
 
@@ -349,44 +318,11 @@ describe("useIssueActions", () => {
     expect(toast.success).toHaveBeenCalledTimes(1);
   });
 
-  it("togglePin calls createPin when not pinned and deletePin when pinned", async () => {
-    pinListRef.value = [];
-    const { result: r1 } = renderHook(() => useIssueActions(mockIssue), { wrapper });
-    await waitFor(() => {
-      expect(r1.current.isPinned).toBe(false);
-    });
-    act(() => {
-      r1.current.togglePin();
-    });
-    expect(mockCreatePinMutate).toHaveBeenCalledWith({
-      item_type: "issue",
-      item_id: "issue-1",
-    });
-    expect(mockDeletePinMutate).not.toHaveBeenCalled();
-
-    mockCreatePinMutate.mockReset();
-    mockDeletePinMutate.mockReset();
-    pinListRef.value = [{ item_type: "issue", item_id: "issue-1" }];
-    const { result: r2 } = renderHook(() => useIssueActions(mockIssue), { wrapper });
-    await waitFor(() => {
-      expect(r2.current.isPinned).toBe(true);
-    });
-    act(() => {
-      r2.current.togglePin();
-    });
-    expect(mockDeletePinMutate).toHaveBeenCalledWith({
-      itemType: "issue",
-      itemId: "issue-1",
-    });
-    expect(mockCreatePinMutate).not.toHaveBeenCalled();
-  });
-
   it("is a safe no-op when issue is null", () => {
     const { result } = renderHook(() => useIssueActions(null), { wrapper });
 
     act(() => {
       result.current.updateField({ status: "done" });
-      result.current.togglePin();
       result.current.openSetParent();
     });
 

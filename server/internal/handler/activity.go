@@ -7,7 +7,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
+	db "github.com/kailonyang/liexiu/server/pkg/db/generated"
 )
 
 // TimelineEntry represents a single entry in the issue timeline, which can be
@@ -32,7 +32,6 @@ type TimelineEntry struct {
 	// Set only on comments produced by a quick action run. Unforgeable: there
 	// is no request field for it on the generic comment endpoint.
 	QuickActionID  *string              `json:"quick_action_id,omitempty"`
-	Reactions      []ReactionResponse   `json:"reactions,omitempty"`
 	Attachments    []AttachmentResponse `json:"attachments,omitempty"`
 	ResolvedAt     *string              `json:"resolved_at,omitempty"`
 	ResolvedByType *string              `json:"resolved_by_type,omitempty"`
@@ -119,7 +118,7 @@ type timelinePaginatedResponse struct {
 // Two response shapes coexist for boundary compatibility (#1929):
 //
 //   - No pagination params → flat ASC `TimelineEntry[]`. Matches the legacy
-//     desktop contract (Multica.app ≤ v0.2.25) and the new client.
+//     desktop contract (LieXiu.app ≤ v0.2.25) and the new client.
 //   - Any of `limit` / `before` / `after` / `around` present → wrapped object
 //     with DESC entries + null cursors + has_more_after=false. Matches what a
 //     stale v0.2.26+ build expects when it parses the response with
@@ -258,8 +257,8 @@ func (h *Handler) mergeTimeline(r *http.Request, comments []db.Comment, activiti
 	return out
 }
 
-// commentsToEntries fetches reactions + attachments for the given comments in
-// one batch each and returns enriched TimelineEntry slices preserving order.
+// commentsToEntries fetches attachments for the given comments in one batch and
+// returns enriched TimelineEntry slices preserving order.
 func (h *Handler) commentsToEntries(r *http.Request, comments []db.Comment) []TimelineEntry {
 	if len(comments) == 0 {
 		return nil
@@ -268,7 +267,6 @@ func (h *Handler) commentsToEntries(r *http.Request, comments []db.Comment) []Ti
 	for i, c := range comments {
 		ids[i] = c.ID
 	}
-	reactions := h.groupReactions(r, ids)
 	attachments := h.groupAttachments(r, ids)
 
 	out := make([]TimelineEntry, len(comments))
@@ -288,7 +286,6 @@ func (h *Handler) commentsToEntries(r *http.Request, comments []db.Comment) []Ti
 			ParentID:       uuidToPtr(c.ParentID),
 			CreatedAt:      timestampToString(c.CreatedAt),
 			UpdatedAt:      &updatedAt,
-			Reactions:      reactions[cid],
 			Attachments:    attachments[cid],
 			ResolvedAt:     timestampToPtr(c.ResolvedAt),
 			ResolvedByType: textToPtr(c.ResolvedByType),

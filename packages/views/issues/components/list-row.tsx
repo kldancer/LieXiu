@@ -5,18 +5,11 @@ import { useSortable, defaultAnimateLayoutChanges } from "@dnd-kit/sortable";
 import type { AnimateLayoutChanges } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { AppLink } from "../../navigation";
-import type { Issue, Project,
-  IssueProperty,
-} from "@multica/core/types";
-import { formatDateOnly } from "@multica/core/issues/date";
+import type { Issue, Project } from "@liexiu/core/types";
+import { formatDateOnly } from "@liexiu/core/issues/date";
 import { ActorAvatar } from "../../common/actor-avatar";
-import { PropertyIcon } from "../../common/property-icon";
-import { useWorkspacePaths } from "@multica/core/paths";
-import { useQuery } from "@tanstack/react-query";
-import { useViewStore } from "@multica/core/issues/stores/view-store-context";
-import { useWorkspaceId } from "@multica/core/hooks";
-import { propertyListOptions } from "@multica/core/properties";
-import { CustomPropertyValueDisplay } from "./pickers/custom-property-picker";
+import { useWorkspacePaths } from "@liexiu/core/paths";
+import { useViewStore } from "@liexiu/core/issues/stores/view-store-context";
 import { ProjectIcon } from "../../projects/components/project-icon";
 import { PriorityIcon } from "./priority-icon";
 import { ProgressRing } from "./progress-ring";
@@ -58,12 +51,6 @@ function ListRowContent({
   const toggle = selection.toggle;
   const p = useWorkspacePaths();
   const storeProperties = useViewStore((s) => s.cardProperties);
-  const cardPropertyIds = useViewStore((s) => s.cardPropertyIds);
-  const rowWsId = useWorkspaceId();
-  const { data: workspaceProperties = [] } = useQuery(propertyListOptions(rowWsId));
-  const cardCustomProperties = cardPropertyIds
-    .map((id) => workspaceProperties.find((p) => p.id === id))
-    .filter((p): p is IssueProperty => !!p && issue.properties?.[p.id] !== undefined);
   const labels = issue.labels ?? [];
 
   const showProject = storeProperties.project && project;
@@ -132,19 +119,6 @@ function ListRowContent({
                     +{labels.length - 3}
                   </span>
                 )}
-              </span>
-            )}
-            {cardCustomProperties.length > 0 && (
-              <span className="ml-1.5 hidden md:inline-flex shrink-0 items-center gap-1 max-w-[260px] overflow-hidden">
-                {cardCustomProperties.slice(0, 3).map((property) => (
-                  <span
-                    key={property.id}
-                    className="inline-flex max-w-[120px] items-center gap-1 rounded-full bg-muted/60 px-1.5 py-0.5 text-micro text-muted-foreground"
-                  >
-                    <PropertyIcon property={property} className="size-3 text-micro" />
-                    <CustomPropertyValueDisplay property={property} value={issue.properties?.[property.id]} />
-                  </span>
-                ))}
               </span>
             )}
           </span>

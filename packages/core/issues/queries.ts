@@ -26,10 +26,6 @@ export interface IssueSortParam {
   date_field?: ListIssuesParams["date_field"];
   date_start?: ListIssuesParams["date_start"];
   date_end?: ListIssuesParams["date_end"];
-  /** Server-side custom-property filter (definition id → accepted values).
-   *  Lives in the sort/window bag so every list surface, query key, and
-   *  load-more page carries it automatically. */
-  properties?: ListIssuesParams["properties"];
 }
 
 export const issueKeys = {
@@ -157,12 +153,6 @@ export const issueKeys = {
   /** PREFIX — the picker hook appends a signature of the prospective write. */
   issueTriggerPreview: (signature: string) =>
     [...issueKeys.issueTriggerPreviewAll(), signature] as const,
-  reactionsAll: () => ["issues", "reactions"] as const,
-  reactions: (issueId: string) =>
-    [...issueKeys.reactionsAll(), issueId] as const,
-  subscribersAll: () => ["issues", "subscribers"] as const,
-  subscribers: (issueId: string) =>
-    [...issueKeys.subscribersAll(), issueId] as const,
   usageAll: () => ["issues", "usage"] as const,
   usage: (issueId: string) => [...issueKeys.usageAll(), issueId] as const,
   attachmentsAll: () => ["issues", "attachments"] as const,
@@ -547,23 +537,6 @@ export function issueTimelineOptions(issueId: string) {
   return queryOptions({
     queryKey: issueKeys.timeline(issueId),
     queryFn: () => api.listTimeline(issueId),
-  });
-}
-
-export function issueReactionsOptions(issueId: string) {
-  return queryOptions({
-    queryKey: issueKeys.reactions(issueId),
-    queryFn: async () => {
-      const issue = await api.getIssue(issueId);
-      return issue.reactions ?? [];
-    },
-  });
-}
-
-export function issueSubscribersOptions(issueId: string) {
-  return queryOptions({
-    queryKey: issueKeys.subscribers(issueId),
-    queryFn: () => api.listIssueSubscribers(issueId),
   });
 }
 

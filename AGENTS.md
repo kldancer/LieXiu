@@ -17,8 +17,6 @@ Go backend + monorepo frontend (pnpm workspaces + Turborepo) with shared package
 - `server/` - Go backend (Chi router, sqlc, gorilla/websocket)
 - `apps/web/` - Next.js frontend (App Router)
 - `apps/desktop/` - Electron desktop app
-- `apps/mobile/` - Expo / React Native iOS app (read `apps/mobile/CLAUDE.md` first)
-- `apps/docs/` - Fumadocs documentation site
 - `packages/core/` - Headless business logic (Zustand stores, React Query hooks, API client)
 - `packages/ui/` - Atomic UI components (shadcn/Base UI, zero business logic)
 - `packages/views/` - Shared business pages/components
@@ -35,7 +33,7 @@ Go backend + monorepo frontend (pnpm workspaces + Turborepo) with shared package
 ### Package Boundaries (hard rules)
 
 - `packages/core/` - zero react-dom, zero localStorage, zero process.env
-- `packages/ui/` - zero `@multica/core` imports
+- `packages/ui/` - zero `@liexiu/core` imports
 - `packages/views/` - zero `next/*`, zero `react-router-dom`, use `NavigationAdapter` for routing
 - `apps/web/platform/` - only place for Next.js APIs
 

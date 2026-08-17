@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, fireEvent, render as rtlRender, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useState, type ReactElement } from "react";
-import type { Attachment } from "@multica/core/types";
+import type { Attachment } from "@liexiu/core/types";
 
 const openExternalMock = vi.hoisted(() => vi.fn());
 
@@ -44,7 +44,7 @@ const {
   };
 });
 
-vi.mock("@multica/core/api", () => ({
+vi.mock("@liexiu/core/api", () => ({
   api: {
     getAttachmentTextContent: getAttachmentTextContentMock,
     getBaseUrl: getBaseUrlMock,
@@ -80,8 +80,8 @@ vi.mock("../navigation", () => ({
   }),
 }));
 
-vi.mock("@multica/core/paths", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@multica/core/paths")>();
+vi.mock("@liexiu/core/paths", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@liexiu/core/paths")>();
   return {
     ...actual,
     useWorkspaceSlug: () => slugState.value,
@@ -145,8 +145,6 @@ function makeAttachment(overrides: Partial<Attachment> = {}): Attachment {
     workspace_id: "ws-1",
     issue_id: null,
     comment_id: null,
-    chat_session_id: null,
-    chat_message_id: null,
     uploader_type: "member",
     uploader_id: "u-1",
     filename: "test.bin",

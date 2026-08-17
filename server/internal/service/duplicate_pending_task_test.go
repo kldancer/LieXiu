@@ -9,9 +9,9 @@ import (
 
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/multica-ai/multica/server/internal/events"
-	"github.com/multica-ai/multica/server/internal/util"
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
+	"github.com/kailonyang/liexiu/server/internal/events"
+	"github.com/kailonyang/liexiu/server/internal/util"
+	db "github.com/kailonyang/liexiu/server/pkg/db/generated"
 )
 
 // TestIsDuplicatePendingTaskErr locks the driver-code detection (#5914): only a
@@ -72,14 +72,14 @@ func TestEnqueueTaskForMentionCoalescesDuplicatePendingTask(t *testing.T) {
 	svc := &TaskService{Queries: q, TxStarter: pool, Bus: events.New()}
 
 	// First mention creates the pending task.
-	if _, err := svc.EnqueueTaskForMention(ctx, issueStruct, util.MustParseUUID(agentID), pgtype.UUID{}); err != nil {
-		t.Fatalf("first EnqueueTaskForMention: %v", err)
+	if _, err := svc.enqueueMentionTask(ctx, issueStruct, util.MustParseUUID(agentID), pgtype.UUID{}, false, "", pgtype.UUID{}, pgtype.UUID{}); err != nil {
+		t.Fatalf("first mention enqueue: %v", err)
 	}
 
 	// Second mention for the same (issue, agent) collides on the unique index.
-	_, err := svc.EnqueueTaskForMention(ctx, issueStruct, util.MustParseUUID(agentID), pgtype.UUID{})
+	_, err := svc.enqueueMentionTask(ctx, issueStruct, util.MustParseUUID(agentID), pgtype.UUID{}, false, "", pgtype.UUID{}, pgtype.UUID{})
 	if !errors.Is(err, ErrDuplicatePendingTask) {
-		t.Fatalf("second EnqueueTaskForMention: err = %v, want ErrDuplicatePendingTask", err)
+		t.Fatalf("second mention enqueue: err = %v, want ErrDuplicatePendingTask", err)
 	}
 	// The returned error must NOT carry the raw Postgres constraint name or
 	// SQLSTATE — those used to leak into upper-layer warning logs (#5914).

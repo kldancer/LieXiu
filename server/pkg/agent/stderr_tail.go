@@ -6,7 +6,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/multica-ai/multica/server/pkg/redact"
+	"github.com/kailonyang/liexiu/server/pkg/redact"
 )
 
 // agentStderrTailBytes bounds the stderr tail captured for inclusion in

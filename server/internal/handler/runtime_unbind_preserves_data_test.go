@@ -8,9 +8,9 @@ import (
 	"testing"
 
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/multica-ai/multica/server/internal/events"
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
-	"github.com/multica-ai/multica/server/pkg/protocol"
+	"github.com/kailonyang/liexiu/server/internal/events"
+	db "github.com/kailonyang/liexiu/server/pkg/db/generated"
+	"github.com/kailonyang/liexiu/server/pkg/protocol"
 )
 
 // These are the regressions for MUL-5559. Deleting a runtime used to archive its
@@ -18,62 +18,6 @@ import (
 // their task history all disappeared — while the confirmation dialog said
 // "archive". Each test below pins one thing that must now survive, plus the two
 // invariants that keep the new flow safe.
-
-// TestUnbindAgentsAndDeleteRuntime_KeepsChatHistory: the agent's chat sessions
-// and messages cascade from the agent row, so hard-deleting it destroyed every
-// conversation with it. Unbinding must leave them readable.
-func TestUnbindAgentsAndDeleteRuntime_KeepsChatHistory(t *testing.T) {
-	if testHandler == nil {
-		t.Skip("database not available")
-	}
-	ctx := context.Background()
-
-	runtimeID := createCascadeFixtureRuntime(t, ctx, "Unbind Chat Runtime")
-	agentID := createCascadeFixtureAgent(t, ctx, runtimeID, "Unbind Chat Agent")
-
-	var sessionID string
-	if err := testPool.QueryRow(ctx, `
-		INSERT INTO chat_session (workspace_id, agent_id, creator_id, runtime_id, title)
-		VALUES ($1, $2, $3, $4, 'unbind chat history')
-		RETURNING id
-	`, testWorkspaceID, agentID, testUserID, runtimeID).Scan(&sessionID); err != nil {
-		t.Fatalf("insert chat session: %v", err)
-	}
-	if _, err := testPool.Exec(ctx, `
-		INSERT INTO chat_message (chat_session_id, role, content)
-		VALUES ($1, 'user', 'does this survive the machine being retired?')
-	`, sessionID); err != nil {
-		t.Fatalf("insert chat message: %v", err)
-	}
-
-	unbindRuntime(t, ctx, runtimeID, agentID)
-
-	var sessions, messages int
-	if err := testPool.QueryRow(ctx,
-		`SELECT count(*) FROM chat_session WHERE id = $1`, sessionID).Scan(&sessions); err != nil {
-		t.Fatalf("count chat sessions: %v", err)
-	}
-	if sessions != 1 {
-		t.Fatalf("chat session rows = %d, want 1 (the conversation must survive)", sessions)
-	}
-	if err := testPool.QueryRow(ctx,
-		`SELECT count(*) FROM chat_message WHERE chat_session_id = $1`, sessionID).Scan(&messages); err != nil {
-		t.Fatalf("count chat messages: %v", err)
-	}
-	if messages != 1 {
-		t.Fatalf("chat message rows = %d, want 1", messages)
-	}
-	// chat_session.runtime_id is ON DELETE SET NULL, so the session detaches from
-	// the deleted runtime and a rebind starts a fresh provider session.
-	var sessionBound bool
-	if err := testPool.QueryRow(ctx,
-		`SELECT runtime_id IS NOT NULL FROM chat_session WHERE id = $1`, sessionID).Scan(&sessionBound); err != nil {
-		t.Fatalf("read chat session runtime: %v", err)
-	}
-	if sessionBound {
-		t.Fatalf("chat session must no longer point at the deleted runtime")
-	}
-}
 
 // TestUnbindAgentsAndDeleteRuntime_KeepsTaskHistory is the second half of the
 // data loss, and the one that needs agent_task_queue.runtime_id to be nullable:
@@ -207,58 +151,6 @@ func TestCountUndrainedTasksByRuntimeOrAgent_IncludesCrossRuntimeTask(t *testing
 	}
 }
 
-// TestUnbindAgentsAndDeleteRuntime_KeepsAutopilotConfig pauses an automation
-// whose assignee cannot run after teardown. Leaving it active would append an
-// identical skipped run every schedule tick forever. Its assignee and config
-// remain intact, and pause_reason tells the user how to recover.
-func TestUnbindAgentsAndDeleteRuntime_KeepsAutopilotConfig(t *testing.T) {
-	if testHandler == nil {
-		t.Skip("database not available")
-	}
-	ctx := context.Background()
-
-	runtimeID := createCascadeFixtureRuntime(t, ctx, "Unbind Autopilot Runtime")
-	agentID := createCascadeFixtureAgent(t, ctx, runtimeID, "Unbind Autopilot Agent")
-
-	var autopilotID string
-	if err := testPool.QueryRow(ctx, `
-		INSERT INTO autopilot (
-			workspace_id, title, description, assignee_type, assignee_id,
-			created_by_type, created_by_id, status, execution_mode
-		)
-		VALUES ($1, 'unbind autopilot', 'do the thing', 'agent', $2, 'member', $3, 'active', 'run_only')
-		RETURNING id
-	`, testWorkspaceID, agentID, testUserID).Scan(&autopilotID); err != nil {
-		t.Fatalf("insert autopilot: %v", err)
-	}
-	t.Cleanup(func() {
-		_, _ = testPool.Exec(context.Background(), `DELETE FROM autopilot WHERE id = $1`, autopilotID)
-	})
-
-	unbindRuntime(t, ctx, runtimeID, agentID)
-
-	var status, pauseReason string
-	var assigneeRows int
-	if err := testPool.QueryRow(ctx,
-		`SELECT status, pause_reason FROM autopilot WHERE id = $1`, autopilotID).Scan(&status, &pauseReason); err != nil {
-		t.Fatalf("read autopilot status: %v", err)
-	}
-	if status != "paused" {
-		t.Fatalf("autopilot status = %q, want paused", status)
-	}
-	if pauseReason != string(ReasonAgentRuntimeRequired) {
-		t.Fatalf("autopilot pause_reason = %q, want agent_runtime_required", pauseReason)
-	}
-	if err := testPool.QueryRow(ctx,
-		`SELECT count(*) FROM autopilot WHERE id = $1 AND assignee_id = $2`,
-		autopilotID, agentID).Scan(&assigneeRows); err != nil {
-		t.Fatalf("read autopilot assignee: %v", err)
-	}
-	if assigneeRows != 1 {
-		t.Fatalf("autopilot must still point at the surviving agent")
-	}
-}
-
 func TestUnbindAgentsAndDeleteRuntime_RedactsAgentBroadcast(t *testing.T) {
 	if testHandler == nil {
 		t.Skip("database not available")
@@ -269,8 +161,7 @@ func TestUnbindAgentsAndDeleteRuntime_RedactsAgentBroadcast(t *testing.T) {
 	agentID := createCascadeFixtureAgent(t, ctx, runtimeID, "Unbind Broadcast Agent")
 	if _, err := testPool.Exec(ctx, `
 		UPDATE agent
-		SET mcp_config = '{"servers":{"private":{"token":"secret"}}}'::jsonb,
-		    composio_toolkit_allowlist = ARRAY['github']::text[]
+		SET mcp_config = '{"servers":{"private":{"token":"secret"}}}'::jsonb
 		WHERE id = $1
 	`, agentID); err != nil {
 		t.Fatalf("seed secret-bearing agent fields: %v", err)
@@ -299,53 +190,6 @@ func TestUnbindAgentsAndDeleteRuntime_RedactsAgentBroadcast(t *testing.T) {
 	}
 	if !broadcast.McpConfigRedacted {
 		t.Fatal("broadcast must mark mcp_config as redacted")
-	}
-	if broadcast.ComposioToolkitAllowlist != nil {
-		t.Fatalf("broadcast leaked Composio allowlist: %v", broadcast.ComposioToolkitAllowlist)
-	}
-	if !broadcast.ComposioToolkitAllowlistRedacted {
-		t.Fatal("broadcast must mark Composio allowlist as redacted")
-	}
-}
-
-// TestUnbindAgentsAndDeleteRuntime_DeletesSystemAgents: system agents are
-// invisible execution infrastructure (the Agent Builder, for example) with no UI
-// to rebind them, so leaving them unbound would strand rows no one can repair.
-// They are still hard-deleted with their runtime.
-func TestUnbindAgentsAndDeleteRuntime_DeletesSystemAgents(t *testing.T) {
-	if testHandler == nil {
-		t.Skip("database not available")
-	}
-	ctx := context.Background()
-
-	runtimeID := createCascadeFixtureRuntime(t, ctx, "Unbind System Runtime")
-	userAgent := createCascadeFixtureAgent(t, ctx, runtimeID, "Unbind System Runtime User Agent")
-	systemAgent := createCascadeFixtureAgent(t, ctx, runtimeID, "Unbind System Runtime System Agent")
-	if _, err := testPool.Exec(ctx,
-		`UPDATE agent SET kind = 'system', system_key = 'unbind_probe' WHERE id = $1`,
-		systemAgent); err != nil {
-		t.Fatalf("make agent a system agent: %v", err)
-	}
-
-	// Only the user agent is part of the confirmed plan: system agents never
-	// appear in the dialog (ListActiveAgentsByRuntimeForUpdate filters to
-	// kind='user').
-	unbindRuntime(t, ctx, runtimeID, userAgent)
-
-	var systemRows, userRows int
-	if err := testPool.QueryRow(ctx,
-		`SELECT count(*) FROM agent WHERE id = $1`, systemAgent).Scan(&systemRows); err != nil {
-		t.Fatalf("count system agent: %v", err)
-	}
-	if systemRows != 0 {
-		t.Fatalf("system agent rows = %d, want 0 (still deleted with its runtime)", systemRows)
-	}
-	if err := testPool.QueryRow(ctx,
-		`SELECT count(*) FROM agent WHERE id = $1`, userAgent).Scan(&userRows); err != nil {
-		t.Fatalf("count user agent: %v", err)
-	}
-	if userRows != 1 {
-		t.Fatalf("user agent rows = %d, want 1", userRows)
 	}
 }
 

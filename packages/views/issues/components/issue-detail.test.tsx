@@ -1,15 +1,14 @@
 import { forwardRef, useEffect, useRef, useState, useImperativeHandle } from "react";
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import type { Issue, Label, TimelineEntry } from "@multica/core/types";
-import { I18nProvider } from "@multica/core/i18n/react";
-import { toast } from "sonner";
-import { useResolvedExpandStore } from "@multica/core/issues/stores/resolved-expand-store";
+import type { Issue, Label, TimelineEntry } from "@liexiu/core/types";
+import { I18nProvider } from "@liexiu/core/i18n/react";
+import { useResolvedExpandStore } from "@liexiu/core/issues/stores/resolved-expand-store";
 import {
   DEFAULT_SUB_ISSUE_ROW_PROPERTIES,
   useSubIssueDisplayStore,
-} from "@multica/core/issues/stores/sub-issue-display-store";
+} from "@liexiu/core/issues/stores/sub-issue-display-store";
 import enCommon from "../../locales/en/common.json";
 import enIssues from "../../locales/en/issues.json";
 
@@ -25,15 +24,15 @@ const contentEditorMounts = vi.hoisted(() => ({ count: 0 }));
 // stable identity. A fresh `[]` per call would loop useSyncExternalStore.
 const emptyDraftAttachments = vi.hoisted(() => [] as unknown[]);
 
-vi.mock("@multica/ui/hooks/use-mobile", () => ({
+vi.mock("@liexiu/ui/hooks/use-mobile", () => ({
   useIsMobile: () => mockViewport.isMobile,
 }));
 
 // useWorkspaceId() derives from useCurrentWorkspace (relative import inside
-// @multica/core/hooks.tsx). vi.mock("@multica/core/paths") only intercepts
+// @liexiu/core/hooks.tsx). vi.mock("@liexiu/core/paths") only intercepts
 // the bare-specifier, not the internal relative import. Mock the hooks module
 // directly so the bridge hook returns the test UUID.
-vi.mock("@multica/core/hooks", () => ({
+vi.mock("@liexiu/core/hooks", () => ({
   useWorkspaceId: () => "ws-1",
 }));
 
@@ -41,9 +40,9 @@ vi.mock("@multica/core/hooks", () => ({
 // Mocks
 // ---------------------------------------------------------------------------
 
-// Mock @multica/core/auth
+// Mock @liexiu/core/auth
 const mockAuthUser = { id: "user-1", email: "test@test.com", name: "Test User" };
-vi.mock("@multica/core/auth", () => ({
+vi.mock("@liexiu/core/auth", () => ({
   useAuthStore: Object.assign(
     (selector?: any) => {
       const state = { user: mockAuthUser, isAuthenticated: true };
@@ -55,8 +54,8 @@ vi.mock("@multica/core/auth", () => ({
   createAuthStore: vi.fn(),
 }));
 
-// Mock @multica/core/workspace/hooks
-vi.mock("@multica/core/workspace/hooks", () => ({
+// Mock @liexiu/core/workspace/hooks
+vi.mock("@liexiu/core/workspace/hooks", () => ({
   useActorName: () => ({
     getMemberName: (id: string) => (id === "user-1" ? "Test User" : "Unknown"),
     getAgentName: (id: string) => (id === "agent-1" ? "Claude Agent" : "Unknown Agent"),
@@ -71,17 +70,13 @@ vi.mock("@multica/core/workspace/hooks", () => ({
 }));
 
 // Mock workspace queries
-vi.mock("@multica/core/workspace/queries", () => ({
+vi.mock("@liexiu/core/workspace/queries", () => ({
   memberListOptions: () => ({
     queryKey: ["workspaces", "ws-1", "members"],
     queryFn: () => Promise.resolve([{ user_id: "user-1", name: "Test User", email: "test@test.com", role: "admin" }]),
   }),
   agentListOptions: () => ({
     queryKey: ["workspaces", "ws-1", "agents"],
-    queryFn: () => Promise.resolve([]),
-  }),
-  squadListOptions: () => ({
-    queryKey: ["workspaces", "ws-1", "squads"],
     queryFn: () => Promise.resolve([]),
   }),
   assigneeFrequencyOptions: () => ({
@@ -94,12 +89,12 @@ vi.mock("@multica/core/workspace/queries", () => ({
   }),
 }));
 
-// Mock @multica/core/paths — after the URL-driven workspace refactor,
+// Mock @liexiu/core/paths — after the URL-driven workspace refactor,
 // useCurrentWorkspace / useWorkspacePaths derive from the workspace slug in
 // URL Context. Tests don't mount a real route, so we short-circuit to fixtures.
-vi.mock("@multica/core/paths", async () => {
-  const actual = await vi.importActual<typeof import("@multica/core/paths")>(
-    "@multica/core/paths",
+vi.mock("@liexiu/core/paths", async () => {
+  const actual = await vi.importActual<typeof import("@liexiu/core/paths")>(
+    "@liexiu/core/paths",
   );
   return {
     ...actual,
@@ -118,7 +113,7 @@ vi.mock("../../navigation", () => ({
   useNavigation: () => ({
     push: vi.fn(),
     pathname: "/issues/issue-1",
-    getShareableUrl: (p: string) => `https://app.multica.com${p}`,
+    getShareableUrl: (p: string) => `https://app.liexiu.com${p}`,
   }),
   useBackOrReplace: () => vi.fn(),
   NavigationProvider: ({ children }: { children: React.ReactNode }) => children,
@@ -277,10 +272,6 @@ const mockApiObj = vi.hoisted(() => ({
   deleteComment: vi.fn(),
   deleteIssue: vi.fn(),
   updateIssue: vi.fn(),
-  listIssueSubscribers: vi.fn().mockResolvedValue([]),
-  subscribeToIssue: vi.fn().mockResolvedValue(undefined),
-  unsubscribeFromIssue: vi.fn().mockResolvedValue(undefined),
-  unsubscribeFromIssueSubtree: vi.fn().mockResolvedValue(undefined),
   getActiveTasksForIssue: vi.fn().mockResolvedValue({ tasks: [] }),
   listTasksByIssue: vi.fn().mockResolvedValue([]),
   rerunIssue: vi.fn(),
@@ -290,29 +281,23 @@ const mockApiObj = vi.hoisted(() => ({
   getAgentTaskSnapshot: vi.fn().mockResolvedValue([]),
   // The sub-issues header chip reads this narrowed to the parent issue.
   getWorkspaceWorkingAgents: vi.fn().mockResolvedValue([]),
-  listProperties: vi.fn().mockResolvedValue({ properties: [], total: 0 }),
   listIssues: vi.fn().mockResolvedValue({ issues: [], total: 0 }),
   uploadFile: vi.fn(),
-  listIssueReactions: vi.fn().mockResolvedValue([]),
-  addIssueReaction: vi.fn(),
-  removeIssueReaction: vi.fn(),
   listAttachments: vi.fn().mockResolvedValue([]),
-  addCommentReaction: vi.fn(),
-  removeCommentReaction: vi.fn(),
   listMembers: vi.fn().mockResolvedValue([{ user_id: "user-1", name: "Test User", email: "test@test.com", role: "admin" }]),
   listAgents: vi.fn().mockResolvedValue([]),
   getProject: vi.fn(),
   listProjects: vi.fn().mockResolvedValue({ projects: [] }),
 }));
 
-vi.mock("@multica/core/api", () => ({
+vi.mock("@liexiu/core/api", () => ({
   api: mockApiObj,
   getApi: () => mockApiObj,
   setApiInstance: vi.fn(),
 }));
 
 // Mock issue config
-vi.mock("@multica/core/issues/config", () => ({
+vi.mock("@liexiu/core/issues/config", () => ({
   ALL_STATUSES: ["backlog", "todo", "in_progress", "in_review", "done", "blocked", "cancelled"],
   STATUS_ORDER: ["backlog", "todo", "in_progress", "in_review", "done", "blocked", "cancelled"],
   STATUS_CONFIG: {
@@ -337,23 +322,23 @@ vi.mock("@multica/core/issues/config", () => ({
 
 // Mock recent issues store
 const mockRecordVisit = vi.fn();
-vi.mock("@multica/core/issues/stores", async () => ({
+vi.mock("@liexiu/core/issues/stores", async () => ({
   // Real store, not a stub: resolved-thread expand/collapse behavior under
   // test runs through it. Deep import keeps the persisted sibling stores
   // (which need localStorage) out of this mock.
   ...(await vi.importActual<
-    typeof import("@multica/core/issues/stores/resolved-expand-store")
-  >("@multica/core/issues/stores/resolved-expand-store")),
+    typeof import("@liexiu/core/issues/stores/resolved-expand-store")
+  >("@liexiu/core/issues/stores/resolved-expand-store")),
   // Real store: sub-issue display tests drive it with setState, and the
   // component reads it through the barrel — both must hit the same instance.
   ...(await vi.importActual<
-    typeof import("@multica/core/issues/stores/sub-issue-display-store")
-  >("@multica/core/issues/stores/sub-issue-display-store")),
+    typeof import("@liexiu/core/issues/stores/sub-issue-display-store")
+  >("@liexiu/core/issues/stores/sub-issue-display-store")),
   // Real store, in-memory (no localStorage): backs the sub-issues section's
   // collapsed state.
   ...(await vi.importActual<
-    typeof import("@multica/core/issues/stores/sub-issues-collapse-store")
-  >("@multica/core/issues/stores/sub-issues-collapse-store")),
+    typeof import("@liexiu/core/issues/stores/sub-issues-collapse-store")
+  >("@liexiu/core/issues/stores/sub-issues-collapse-store")),
   useRecentIssuesStore: Object.assign(
     (selector?: any) => {
       const state = { byWorkspace: {}, recordVisit: mockRecordVisit, pruneWorkspaces: vi.fn() };
@@ -472,7 +457,7 @@ beforeEach(() => {
 });
 
 // Mock modals
-vi.mock("@multica/core/modals", () => ({
+vi.mock("@liexiu/core/modals", () => ({
   useModalStore: Object.assign(
     () => ({ open: vi.fn() }),
     { getState: () => ({ open: vi.fn() }) },
@@ -480,12 +465,12 @@ vi.mock("@multica/core/modals", () => ({
 }));
 
 // Mock core/hooks/use-file-upload
-vi.mock("@multica/core/hooks/use-file-upload", () => ({
+vi.mock("@liexiu/core/hooks/use-file-upload", () => ({
   useFileUpload: () => ({ uploadWithToast: vi.fn().mockResolvedValue("https://example.com/file.png") }),
 }));
 
 // Mock realtime
-vi.mock("@multica/core/realtime", () => ({
+vi.mock("@liexiu/core/realtime", () => ({
   useWSEvent: vi.fn(),
   useWSReconnect: vi.fn(),
   useWS: () => ({ subscribe: vi.fn(() => () => {}), onReconnect: vi.fn(() => () => {}) }),
@@ -493,12 +478,7 @@ vi.mock("@multica/core/realtime", () => ({
   useRealtimeSync: () => {},
 }));
 
-// Mock sonner
-vi.mock("sonner", () => ({
-  toast: { error: vi.fn(), success: vi.fn() },
-}));
-
-// Mock react-resizable-panels (used by @multica/ui/components/ui/resizable)
+// Mock react-resizable-panels (used by @liexiu/ui/components/ui/resizable)
 vi.mock("react-resizable-panels", () => ({
   Group: ({ children, ...props }: any) => <div data-testid="panel-group" {...props}>{children}</div>,
   Panel: ({ children, ...props }: any) => <div data-testid="panel" {...props}>{children}</div>,
@@ -531,7 +511,6 @@ const mockIssue: Issue = {
   start_date: null,
   due_date: "2026-06-01T00:00:00Z",
   metadata: {},
-  properties: {},
   created_at: "2026-01-15T00:00:00Z",
   updated_at: "2026-01-20T00:00:00Z",
 };
@@ -599,7 +578,7 @@ function renderIssueDetailWithHighlight(
   const queryClient = createTestQueryClient();
   if (options.seedTimeline) {
     // Pre-populate the timeline cache so the first render sees timeline.length>0.
-    // This reproduces the inbox-click race: timeline data is available before
+    // This reproduces the issues-click race: timeline data is available before
     // the issue itself has finished loading, so the effect that scrolls to
     // the comment fires once with `loading=true` (skeleton still rendered,
     // no comment DOM) and must re-fire when `loading` flips to false.
@@ -643,13 +622,10 @@ describe("IssueDetail (shared)", () => {
     mockApiObj.getIssue.mockResolvedValue(mockIssue);
     // /timeline returns the entries flat in chronological order (oldest first).
     mockApiObj.listTimeline.mockResolvedValue(mockTimeline);
-    mockApiObj.listIssueReactions.mockResolvedValue([]);
-    mockApiObj.listIssueSubscribers.mockResolvedValue([]);
     mockApiObj.listChildIssues.mockResolvedValue({ issues: [] });
     mockApiObj.getChildIssueProgress.mockResolvedValue({ progress: [] });
     mockApiObj.getAgentTaskSnapshot.mockResolvedValue([]);
     mockApiObj.getWorkspaceWorkingAgents.mockResolvedValue([]);
-    mockApiObj.listProperties.mockResolvedValue({ properties: [], total: 0 });
     mockApiObj.listIssues.mockResolvedValue({ issues: [], total: 0 });
     mockApiObj.getActiveTasksForIssue.mockResolvedValue({ tasks: [] });
     mockApiObj.listTasksByIssue.mockResolvedValue([]);
@@ -785,7 +761,7 @@ describe("IssueDetail (shared)", () => {
 
     // The breadcrumb leaf is the whole "identifier + title" string wrapped in a
     // single link to the issue's own detail route (used to open the full page
-    // from the inline Inbox pane). A bare issue has no ancestor crumbs.
+    // from the inline Issues pane). A bare issue has no ancestor crumbs.
     const leaf = await screen.findByText("TES-1 Implement authentication");
     expect(leaf.closest("a")).toHaveAttribute("href", "/test/issues/issue-1");
   });
@@ -1462,8 +1438,8 @@ describe("IssueDetail (shared)", () => {
       expect(hasHighlightedCommentBackground(reply)).toBe(false);
     });
 
-    it("still scrolls when the timeline is ready before the issue (regression for inbox click)", async () => {
-      // Reproduces the inbox-click race: timeline data is in the cache
+    it("still scrolls when the timeline is ready before the issue (regression for issues click)", async () => {
+      // Reproduces the issues-click race: timeline data is in the cache
       // before the issue resolves. While loading is true, IssueDetail
       // renders the loading skeleton (the timeline never mounts), so no
       // scroll/highlight can fire. After the issue resolves, the timeline
@@ -1608,7 +1584,6 @@ describe("IssueDetail (shared)", () => {
     beforeEach(() => {
       useSubIssueDisplayStore.setState({
         rowProperties: { ...DEFAULT_SUB_ISSUE_ROW_PROPERTIES },
-        rowPropertyIds: [],
       });
     });
 
@@ -1701,49 +1676,6 @@ describe("IssueDetail (shared)", () => {
       expect(screen.queryByText("Jan 1")).not.toBeInTheDocument();
     });
 
-    it("renders opted-in custom property chips on rows that carry a value", async () => {
-      const estimate = {
-        id: "prop-1",
-        workspace_id: "ws-1",
-        name: "Estimate",
-        type: "text",
-        config: {},
-        position: 0,
-        archived: false,
-        created_at: "2026-01-01T00:00:00Z",
-        updated_at: "2026-01-01T00:00:00Z",
-      };
-      mockApiObj.listProperties.mockResolvedValue({
-        properties: [estimate],
-        total: 1,
-      });
-      useSubIssueDisplayStore.setState({ rowPropertyIds: ["prop-1"] });
-      mockApiObj.listChildIssues.mockResolvedValue({
-        issues: [
-          subIssue({
-            id: "child-1",
-            number: 11,
-            identifier: "TES-11",
-            title: "Fix login flow",
-            properties: { "prop-1": "Sprint 3" },
-          }),
-          subIssue({
-            id: "child-2",
-            number: 12,
-            identifier: "TES-12",
-            title: "Ship dashboards",
-          }),
-        ],
-      });
-
-      renderIssueDetail();
-
-      await screen.findByText("Fix login flow");
-      // Chip renders only on the row that has a value for the property.
-      expect(await screen.findByText("Sprint 3")).toBeInTheDocument();
-      expect(screen.getAllByText("Sprint 3")).toHaveLength(1);
-    });
-
     it("mutes the due date on done sub-issues even when past", async () => {
       mockApiObj.listChildIssues.mockResolvedValue({
         issues: [
@@ -1764,332 +1696,6 @@ describe("IssueDetail (shared)", () => {
       const due = screen.getByText("Jan 1");
       expect(due.closest("span")?.className).not.toContain("text-destructive");
       expect(due.closest("span")?.className).toContain("text-muted-foreground");
-    });
-  });
-
-  // Deliberately drives the real Base UI DropdownMenu rather than a stub: the
-  // bug these tests pin (MUL-5710) was a handler wired to `onSelect`, which
-  // typechecks because Menu.Item's props extend the whole div attribute set,
-  // then lands on the DOM as the native text-selection event and never fires.
-  // Only the real menu reproduces that; any hand-rolled mock hides it.
-  describe("unsubscribe menu", () => {
-    const subscribedAsMember = [
-      {
-        issue_id: "issue-1",
-        user_type: "member" as const,
-        user_id: "user-1",
-        reason: "manual" as const,
-        created_at: "2026-01-01T00:00:00Z",
-      },
-    ];
-
-    beforeEach(() => {
-      mockApiObj.listIssueSubscribers.mockResolvedValue(subscribedAsMember);
-      // The menu only exists when there is a sub-tree for its second item to
-      // act on. A childless issue renders a direct button instead — covered
-      // by the "no sub-issues" tests below (MUL-5714).
-      mockApiObj.listChildIssues.mockResolvedValue({
-        issues: [{ ...mockIssue, id: "child-1", parent_issue_id: "issue-1" }],
-      });
-    });
-
-    // Base UI portals the popup onto document.body; RTL unmounts it, but wipe
-    // the body too so a leftover portal can't duplicate menu item names.
-    afterEach(() => {
-      document.body.innerHTML = "";
-    });
-
-    async function openUnsubscribeMenu() {
-      renderIssueDetail();
-      fireEvent.click(await screen.findByText("Unsubscribe"));
-      return screen.findByRole("menu");
-    }
-
-    it("unsubscribes the current member when the single-issue item is clicked", async () => {
-      await openUnsubscribeMenu();
-
-      fireEvent.click(
-        screen.getByRole("menuitem", { name: "Unsubscribe from this issue" }),
-      );
-
-      await waitFor(() =>
-        expect(mockApiObj.unsubscribeFromIssue).toHaveBeenCalledWith(
-          "issue-1",
-          "user-1",
-          "member",
-        ),
-      );
-      expect(mockApiObj.unsubscribeFromIssueSubtree).not.toHaveBeenCalled();
-    });
-
-    it("unsubscribes from the whole subtree when the subtree item is clicked", async () => {
-      await openUnsubscribeMenu();
-
-      fireEvent.click(
-        screen.getByRole("menuitem", {
-          name: "Unsubscribe from this issue and its sub-issues",
-        }),
-      );
-
-      await waitFor(() =>
-        expect(mockApiObj.unsubscribeFromIssueSubtree).toHaveBeenCalledWith(
-          "issue-1",
-          "user-1",
-          "member",
-        ),
-      );
-      expect(mockApiObj.unsubscribeFromIssue).not.toHaveBeenCalled();
-    });
-
-    it("still offers the menu while the child count is unknown", async () => {
-      // Children never resolve, so the component cannot yet tell a childless
-      // issue from one with a sub-tree. The menu is the safe answer: unlike
-      // the direct button it never picks an opt-out scope for the user.
-      mockApiObj.listChildIssues.mockReturnValue(new Promise(() => {}));
-      renderIssueDetail();
-
-      const control = await screen.findByText("Unsubscribe");
-
-      expect(control.getAttribute("aria-haspopup")).toBe("menu");
-    });
-  });
-
-  // The reported bug: on an issue with no sub-issues the only way to leave was
-  // a menu whose second item pointed at a sub-tree that does not exist
-  // (MUL-5714).
-  describe("unsubscribe without sub-issues", () => {
-    const subscribedAsMember = [
-      {
-        issue_id: "issue-1",
-        user_type: "member" as const,
-        user_id: "user-1",
-        reason: "manual" as const,
-        created_at: "2026-01-01T00:00:00Z",
-      },
-    ];
-
-    beforeEach(() => {
-      mockApiObj.listIssueSubscribers.mockResolvedValue(subscribedAsMember);
-      mockApiObj.listChildIssues.mockResolvedValue({ issues: [] });
-    });
-
-    afterEach(() => {
-      document.body.innerHTML = "";
-    });
-
-    // The label is the same either way, so aria-haspopup is what separates the
-    // menu trigger from the plain button. The subscribers query resolves first,
-    // so the control is briefly the trigger before the child count settles —
-    // wait for the collapsed form rather than grabbing the first match.
-    async function findDirectUnsubscribeButton() {
-      return waitFor(() => {
-        const el = screen.getByText("Unsubscribe");
-        expect(el.getAttribute("aria-haspopup")).toBeNull();
-        return el;
-      });
-    }
-
-    it("unsubscribes in one click, with no menu", async () => {
-      renderIssueDetail();
-
-      fireEvent.click(await findDirectUnsubscribeButton());
-
-      await waitFor(() =>
-        expect(mockApiObj.unsubscribeFromIssue).toHaveBeenCalledWith(
-          "issue-1",
-          "user-1",
-          "member",
-        ),
-      );
-      expect(screen.queryByRole("menu")).toBeNull();
-    });
-
-    // The scope choice, pinned. RemoveIssueSubscriber writes
-    // opt_out_scope='issue'; the subtree route writes 'subtree', which also
-    // blocks FUTURE children from re-subscribing the user. Collapsing the menu
-    // must not quietly upgrade a one-issue opt-out into a whole-tree one
-    // (server/pkg/db/queries/subscriber.sql).
-    it("uses the root-only route, never the subtree one", async () => {
-      renderIssueDetail();
-
-      fireEvent.click(await findDirectUnsubscribeButton());
-
-      await waitFor(() =>
-        expect(mockApiObj.unsubscribeFromIssue).toHaveBeenCalled(),
-      );
-      expect(mockApiObj.unsubscribeFromIssueSubtree).not.toHaveBeenCalled();
-    });
-
-    it("sends one request for a rapid double-click", async () => {
-      let release: (() => void) | undefined;
-      mockApiObj.unsubscribeFromIssue.mockReturnValue(
-        new Promise<void>((resolve) => {
-          release = () => resolve();
-        }),
-      );
-      renderIssueDetail();
-      const button = await findDirectUnsubscribeButton();
-
-      // Same tick, no await between. React Query flushes isPending in a
-      // microtask, so `disabled` has not landed yet and the second click still
-      // reaches an enabled button — the in-flight guard is what stops it. Two
-      // overlapping toggles is the one case the mutation's whole-list snapshot
-      // cannot survive: the second snapshots the first one's optimistic patch
-      // and rolls back to it (MUL-5714).
-      fireEvent.click(button);
-      fireEvent.click(button);
-
-      // Both handlers already ran synchronously; only the request dispatch is
-      // async. So once any call has landed, the count is final.
-      await waitFor(() =>
-        expect(mockApiObj.unsubscribeFromIssue).toHaveBeenCalled(),
-      );
-      expect(mockApiObj.unsubscribeFromIssue).toHaveBeenCalledTimes(1);
-      release?.();
-    });
-
-    it("disables the button while the toggle is in flight, then reports failure", async () => {
-      let reject: ((err: Error) => void) | undefined;
-      mockApiObj.unsubscribeFromIssue.mockReturnValue(
-        new Promise<void>((_resolve, rej) => {
-          reject = (err) => rej(err);
-        }),
-      );
-      renderIssueDetail();
-      const button = await findDirectUnsubscribeButton();
-
-      fireEvent.click(button);
-
-      await waitFor(() =>
-        expect((button as HTMLButtonElement).disabled).toBe(true),
-      );
-
-      reject?.(new Error("boom"));
-
-      // The optimistic patch rolls itself back, restoring the exact row the
-      // user started from — without this message that is indistinguishable
-      // from a button that never fired.
-      await waitFor(() =>
-        expect(toast.error).toHaveBeenCalledWith(
-          enIssues.detail.subscription_update_failed,
-        ),
-      );
-      await waitFor(() =>
-        expect((button as HTMLButtonElement).disabled).toBe(false),
-      );
-    });
-  });
-
-  // Before the subscribers query resolves the hook's list defaults to empty,
-  // which reads as "not subscribed" for everyone. Rendering that default
-  // showed a Subscribe button to people who were already subscribed, and a
-  // click landing in that window sent a subscribe instead of the unsubscribe
-  // they meant (MUL-5714).
-  describe("subscription state before the query resolves", () => {
-    afterEach(() => {
-      document.body.innerHTML = "";
-    });
-
-    it("renders no subscribe control while subscribers are loading", async () => {
-      mockApiObj.listIssueSubscribers.mockReturnValue(new Promise(() => {}));
-      renderIssueDetail();
-
-      // Wait for the issue itself, so this asserts on a rendered page rather
-      // than on the loading skeleton.
-      await screen.findByText("Implement authentication");
-
-      expect(screen.queryByText("Subscribe")).toBeNull();
-      expect(screen.queryByText("Unsubscribe")).toBeNull();
-    });
-
-    it("renders Subscribe once the query says the user is not subscribed", async () => {
-      mockApiObj.listIssueSubscribers.mockResolvedValue([]);
-      renderIssueDetail();
-
-      expect(await screen.findByText("Subscribe")).toBeTruthy();
-    });
-  });
-
-  // Same cold-cache hazard as the Subscribe button, but worse to act on. Every
-  // checkbox here is drawn from the subscribers list, so an unresolved query
-  // renders everyone — including people who ARE subscribed — as unchecked.
-  // Clicking one of those rows sends an explicit subscribe, which rewrites the
-  // target's reason to 'manual' and clears any opt-out scope
-  // (server/pkg/db/queries/subscriber.sql), discarding a delegated
-  // subscription or a deliberate opt-out (MUL-5714).
-  describe("subscriber picker before the query resolves", () => {
-    // The picker sits next to the subscribe control in the Activity header.
-    // Anchor on the heading, not on that control — the whole point of these
-    // cases is that it is not rendered yet.
-    async function openSubscriberPicker() {
-      const heading = await screen.findByText("Activity");
-      const header = heading.parentElement?.parentElement;
-      const trigger = header?.querySelector('[data-slot="popover-trigger"]');
-      if (!trigger) throw new Error("subscriber picker trigger not found");
-      fireEvent.click(trigger);
-      return waitFor(() => {
-        const content = document.querySelector('[data-slot="popover-content"]');
-        if (!content) throw new Error("picker did not open");
-        return content;
-      });
-    }
-
-    function memberRow(content: Element) {
-      const row = Array.from(
-        content.querySelectorAll('[data-slot="command-item"]'),
-      ).find((el) => el.textContent?.includes("Test User"));
-      if (!row) throw new Error("member row not found");
-      return row;
-    }
-
-    it("disables the rows while subscribers are loading", async () => {
-      mockApiObj.listIssueSubscribers.mockReturnValue(new Promise(() => {}));
-      renderIssueDetail();
-
-      const row = memberRow(await openSubscriberPicker());
-
-      expect(row.getAttribute("data-disabled")).toBe("true");
-
-      fireEvent.click(row);
-
-      expect(mockApiObj.subscribeToIssue).not.toHaveBeenCalled();
-      expect(mockApiObj.unsubscribeFromIssue).not.toHaveBeenCalled();
-    });
-
-    it("disables the rows when the subscribers query failed", async () => {
-      mockApiObj.listIssueSubscribers.mockRejectedValue(new Error("boom"));
-      renderIssueDetail();
-
-      const row = memberRow(await openSubscriberPicker());
-
-      expect(row.getAttribute("data-disabled")).toBe("true");
-
-      fireEvent.click(row);
-
-      expect(mockApiObj.subscribeToIssue).not.toHaveBeenCalled();
-      expect(mockApiObj.unsubscribeFromIssue).not.toHaveBeenCalled();
-    });
-
-    it("enables the rows once the query has a real answer", async () => {
-      mockApiObj.listIssueSubscribers.mockResolvedValue([]);
-      renderIssueDetail();
-      // Wait for the resolved state before opening, so this is not just the
-      // pending case passing by accident.
-      await screen.findByText("Subscribe");
-
-      const row = memberRow(await openSubscriberPicker());
-
-      expect(row.getAttribute("data-disabled")).not.toBe("true");
-
-      fireEvent.click(row);
-
-      await waitFor(() =>
-        expect(mockApiObj.subscribeToIssue).toHaveBeenCalledWith(
-          "issue-1",
-          "user-1",
-          "member",
-        ),
-      );
     });
   });
 });

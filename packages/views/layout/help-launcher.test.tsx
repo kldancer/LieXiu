@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { configStore } from "@multica/core/config";
+import { configStore } from "@liexiu/core/config";
 import enLayout from "../locales/en/layout.json";
 import { HelpLauncher } from "./help-launcher";
 
@@ -32,7 +32,7 @@ vi.mock("../i18n", () => ({
 // DropdownMenuGroup crashed the whole app (no error boundary above the sidebar)
 // the moment the Help menu opened. Mirroring the throw here keeps the guard.
 // The group context lives inside the factory so it survives vi.mock hoisting.
-vi.mock("@multica/ui/components/ui/dropdown-menu", async () => {
+vi.mock("@liexiu/ui/components/ui/dropdown-menu", async () => {
   const { createContext, useContext } = await import("react");
   const GroupContext = createContext(false);
   return {

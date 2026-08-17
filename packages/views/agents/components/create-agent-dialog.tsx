@@ -2,45 +2,36 @@
 
 import { useState } from "react";
 import { Globe, Lock, Users } from "lucide-react";
-import { useQueryClient } from "@tanstack/react-query";
 import { ModelDropdown } from "./model-dropdown";
 import { RuntimePicker } from "./runtime-picker";
-import { isRuntimeUsableForUser } from "@multica/core/runtimes";
+import { isRuntimeUsableForUser } from "@liexiu/core/runtimes";
 import { InstructionsEditor } from "./instructions-editor";
 import { SkillMultiSelect } from "./skill-multi-select";
 import { AvatarUploadControl } from "../../common/avatar-upload-control";
-import { api } from "@multica/core/api";
-import { useWorkspaceId } from "@multica/core/hooks";
-import { useFeatureEnabled } from "@multica/core/config";
-import { COMPOSIO_MCP_APPS_FLAG } from "@multica/core/feature-flags";
-import { workspaceKeys } from "@multica/core/workspace/queries";
 import type {
   Agent,
   AgentInvocationTargetInput,
   AgentPermissionMode,
-  AgentVisibility,
   RuntimeDevice,
   MemberWithUser,
   CreateAgentRequest,
-} from "@multica/core/types";
-import { isImeComposing } from "@multica/core/utils";
+} from "@liexiu/core/types";
+import { isImeComposing } from "@liexiu/core/utils";
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
   DialogDescription,
-} from "@multica/ui/components/ui/dialog";
-import { Button } from "@multica/ui/components/ui/button";
-import { Checkbox } from "@multica/ui/components/ui/checkbox";
-import { Input } from "@multica/ui/components/ui/input";
-import { Label } from "@multica/ui/components/ui/label";
+} from "@liexiu/ui/components/ui/dialog";
+import { Button } from "@liexiu/ui/components/ui/button";
+import { Checkbox } from "@liexiu/ui/components/ui/checkbox";
+import { Input } from "@liexiu/ui/components/ui/input";
+import { Label } from "@liexiu/ui/components/ui/label";
 import { toast } from "sonner";
 import {
   AGENT_DESCRIPTION_MAX_LENGTH,
-  VISIBILITY_DESCRIPTION,
-  VISIBILITY_LABEL,
-} from "@multica/core/agents";
+} from "@liexiu/core/agents";
 import { ActorAvatar } from "../../common/actor-avatar";
 import { CharCounter } from "./char-counter";
 import { useT } from "../../i18n";
@@ -51,7 +42,6 @@ export function CreateAgentDialog({
   members,
   currentUserId,
   template,
-  squadId,
   onClose,
   onCreate,
 }: {
@@ -67,12 +57,6 @@ export function CreateAgentDialog({
   // Skills are copied separately by the caller after createAgent
   // succeeds — they're not part of CreateAgentRequest.
   template?: Agent | null;
-  // When set, every successful create is followed by
-  // addSquadMember(squadId, agent) so the new agent joins this squad.
-  // If the squad-join call fails the agent still exists and the dialog
-  // surfaces a warning toast — the user can add it manually from the
-  // Members tab.
-  squadId?: string;
   onClose: () => void;
   // Returns the created Agent so the dialog can run a follow-up
   // setAgentSkills with the IDs the user picked in the form. Pre-skill-
@@ -82,28 +66,11 @@ export function CreateAgentDialog({
 }) {
   const { t } = useT("agents");
   const isDuplicate = !!template;
-  const queryClient = useQueryClient();
-  const wsId = useWorkspaceId();
-  // MUL-4010: rolls out the private / public_to access model in the create
-  // flow to match the AccessPicker on the agent detail page. Shares the
-  // `composio_mcp_apps` switch with the Composio rollout — the MUL-3963
-  // permission model exists to gate Composio sharing, so both surfaces flip
-  // together. Defaults OFF so production stays on the legacy Workspace /
-  // Personal toggle until Composio is greenlit.
-  const accessPickerEnabled = useFeatureEnabled(COMPOSIO_MCP_APPS_FLAG, false);
-
   // Name defaults: duplicate uses "<original> copy". Manual-create starts blank.
   const [name, setName] = useState(
     template ? `${template.name}${t(($) => $.create_dialog.duplicate_copy_suffix)}` : "",
   );
   const [description, setDescription] = useState(template?.description ?? "");
-  // Legacy visibility state. Kept as the source of truth when
-  // `accessPickerEnabled` is false; only used to seed the new access state
-  // when the flag flips on for a duplicate.
-  const [visibility, setVisibility] = useState<AgentVisibility>(
-    template?.visibility ?? "workspace",
-  );
-
   // New access state (MUL-3963 aligned). When duplicating, seed from the
   // template so the clone lands with the source agent's grants; otherwise
   // default to public_to + workspace, matching the legacy "Workspace" default
@@ -172,41 +139,10 @@ export function CreateAgentDialog({
     selectedRuntime != null &&
     !isRuntimeUsableForUser(selectedRuntime, currentUserId);
   const accessSelectionInvalid =
-    accessPickerEnabled &&
     permissionMode === "public_to" &&
     !workspaceTargetOn &&
     selectedMemberIds.size === 0 &&
     templateTeamTargets.length === 0;
-
-  // Shared squad-join follow-up. Returns nothing — the caller has
-  // already shown its create-success toast; we only need to surface a
-  // warning when the agent landed but the squad-join failed. Cache
-  // invalidation for the squad's members list rides along so the
-  // Members tab re-renders without a manual refetch.
-  const attachToSquad = async (agentId: string, displayName: string) => {
-    if (!squadId) return;
-    try {
-      await api.addSquadMember(squadId, {
-        member_type: "agent",
-        member_id: agentId,
-      });
-      if (wsId) {
-        queryClient.invalidateQueries({
-          queryKey: [...workspaceKeys.squads(wsId), squadId, "members"],
-        });
-        queryClient.invalidateQueries({
-          queryKey: [...workspaceKeys.squads(wsId), squadId],
-        });
-      }
-    } catch (err) {
-      toast.warning(
-        t(($) => $.create_dialog.squad_join_failed_toast, {
-          name: displayName,
-          error: err instanceof Error ? err.message : "unknown error",
-        }),
-      );
-    }
-  };
 
   const handleSubmit = async () => {
     if (
@@ -230,34 +166,26 @@ export function CreateAgentDialog({
         avatar_url: avatarUrl ?? undefined,
         skill_ids: [...selectedSkillIds],
       };
-      if (accessPickerEnabled) {
-        // New MUL-3963 shape: send the authoritative permission fields and
-        // let the backend derive the legacy `visibility` field. Mirror the
-        // AccessPicker `emit` normalisation — a public_to with zero targets
-        // collapses to private as defense in depth so the backend never sees
-        // an "empty public" request. Team targets from the template survive.
-        const invocationTargets: AgentInvocationTargetInput[] = [];
-        if (permissionMode === "public_to") {
-          if (workspaceTargetOn) {
-            invocationTargets.push({ target_type: "workspace" });
-          } else {
-            for (const id of selectedMemberIds) {
-              invocationTargets.push({ target_type: "member", target_id: id });
-            }
-            for (const tgt of templateTeamTargets) {
-              invocationTargets.push(tgt);
-            }
+      // Send the authoritative permission fields and let the backend derive
+      // the legacy visibility field. A public_to with zero targets collapses
+      // to private so the backend never sees an empty public request.
+      const invocationTargets: AgentInvocationTargetInput[] = [];
+      if (permissionMode === "public_to") {
+        if (workspaceTargetOn) {
+          invocationTargets.push({ target_type: "workspace" });
+        } else {
+          for (const id of selectedMemberIds) {
+            invocationTargets.push({ target_type: "member", target_id: id });
+          }
+          for (const tgt of templateTeamTargets) {
+            invocationTargets.push(tgt);
           }
         }
-        const collapseToPrivate =
-          permissionMode === "public_to" && invocationTargets.length === 0;
-        data.permission_mode = collapseToPrivate ? "private" : permissionMode;
-        data.invocation_targets = collapseToPrivate ? [] : invocationTargets;
-      } else {
-        // Legacy path: send the visibility toggle unchanged. The backend
-        // maps this to permission_mode + invocation_targets server-side.
-        data.visibility = visibility;
       }
+      const collapseToPrivate =
+        permissionMode === "public_to" && invocationTargets.length === 0;
+      data.permission_mode = collapseToPrivate ? "private" : permissionMode;
+      data.invocation_targets = collapseToPrivate ? [] : invocationTargets;
       if (template) {
         // Duplicate path: forward the hidden config fields the source
         // agent had so the clone is functional out of the box (args /
@@ -273,15 +201,7 @@ export function CreateAgentDialog({
           data.max_concurrent_tasks = template.max_concurrent_tasks;
         }
       }
-      const createdAgent = await onCreate(data);
-      // Squad context: attach the agent after skills land so the
-      // squad's Members tab shows the agent with its skills already
-      // in place. Atomicity is best-effort by design (see plan in
-      // MUL-2178) — a partial failure surfaces a warning toast and
-      // the user can retry from the Add Member dialog.
-      if (createdAgent && squadId) {
-        await attachToSquad(createdAgent.id, createdAgent.name);
-      }
+      await onCreate(data);
       onClose();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : t(($) => $.create_dialog.create_failed_toast));
@@ -365,58 +285,16 @@ export function CreateAgentDialog({
               </div>
             </div>
 
-            {accessPickerEnabled ? (
-              <AccessSection
-                permissionMode={permissionMode}
-                onPermissionModeChange={setPermissionMode}
-                workspaceTargetOn={workspaceTargetOn}
-                onWorkspaceTargetChange={setWorkspaceTargetOn}
-                selectedMemberIds={selectedMemberIds}
-                onSelectedMemberIdsChange={setSelectedMemberIds}
-                members={members}
-                currentUserId={currentUserId}
-              />
-            ) : (
-              <div>
-                <Label className="text-caption text-muted-foreground">{t(($) => $.create_dialog.visibility_label)}</Label>
-                <div className="mt-1.5 flex gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setVisibility("workspace")}
-                    className={`flex flex-1 items-center gap-2 rounded-lg border px-3 py-2.5 text-body transition-colors ${
-                      visibility === "workspace"
-                        ? "border-primary bg-primary/5"
-                        : "border-border hover:bg-muted"
-                    }`}
-                  >
-                    <Globe className="h-4 w-4 shrink-0 text-muted-foreground" />
-                    <div className="text-left">
-                      <div className="font-medium">{VISIBILITY_LABEL.workspace}</div>
-                      <div className="text-caption text-muted-foreground">
-                        {VISIBILITY_DESCRIPTION.workspace}
-                      </div>
-                    </div>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setVisibility("private")}
-                    className={`flex flex-1 items-center gap-2 rounded-lg border px-3 py-2.5 text-body transition-colors ${
-                      visibility === "private"
-                        ? "border-primary bg-primary/5"
-                        : "border-border hover:bg-muted"
-                    }`}
-                  >
-                    <Lock className="h-4 w-4 shrink-0 text-muted-foreground" />
-                    <div className="text-left">
-                      <div className="font-medium">{VISIBILITY_LABEL.private}</div>
-                      <div className="text-caption text-muted-foreground">
-                        {VISIBILITY_DESCRIPTION.private}
-                      </div>
-                    </div>
-                  </button>
-                </div>
-              </div>
-            )}
+            <AccessSection
+              permissionMode={permissionMode}
+              onPermissionModeChange={setPermissionMode}
+              workspaceTargetOn={workspaceTargetOn}
+              onWorkspaceTargetChange={setWorkspaceTargetOn}
+              selectedMemberIds={selectedMemberIds}
+              onSelectedMemberIdsChange={setSelectedMemberIds}
+              members={members}
+              currentUserId={currentUserId}
+            />
 
             <RuntimePicker
               runtimes={runtimes}
@@ -491,8 +369,8 @@ export function CreateAgentDialog({
 
 
 /**
- * AccessSection — inline access editor for the create/duplicate flow, gated
- * on `COMPOSIO_MCP_APPS_FLAG`. Mirrors the semantics of
+ * AccessSection — inline access editor for the create/duplicate flow. Mirrors
+ * the semantics of
  * `AccessPicker` on the agent detail page: the underlying model is
  * `permission_mode` + `invocation_targets` (MUL-3963), not the legacy
  * `visibility`.

@@ -22,7 +22,7 @@ func TestHermesSessionStorePathLayout(t *testing.T) {
 	issue := "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
 	got := HermesSessionStorePath("", agent, filepath.Join(platformDefaultHermesHome(), "profiles", "research"),
 		TaskContextForEnv{AgentID: agent, IssueID: issue})
-	want := filepath.Join(home, ".multica", hermesSessionStoreRoot, agent, "research", issue)
+	want := filepath.Join(home, ".liexiu", hermesSessionStoreRoot, agent, "research", issue)
 	if got != want {
 		t.Fatalf("store path = %q, want %q", got, want)
 	}
@@ -40,15 +40,6 @@ func TestHermesSessionStorePathScoping(t *testing.T) {
 	issueB := HermesSessionStorePath("", agent, "", TaskContextForEnv{IssueID: "issue-b"})
 	if issueA == "" || issueA == issueB {
 		t.Fatalf("two issues must get distinct stores, got %q and %q", issueA, issueB)
-	}
-
-	chat := HermesSessionStorePath("", agent, "", TaskContextForEnv{ChatSessionID: "sess-1"})
-	if filepath.Base(chat) != "chat_sess-1" {
-		t.Fatalf("chat conversation segment = %q, want chat_sess-1", filepath.Base(chat))
-	}
-	// An issue task and a chat task can never collide even on equal ids.
-	if same := HermesSessionStorePath("", agent, "", TaskContextForEnv{IssueID: "sess-1"}); same == chat {
-		t.Fatalf("issue and chat conversations collided on %q", chat)
 	}
 
 	// No agent, or no conversation, means no store: the session database stays
@@ -262,7 +253,7 @@ func TestPruneHermesSessionStores(t *testing.T) {
 	t.Setenv("HOME", home)
 	t.Setenv("USERPROFILE", home)
 
-	root := filepath.Join(home, ".multica", hermesSessionStoreRoot)
+	root := filepath.Join(home, ".liexiu", hermesSessionStoreRoot)
 	idle := filepath.Join(root, "agent-1", "default", "issue-idle")
 	fresh := filepath.Join(root, "agent-1", "default", "issue-fresh")
 	held := filepath.Join(root, "agent-2", "default", "issue-held")
@@ -311,7 +302,7 @@ func TestPruneHermesSessionStoresDisabled(t *testing.T) {
 	t.Setenv("HOME", home)
 	t.Setenv("USERPROFILE", home)
 
-	store := filepath.Join(home, ".multica", hermesSessionStoreRoot, "agent-1", "default", "issue-1")
+	store := filepath.Join(home, ".liexiu", hermesSessionStoreRoot, "agent-1", "default", "issue-1")
 	mustWrite(t, filepath.Join(store, "state.db"), "transcript")
 	old := time.Now().Add(-365 * 24 * time.Hour)
 	if err := os.Chtimes(store, old, old); err != nil {

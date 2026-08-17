@@ -1,10 +1,10 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { createRef, type ReactNode } from "react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { workspaceKeys } from "@multica/core/workspace/queries";
-import { issueKeys, PAGINATED_STATUSES } from "@multica/core/issues/queries";
-import { I18nProvider } from "@multica/core/i18n/react";
-import type { IssueStatus, ListIssuesCache } from "@multica/core/types";
+import { workspaceKeys } from "@liexiu/core/workspace/queries";
+import { issueKeys, PAGINATED_STATUSES } from "@liexiu/core/issues/queries";
+import { I18nProvider } from "@liexiu/core/i18n/react";
+import type { IssueStatus, ListIssuesCache } from "@liexiu/core/types";
 import type { QueryClient } from "@tanstack/react-query";
 import enCommon from "../../locales/en/common.json";
 import enAuth from "../../locales/en/auth.json";
@@ -31,14 +31,14 @@ function I18nWrapper({ children }: { children: ReactNode }) {
 }
 
 // Mock the workspace id singleton — items() reads it imperatively.
-vi.mock("@multica/core/platform", () => ({
+vi.mock("@liexiu/core/platform", () => ({
   getCurrentWsId: () => "ws-1",
 }));
 
 // Mock the API so we control search responses + observe calls.
 const searchIssuesMock = vi.fn();
 const searchProjectsMock = vi.fn();
-vi.mock("@multica/core/api", () => ({
+vi.mock("@liexiu/core/api", () => ({
   api: {
     get searchIssues() {
       return searchIssuesMock;
@@ -52,7 +52,7 @@ vi.mock("@multica/core/api", () => ({
 // Mock the auth store: items() reads `useAuthStore.getState()` imperatively
 // to identify the current user when filtering personal agents.
 const authState = { user: { id: "u1" } as { id: string } | null };
-vi.mock("@multica/core/auth", () => ({
+vi.mock("@liexiu/core/auth", () => ({
   useAuthStore: { getState: () => authState },
 }));
 
@@ -85,12 +85,6 @@ function fakeQc(data: {
       target_id: string | null;
     }>;
   }>;
-  squads?: Array<{
-    id: string;
-    name: string;
-    archived_at: string | null;
-    leader_id: string;
-  }>;
   issues?: Array<{ id: string; identifier: string; title: string; status: string }>;
 }): QueryClient {
   const map = new Map<string, unknown>();
@@ -113,7 +107,6 @@ function fakeQc(data: {
         : [{ target_type: "workspace" as const, target_id: null }]),
   }));
   map.set(JSON.stringify(workspaceKeys.agents("ws-1")), agentsWithPermissions);
-  map.set(JSON.stringify(workspaceKeys.squads("ws-1")), data.squads ?? []);
   const byStatus: ListIssuesCache["byStatus"] = {};
   for (const status of PAGINATED_STATUSES) {
     const bucket = (data.issues ?? []).filter((i) => i.status === status);
@@ -688,149 +681,6 @@ describe("createMentionSuggestion", () => {
     expect(screen.getByText("Recently viewed")).toBeInTheDocument();
     expect(screen.getByText("MUL-1")).toBeInTheDocument();
     expect(screen.getByText("Roadmap")).toBeInTheDocument();
-  });
-
-  it("includes squads with a runnable leader in the mention list", () => {
-    const qc = fakeQc({
-      members: [{ user_id: "u1", name: "Alice", role: "member" }],
-      agents: [
-        {
-          id: "leader-1",
-          name: "Leader",
-          archived_at: null,
-          visibility: "workspace",
-          owner_id: null,
-        },
-      ],
-      squads: [
-        {
-          id: "s1",
-          name: "Jiayuan's Coding Team",
-          archived_at: null,
-          leader_id: "leader-1",
-        },
-        {
-          id: "s2",
-          name: "独立团",
-          archived_at: null,
-          leader_id: "leader-1",
-        },
-        {
-          id: "s3",
-          name: "Archived Squad",
-          archived_at: "2026-01-01T00:00:00Z",
-          leader_id: "leader-1",
-        },
-      ],
-    });
-    searchIssuesMock.mockReturnValue(new Promise(() => {}));
-
-    const config = createMentionSuggestion(qc);
-    const result = config.items!(itemArgs(""));
-
-    const items = result as MentionItem[];
-    expect(items.filter((i) => i.type === "squad")).toHaveLength(2);
-    expect(items.some((i) => i.type === "squad" && i.label === "Jiayuan's Coding Team")).toBe(true);
-    expect(items.some((i) => i.type === "squad" && i.label === "独立团")).toBe(true);
-    expect(items.some((i) => i.type === "squad" && i.label === "Archived Squad")).toBe(false);
-  });
-
-  it("keeps a squad with an unbound leader discoverable but unselectable", () => {
-    const qc = fakeQc({
-      agents: [
-        {
-          id: "leader-1",
-          name: "Leader",
-          archived_at: null,
-          runtime_id: "",
-          runtime_bound: false,
-          visibility: "workspace",
-          owner_id: null,
-        },
-      ],
-      squads: [
-        {
-          id: "s1",
-          name: "Unrunnable Squad",
-          archived_at: null,
-          leader_id: "leader-1",
-        },
-      ],
-    });
-
-    const config = createMentionSuggestion(qc);
-    const items = config.items!(itemArgs("")) as MentionItem[];
-
-    expect(items).toContainEqual(
-      expect.objectContaining({
-        type: "squad",
-        id: "s1",
-        disabledReason: "agent_runtime_required",
-      }),
-    );
-  });
-
-  it("keeps squads discoverable while the agents cache is not ready", () => {
-    const qc = fakeQc({
-      squads: [
-        {
-          id: "s1",
-          name: "Cold Cache Squad",
-          archived_at: null,
-          leader_id: "leader-not-cached",
-        },
-      ],
-    });
-
-    const config = createMentionSuggestion(qc);
-    const items = config.items!(itemArgs("")) as MentionItem[];
-    const squad = items.find((item) => item.type === "squad" && item.id === "s1");
-
-    expect(squad).toBeDefined();
-    expect(squad?.disabledReason).toBeUndefined();
-  });
-
-  it("keeps a squad with an archived leader discoverable", () => {
-    const qc = fakeQc({
-      agents: [
-        {
-          id: "leader-1",
-          name: "Archived Leader",
-          archived_at: "2026-01-01T00:00:00Z",
-          visibility: "workspace",
-          owner_id: null,
-        },
-      ],
-      squads: [
-        {
-          id: "s1",
-          name: "Archived Leader Squad",
-          archived_at: null,
-          leader_id: "leader-1",
-        },
-      ],
-    });
-
-    const config = createMentionSuggestion(qc);
-    const items = config.items!(itemArgs("")) as MentionItem[];
-    const squad = items.find((item) => item.type === "squad" && item.id === "s1");
-
-    expect(squad).toBeDefined();
-    expect(squad?.disabledReason).toBeUndefined();
-  });
-
-  it("returns no squads when the squads cache is empty (not yet fetched)", () => {
-    const qc = fakeQc({
-      members: [{ user_id: "u1", name: "Alice", role: "member" }],
-      // squads not provided — simulates cache miss
-    });
-    searchIssuesMock.mockReturnValue(new Promise(() => {}));
-
-    const config = createMentionSuggestion(qc);
-    const result = config.items!(itemArgs(""));
-
-    const items = result as MentionItem[];
-    expect(items.filter((i) => i.type === "squad")).toHaveLength(0);
   });
 
   it("matches Chinese names by full pinyin", () => {

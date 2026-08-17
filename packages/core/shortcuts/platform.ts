@@ -48,8 +48,7 @@ export function getShortcutPlatform(): ShortcutPlatform {
  * persisted overrides) when its module first loads, before CoreProvider
  * gets a chance to configure anything. That is safe because the desktop
  * preload exposes its bridge globals before any renderer script runs.
- * Same signals as `detectClientType` in ../analytics — not imported so
- * this module stays dependency-free.
+ * The preload signals keep this module dependency-free.
  */
 export function detectShortcutRuntime(): ShortcutRuntime {
   if (typeof window === "undefined") return "web";

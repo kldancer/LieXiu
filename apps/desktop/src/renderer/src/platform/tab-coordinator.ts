@@ -1,6 +1,6 @@
 import type { DataRouter } from "react-router-dom";
 import type { QueryClient } from "@tanstack/react-query";
-import type { ScrollRestorationAdapter } from "@multica/views/platform";
+import type { ScrollRestorationAdapter } from "@liexiu/views/platform";
 import { createAppRouter } from "@/routes";
 import {
   useTabStore,
@@ -67,7 +67,7 @@ export function registerCoordinatorQueryClient(qc: QueryClient): void {
 
 /**
  * Serves saved scroll offsets back to mounting views (pull-based restore —
- * see ScrollRestorationProvider in @multica/views/platform). Offsets are
+ * see ScrollRestorationProvider in @liexiu/views/platform). Offsets are
  * looked up live against the tab's memento, scoped to the route the view is
  * mounting under, so in-tab back/forward pulls each route's own offsets.
  *

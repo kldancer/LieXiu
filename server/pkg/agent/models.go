@@ -437,11 +437,11 @@ func claudeStaticModels() []Model {
 // so a discovery failure hides the speed picker and fails the override closed.
 func codexStaticModels() []Model {
 	// `Default` here is NOT a user-facing "default model" badge — the picker
-	// stopped rendering that (Multica follows the CLI config when the model is
+	// stopped rendering that (LieXiu follows the CLI config when the model is
 	// unset). It only marks the current flagship for the "default must track
 	// the latest release" catalog guard
 	// (TestCodexStaticModelsMatchVerifiedFallbackCatalog,
-	// multica#2009). It is deliberately NOT used to validate effort for an
+	// liexiu#2009). It is deliberately NOT used to validate effort for an
 	// empty (follow-CLI-config) model: that config can resolve to any model,
 	// so ValidateThinkingLevel fails an empty codex model closed rather than
 	// borrowing this entry's catalog (which alone advertises `ultra`) — see
@@ -491,8 +491,8 @@ func codexStaticModels() []Model {
 func discoverTraecliModels(ctx context.Context, executablePath string) ([]Model, error) {
 	return discoverACPModels(ctx, executablePath, acpDiscoveryProvider{
 		defaultBin:   "traecli",
-		clientName:   "multica-model-discovery",
-		tmpdirPrefix: "multica-traecli-discovery-",
+		clientName:   "liexiu-model-discovery",
+		tmpdirPrefix: "liexiu-traecli-discovery-",
 		acpArgs:      []string{"acp", "serve", "--yolo"},
 	})
 }
@@ -602,7 +602,7 @@ func discoverOpenCodeModels(ctx context.Context, executablePath string) ([]Model
 	// Newer opencode (1.15+) syncs its hosted free-model catalog over the
 	// network on `opencode models`, which can take ~6s; the previous 5s cap
 	// timed out and returned an empty list, so the runtime showed online but
-	// the model picker was empty. See multica-ai/multica#3627.
+	// the model picker was empty. See kailonyang/liexiu#3627.
 	runCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(runCtx, executablePath, "models", "--verbose")
@@ -874,7 +874,7 @@ func discoverPiModelsWithin(ctx context.Context, executablePath string, rpcTimeo
 
 // discoverPiModelsRPC starts a short-lived Pi RPC session and requests both
 // the available models and current state. The state identifies the model Pi
-// will choose when Multica omits --model; its thinking level is the runtime's
+// will choose when LieXiu omits --model; its thinking level is the runtime's
 // effective default for that selected model.
 func discoverPiModelsRPC(ctx context.Context, executablePath, lookedUp string) ([]Model, bool) {
 	args := []string{
@@ -909,8 +909,8 @@ func discoverPiModelsRPC(ctx context.Context, executablePath, lookedUp string) (
 
 	encoder := json.NewEncoder(stdin)
 	requests := []map[string]string{
-		{"id": "multica-state", "type": "get_state"},
-		{"id": "multica-models", "type": "get_available_models"},
+		{"id": "liexiu-state", "type": "get_state"},
+		{"id": "liexiu-models", "type": "get_available_models"},
 	}
 	for _, request := range requests {
 		if err := encoder.Encode(request); err != nil {
@@ -933,12 +933,12 @@ func discoverPiModelsRPC(ctx context.Context, executablePath, lookedUp string) (
 			continue
 		}
 		switch {
-		case response.ID == "multica-state" || response.Command == "get_state":
+		case response.ID == "liexiu-state" || response.Command == "get_state":
 			stateDone = true
 			if response.Success {
 				_ = json.Unmarshal(response.Data, &state)
 			}
-		case response.ID == "multica-models" || response.Command == "get_available_models":
+		case response.ID == "liexiu-models" || response.Command == "get_available_models":
 			modelsDone = true
 			if response.Success {
 				var payload struct {
@@ -1006,7 +1006,7 @@ func piModelsFromRPC(rawModels []piRPCModel, state piRPCState) []Model {
 // piThinkingFromRPCModel follows Pi's getSupportedThinkingLevels(model) for
 // reasoning-capable models: off..high are available unless explicitly mapped
 // to null; xhigh/max require an explicit non-null mapping. Pi reports only
-// "off" for reasoning=false; Multica intentionally hides that no-op picker.
+// "off" for reasoning=false; LieXiu intentionally hides that no-op picker.
 func piThinkingFromRPCModel(model piRPCModel) *ModelThinking {
 	if !model.Reasoning {
 		return nil
@@ -1265,9 +1265,9 @@ func parseOmpModels(data []byte) ([]Model, error) {
 func discoverHermesModels(ctx context.Context, executablePath string) ([]Model, error) {
 	return discoverACPModels(ctx, executablePath, acpDiscoveryProvider{
 		defaultBin:   "hermes",
-		clientName:   "multica-model-discovery",
+		clientName:   "liexiu-model-discovery",
 		extraEnv:     []string{"HERMES_YOLO_MODE=1"},
-		tmpdirPrefix: "multica-hermes-discovery-",
+		tmpdirPrefix: "liexiu-hermes-discovery-",
 		// The same handshake carries an effort selector on jcode and carries
 		// none on Hermes Agent, so annotate is what tells the two apart —
 		// Hermes Agent models come back with a nil Thinking and show no
@@ -1318,8 +1318,8 @@ func discoverKimiModels(ctx context.Context, executablePath string) ([]Model, er
 	var acpVersion string
 	models, err := discoverACPModels(ctx, executablePath, acpDiscoveryProvider{
 		defaultBin:   "kimi",
-		clientName:   "multica-model-discovery",
-		tmpdirPrefix: "multica-kimi-discovery-",
+		clientName:   "liexiu-model-discovery",
+		tmpdirPrefix: "liexiu-kimi-discovery-",
 		inspectInit: func(initResult json.RawMessage) {
 			acpVersion = acpAgentInfoVersion(initResult)
 		},
@@ -1551,9 +1551,9 @@ func acpConfigOptionCurrentValue(raw json.RawMessage, configID string) (string, 
 func discoverReasonixModels(ctx context.Context, executablePath string) ([]Model, error) {
 	return discoverACPModels(ctx, executablePath, acpDiscoveryProvider{
 		defaultBin:       "reasonix",
-		clientName:       "multica-model-discovery",
+		clientName:       "liexiu-model-discovery",
 		acpArgs:          reasonixACPLaunchArgs(),
-		tmpdirPrefix:     "multica-reasonix-discovery-",
+		tmpdirPrefix:     "liexiu-reasonix-discovery-",
 		isolatedStateEnv: "REASONIX_STATE_HOME",
 		annotate:         annotateACPThinkingForSessionModel,
 	})
@@ -1564,8 +1564,8 @@ func discoverReasonixModels(ctx context.Context, executablePath string) ([]Model
 func discoverKiroModels(ctx context.Context, executablePath string) ([]Model, error) {
 	return discoverACPModels(ctx, executablePath, acpDiscoveryProvider{
 		defaultBin:   "kiro-cli",
-		clientName:   "multica-model-discovery",
-		tmpdirPrefix: "multica-kiro-discovery-",
+		clientName:   "liexiu-model-discovery",
+		tmpdirPrefix: "liexiu-kiro-discovery-",
 	})
 }
 
@@ -1591,8 +1591,8 @@ func discoverKiroModels(ctx context.Context, executablePath string) ([]Model, er
 func discoverCopilotModels(ctx context.Context, executablePath string) (Catalog, error) {
 	models, err := discoverACPModels(ctx, executablePath, acpDiscoveryProvider{
 		defaultBin:   "copilot",
-		clientName:   "multica-model-discovery",
-		tmpdirPrefix: "multica-copilot-discovery-",
+		clientName:   "liexiu-model-discovery",
+		tmpdirPrefix: "liexiu-copilot-discovery-",
 		acpArgs:      []string{"--acp"},
 	})
 	if err != nil || len(models) == 0 {
@@ -1611,9 +1611,9 @@ func discoverCopilotModels(ctx context.Context, executablePath string) (Catalog,
 func discoverQoderModels(ctx context.Context, executablePath, defaultBin string) ([]Model, error) {
 	return discoverACPModels(ctx, executablePath, acpDiscoveryProvider{
 		defaultBin:   defaultBin,
-		clientName:   "multica-model-discovery",
+		clientName:   "liexiu-model-discovery",
 		acpArgs:      []string{"--yolo", "--acp"},
-		tmpdirPrefix: "multica-qoder-discovery-",
+		tmpdirPrefix: "liexiu-qoder-discovery-",
 	})
 }
 
@@ -2118,8 +2118,8 @@ func discoverGrokModels(ctx context.Context, executablePath string) (Catalog, er
 	// after initialize returns the methods this installed CLI actually offers.
 	models, err := discoverACPModels(ctx, executablePath, acpDiscoveryProvider{
 		defaultBin:   "grok",
-		clientName:   "multica-model-discovery",
-		tmpdirPrefix: "multica-grok-discovery-",
+		clientName:   "liexiu-model-discovery",
+		tmpdirPrefix: "liexiu-grok-discovery-",
 		acpArgs:      []string{"--no-auto-update", "agent", "--always-approve", "stdio"},
 		selectAuthMethod: func(initResult json.RawMessage, childEnv []string) (string, error) {
 			return selectGrokAuthMethod(extractACPAuthMethods(initResult), envHasNonEmpty(childEnv, "XAI_API_KEY"))
@@ -2465,8 +2465,8 @@ func isOpenclawIdentifier(s string) bool {
 func discoverCodebuddyModels(ctx context.Context, executablePath string) (Catalog, error) {
 	models, err := discoverACPModels(ctx, executablePath, acpDiscoveryProvider{
 		defaultBin:   "codebuddy",
-		clientName:   "multica-model-discovery",
-		tmpdirPrefix: "multica-codebuddy-discovery-",
+		clientName:   "liexiu-model-discovery",
+		tmpdirPrefix: "liexiu-codebuddy-discovery-",
 		acpArgs:      []string{"--acp"},
 		strictErrors: true,
 		annotate:     annotateCodebuddyThinkingFromACP,

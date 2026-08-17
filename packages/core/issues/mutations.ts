@@ -2,7 +2,6 @@ import { hashKey, useMutation, useQueryClient, type QueryKey } from "@tanstack/r
 import { api } from "../api";
 import { issueKeys } from "./queries";
 import { projectKeys } from "../projects/queries";
-import { inboxKeys } from "../inbox/queries";
 import {
   applyIssueChange,
   invalidateIssueDerivatives,
@@ -23,33 +22,21 @@ import {
   pruneDeletedIssueFromParentChildrenCaches,
 } from "./delete-cache";
 import { useWorkspaceId } from "../hooks";
-import { useRecentContextStore } from "../chat/recent-context-store";
 import { useRecentIssuesStore } from "./stores";
-import type { InboxItem, Issue, IssueReaction } from "../types";
+import type { Issue } from "../types";
 import type {
   CreateIssueRequest,
   ListIssuesCache,
   MoveIssueRequest,
   UpdateIssueRequest,
 } from "../types";
-import type { TimelineEntry, IssueSubscriber, Reaction } from "../types";
+import type { TimelineEntry } from "../types";
 import { sortTimelineEntriesAsc } from "./timeline-sort";
 
 // ---------------------------------------------------------------------------
 // Shared mutation variable types — used by both mutation hooks and
 // useMutationState consumers to keep the type assertion in sync.
 // ---------------------------------------------------------------------------
-
-export type ToggleCommentReactionVars = {
-  commentId: string;
-  emoji: string;
-  existing: Reaction | undefined;
-};
-
-export type ToggleIssueReactionVars = {
-  emoji: string;
-  existing: IssueReaction | undefined;
-};
 
 export type UpdateIssueMutationInput = {
   id: string;
@@ -112,8 +99,8 @@ export function useUpdateIssue() {
       // columns. description_base is merge metadata, while description itself
       // is resolved against that base on the server and therefore is not safe
       // to predict optimistically. Keep the authoritative raw description in
-      // cache so hidden channel-media markers remain available as the base for
-      // a rapid follow-up edit. mutationFn still sends the full payload.
+      // cache as the base for a rapid follow-up edit. mutationFn still sends
+      // the full payload.
       const {
         suppress_run: _suppressRun,
         handoff_note: _handoffNote,
@@ -129,9 +116,6 @@ export function useUpdateIssue() {
       qc.cancelQueries({ queryKey: issueKeys.myAll(wsId) });
       qc.cancelQueries({ queryKey: issueKeys.flatAll(wsId) });
       qc.cancelQueries({ queryKey: issueKeys.tableAll(wsId) });
-      if (patch.status !== undefined) {
-        qc.cancelQueries({ queryKey: inboxKeys.list(wsId) });
-      }
       const prevDetail = qc.getQueryData<Issue>(issueKeys.detail(wsId, id));
       // The coordinator owns the cross-cache rules: surgical patch/rebucket
       // where the card is loaded and still belongs, surgical REMOVE where the
@@ -221,13 +205,7 @@ export function useUpdateIssue() {
         id: _id,
         ...intent
       } = vars;
-      // Drop `properties` from the reconcile payload: the bag is owned by the
-      // property mutation pipeline (single-key atomic writes + its own
-      // optimistic state). An UpdateIssue snapshot taken before a concurrent
-      // property write resolves would otherwise overwrite the newer bag
-      // (clean-room review F3 response-ordering race).
-      const { properties: _staleBag, ...reconcilable } = serverIssue;
-      const reconcile = applyIssueChange(qc, wsId, serverIssue.id, reconcilable as typeof serverIssue, {
+      const reconcile = applyIssueChange(qc, wsId, serverIssue.id, serverIssue, {
         changed: issueChangedDims(intent, serverIssue),
         baseIssue: serverIssue,
       });
@@ -361,7 +339,6 @@ export function useDeleteIssue() {
       }
     },
     onSuccess: (_data, id, ctx) => {
-      useRecentContextStore.getState().forgetContext(wsId, { type: "issue", id });
       cleanupDeletedIssueCaches(qc, wsId, id, ctx?.metadata);
     },
     onSettled: (_data, _err, _id, ctx) => {
@@ -404,9 +381,6 @@ export function useBatchUpdateIssues() {
       await qc.cancelQueries({ queryKey: issueKeys.myAll(wsId) });
       await qc.cancelQueries({ queryKey: issueKeys.flatAll(wsId) });
       await qc.cancelQueries({ queryKey: issueKeys.tableAll(wsId) });
-      if (patch.status !== undefined) {
-        await qc.cancelQueries({ queryKey: inboxKeys.list(wsId) });
-      }
 
       // Run every issue through the coordinator — the same rules table the
       // single-issue update uses, so a batch edit patches/removes across the
@@ -421,7 +395,6 @@ export function useBatchUpdateIssues() {
         [QueryKey, IssueTableRowCache]
       >();
       const prevDetailById = new Map<string, Issue>();
-      let prevInboxList: InboxItem[] | undefined;
       const staleKeys: QueryKey[] = [];
       for (const id of ids) {
         const base = qc.getQueryData<Issue>(issueKeys.detail(wsId, id));
@@ -446,9 +419,6 @@ export function useBatchUpdateIssues() {
           }
         }
         if (change.prevDetail) prevDetailById.set(id, change.prevDetail);
-        if (prevInboxList === undefined && change.prevInboxList !== undefined) {
-          prevInboxList = change.prevInboxList;
-        }
         staleKeys.push(...change.staleKeys);
       }
 
@@ -476,7 +446,6 @@ export function useBatchUpdateIssues() {
         prevFlatLists: [...prevFlatListByHash.values()],
         prevTableRows: [...prevTableRowByHash.values()],
         prevDetailById,
-        prevInboxList,
         staleKeys,
         prevChildren,
         affectedParentIds,
@@ -502,9 +471,6 @@ export function useBatchUpdateIssues() {
         for (const [id, snapshot] of ctx.prevDetailById) {
           qc.setQueryData(issueKeys.detail(wsId, id), snapshot);
         }
-      }
-      if (ctx?.prevInboxList !== undefined) {
-        qc.setQueryData(inboxKeys.list(wsId), ctx.prevInboxList);
       }
       if (ctx?.prevChildren) {
         for (const [parentId, snapshot] of ctx.prevChildren) {
@@ -625,9 +591,7 @@ export function useBatchDeleteIssues() {
     },
     onSuccess: (data, ids, ctx) => {
       if (data.deleted === ids.length) {
-        const { forgetContext } = useRecentContextStore.getState();
         for (const id of ids) {
-          forgetContext(wsId, { type: "issue", id });
           cleanupDeletedIssueCaches(qc, wsId, id, ctx?.metadataById.get(id));
         }
         return;
@@ -707,7 +671,6 @@ export function useCreateComment(issueId: string) {
         content: comment.content,
         parent_id: comment.parent_id,
         comment_type: comment.type,
-        reactions: comment.reactions ?? [],
         attachments: comment.attachments ?? [],
         created_at: comment.created_at,
         updated_at: comment.updated_at,
@@ -901,144 +864,6 @@ export function useResolveComment(issueId: string) {
     },
     onSettled: () => {
       qc.invalidateQueries({ queryKey: issueKeys.timeline(issueId) });
-    },
-  });
-}
-
-export function useToggleCommentReaction(issueId: string) {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationKey: ["toggleCommentReaction", issueId] as const,
-    mutationFn: async ({
-      commentId,
-      emoji,
-      existing,
-    }: ToggleCommentReactionVars) => {
-      if (existing) {
-        await api.removeReaction(commentId, emoji);
-        return null;
-      }
-      return api.addReaction(commentId, emoji);
-    },
-    onSettled: () => {
-      qc.invalidateQueries({ queryKey: issueKeys.timeline(issueId) });
-    },
-  });
-}
-
-// ---------------------------------------------------------------------------
-// Issue-level Reactions
-// ---------------------------------------------------------------------------
-
-export function useToggleIssueReaction(issueId: string) {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationKey: ["toggleIssueReaction", issueId] as const,
-    mutationFn: async ({
-      emoji,
-      existing,
-    }: ToggleIssueReactionVars) => {
-      if (existing) {
-        await api.removeIssueReaction(issueId, emoji);
-        return null;
-      }
-      return api.addIssueReaction(issueId, emoji);
-    },
-    onSettled: () => {
-      qc.invalidateQueries({ queryKey: issueKeys.reactions(issueId) });
-    },
-  });
-}
-
-// ---------------------------------------------------------------------------
-// Issue Subscribers
-// ---------------------------------------------------------------------------
-
-export function useToggleIssueSubscriber(issueId: string) {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: async ({
-      userId,
-      userType,
-      subscribed,
-    }: {
-      userId: string;
-      userType: "member" | "agent";
-      subscribed: boolean;
-    }) => {
-      if (subscribed) {
-        await api.unsubscribeFromIssue(issueId, userId, userType);
-      } else {
-        await api.subscribeToIssue(issueId, userId, userType);
-      }
-    },
-    onMutate: async ({ userId, userType, subscribed }) => {
-      await qc.cancelQueries({ queryKey: issueKeys.subscribers(issueId) });
-      const prev = qc.getQueryData<IssueSubscriber[]>(
-        issueKeys.subscribers(issueId),
-      );
-
-      if (subscribed) {
-        qc.setQueryData<IssueSubscriber[]>(
-          issueKeys.subscribers(issueId),
-          (old) =>
-            old?.filter(
-              (s) => !(s.user_id === userId && s.user_type === userType),
-            ),
-        );
-      } else {
-        const temp: IssueSubscriber = {
-          issue_id: issueId,
-          user_type: userType,
-          user_id: userId,
-          reason: "manual",
-          created_at: new Date().toISOString(),
-        };
-        qc.setQueryData<IssueSubscriber[]>(
-          issueKeys.subscribers(issueId),
-          (old) => {
-            if (
-              old?.some(
-                (s) => s.user_id === userId && s.user_type === userType,
-              )
-            )
-              return old;
-            return [...(old ?? []), temp];
-          },
-        );
-      }
-      return { prev };
-    },
-    onError: (_err, _vars, ctx) => {
-      if (ctx?.prev)
-        qc.setQueryData(issueKeys.subscribers(issueId), ctx.prev);
-    },
-    onSettled: () => {
-      qc.invalidateQueries({ queryKey: issueKeys.subscribers(issueId) });
-    },
-  });
-}
-
-/**
- * Leave an issue AND its whole sub-tree (MUL-5483). Not optimistic: it writes
- * to an unknown number of other issues' subscriber lists, so there is nothing
- * determinate to patch — invalidate every subscriber query instead and let the
- * server be the source of truth.
- */
-export function useUnsubscribeFromIssueSubtree(issueId: string) {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: async ({
-      userId,
-      userType,
-    }: {
-      userId: string;
-      userType: "member" | "agent";
-    }) => {
-      await api.unsubscribeFromIssueSubtree(issueId, userId, userType);
-    },
-    onSettled: () => {
-      qc.invalidateQueries({ queryKey: issueKeys.subscribersAll() });
     },
   });
 }

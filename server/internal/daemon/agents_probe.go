@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/multica-ai/multica/server/pkg/agent"
+	"github.com/kailonyang/liexiu/server/pkg/agent"
 )
 
 // shellResolveTTL bounds how long one login-shell PATH resolution is reused
@@ -79,12 +79,12 @@ func cachedShellResolvedAgents() map[string]string {
 // This is pure discovery: no version detection and no minimum-version gate
 // (detectBuiltinRuntimes owns those, per registration round). The result is
 // therefore the machine's *availability* set, which is exactly what
-// /health.agents reports and what `multica daemon probe-runtimes` prints.
+// /health.agents reports and what `liexiu daemon probe-runtimes` prints.
 //
 // It is called once from LoadConfig at startup and again from the periodic
 // workspace sync (refreshAgentAvailability), so a CLI the user installs while
 // the daemon is already running gets picked up without a restart (MUL-5439).
-// Everything it reads is process-external (PATH, MULTICA_*_PATH, MULTICA_*_MODEL),
+// Everything it reads is process-external (PATH, LIEXIU_*_PATH, LIEXIU_*_MODEL),
 // so re-running it is the only way to observe such an install.
 //
 // A var so tests can stub discovery without installing real CLIs.
@@ -100,7 +100,7 @@ var probeAgentCLIs = func() map[string]AgentEntry {
 	// resolveAgentsViaLoginShell for the details and constraints.
 	//
 	// Laziness matters: the happy path (every agent on the daemon's PATH or
-	// pinned to an explicit MULTICA_*_PATH) must not pay the cost of
+	// pinned to an explicit LIEXIU_*_PATH) must not pay the cost of
 	// spawning the user's login shell — that touches their rc files and
 	// adds startup latency that scales with whatever they put in there. We
 	// only fork a shell when a bare command name actually missed LookPath.
@@ -122,7 +122,7 @@ var probeAgentCLIs = func() map[string]AgentEntry {
 			}, true
 		}
 		// The shell fallback only rescues bare command names. An operator
-		// who pinned MULTICA_*_PATH to an absolute or relative path that
+		// who pinned LIEXIU_*_PATH to an absolute or relative path that
 		// doesn't exist should hard-miss, not silently get a different
 		// binary.
 		if strings.ContainsAny(cmd, "/\\") {
@@ -152,25 +152,25 @@ var probeAgentCLIs = func() map[string]AgentEntry {
 	}
 
 	agents := map[string]AgentEntry{}
-	if e, ok := probe("MULTICA_CLAUDE_PATH", "claude", "MULTICA_CLAUDE_MODEL"); ok {
+	if e, ok := probe("LIEXIU_CLAUDE_PATH", "claude", "LIEXIU_CLAUDE_MODEL"); ok {
 		agents["claude"] = e
 	}
-	if e, ok := probe("MULTICA_CODEX_PATH", "codex", "MULTICA_CODEX_MODEL"); ok {
+	if e, ok := probe("LIEXIU_CODEX_PATH", "codex", "LIEXIU_CODEX_MODEL"); ok {
 		agents["codex"] = e
 	}
-	if e, ok := probe("MULTICA_OPENCODE_PATH", "opencode", "MULTICA_OPENCODE_MODEL"); ok {
+	if e, ok := probe("LIEXIU_OPENCODE_PATH", "opencode", "LIEXIU_OPENCODE_MODEL"); ok {
 		agents["opencode"] = e
 	}
-	if e, ok := probe("MULTICA_DEVECO_PATH", "deveco", "MULTICA_DEVECO_MODEL"); ok {
+	if e, ok := probe("LIEXIU_DEVECO_PATH", "deveco", "LIEXIU_DEVECO_MODEL"); ok {
 		agents["deveco"] = e
 	}
-	if e, ok := probe("MULTICA_OPENCLAW_PATH", "openclaw", "MULTICA_OPENCLAW_MODEL"); ok {
+	if e, ok := probe("LIEXIU_OPENCLAW_PATH", "openclaw", "LIEXIU_OPENCLAW_MODEL"); ok {
 		agents["openclaw"] = e
 	}
-	if e, ok := probe("MULTICA_HERMES_PATH", "hermes", "MULTICA_HERMES_MODEL"); ok {
+	if e, ok := probe("LIEXIU_HERMES_PATH", "hermes", "LIEXIU_HERMES_MODEL"); ok {
 		agents["hermes"] = e
 	}
-	if e, ok := probe("MULTICA_PI_PATH", "pi", "MULTICA_PI_MODEL"); ok {
+	if e, ok := probe("LIEXIU_PI_PATH", "pi", "LIEXIU_PI_MODEL"); ok {
 		agents["pi"] = e
 	}
 	// Built-in runtime identities (e.g. omp) are derived from the descriptor
@@ -185,35 +185,35 @@ var probeAgentCLIs = func() map[string]AgentEntry {
 			agents[desc.ID] = e
 		}
 	}
-	if e, ok := probe("MULTICA_CURSOR_PATH", "cursor-agent", "MULTICA_CURSOR_MODEL"); ok {
+	if e, ok := probe("LIEXIU_CURSOR_PATH", "cursor-agent", "LIEXIU_CURSOR_MODEL"); ok {
 		agents["cursor"] = e
 	}
-	if e, ok := probe("MULTICA_COPILOT_PATH", "copilot", "MULTICA_COPILOT_MODEL"); ok {
+	if e, ok := probe("LIEXIU_COPILOT_PATH", "copilot", "LIEXIU_COPILOT_MODEL"); ok {
 		agents["copilot"] = e
 	}
-	if e, ok := probe("MULTICA_KIMI_PATH", "kimi", "MULTICA_KIMI_MODEL"); ok {
+	if e, ok := probe("LIEXIU_KIMI_PATH", "kimi", "LIEXIU_KIMI_MODEL"); ok {
 		agents["kimi"] = e
 	}
-	if e, ok := probe("MULTICA_REASONIX_PATH", "reasonix", "MULTICA_REASONIX_MODEL"); ok {
+	if e, ok := probe("LIEXIU_REASONIX_PATH", "reasonix", "LIEXIU_REASONIX_MODEL"); ok {
 		agents["reasonix"] = e
 	}
-	// DSH is registered only when its Multica runtime profile is installed.
+	// DSH is registered only when its LieXiu runtime profile is installed.
 	// A bare dsh binary is not enough: without the bundle it has no --stdio
 	// protocol and every task would fail after being advertised as healthy.
-	if e, ok := probe("MULTICA_DSH_PATH", "dsh", "MULTICA_DSH_MODEL"); ok && probeDshMulticaProfile(e.Path) {
+	if e, ok := probe("LIEXIU_DSH_PATH", "dsh", "LIEXIU_DSH_MODEL"); ok && probeDshLieXiuProfile(e.Path) {
 		agents["dsh"] = e
 	}
-	if e, ok := probe("MULTICA_KIRO_PATH", "kiro-cli", "MULTICA_KIRO_MODEL"); ok {
+	if e, ok := probe("LIEXIU_KIRO_PATH", "kiro-cli", "LIEXIU_KIRO_MODEL"); ok {
 		agents["kiro"] = e
 	}
-	if e, ok := probe("MULTICA_CODEBUDDY_PATH", "codebuddy", "MULTICA_CODEBUDDY_MODEL"); ok {
+	if e, ok := probe("LIEXIU_CODEBUDDY_PATH", "codebuddy", "LIEXIU_CODEBUDDY_MODEL"); ok {
 		agents["codebuddy"] = e
 	}
 	// agy 1.0.6 added a `--model` flag (MUL-3125), so Antigravity now takes a
-	// model env like every other backend. MULTICA_ANTIGRAVITY_MODEL seeds the
+	// model env like every other backend. LIEXIU_ANTIGRAVITY_MODEL seeds the
 	// daemon-wide default; its value is the exact `agy models` display string
 	// (e.g. "Claude Opus 4.6 (Thinking)"), not a provider/model slug.
-	if e, ok := probe("MULTICA_ANTIGRAVITY_PATH", "agy", "MULTICA_ANTIGRAVITY_MODEL"); ok {
+	if e, ok := probe("LIEXIU_ANTIGRAVITY_PATH", "agy", "LIEXIU_ANTIGRAVITY_MODEL"); ok {
 		agents["antigravity"] = e
 	}
 	// Qoder CLI ships as the `qodercli` binary (Qoder Desktop does not put it
@@ -222,32 +222,32 @@ var probeAgentCLIs = func() map[string]AgentEntry {
 	// fallback applies: a GUI/Launchpad-started daemon does not inherit the
 	// interactive shell PATH, and without the fallback a perfectly good
 	// qodercli install stayed invisible across restarts (MUL-5524).
-	if e, ok := probe("MULTICA_QODER_PATH", "qodercli", "MULTICA_QODER_MODEL"); ok {
+	if e, ok := probe("LIEXIU_QODER_PATH", "qodercli", "LIEXIU_QODER_MODEL"); ok {
 		agents["qoder"] = e
 	}
 	// Qoder CN CLI exposes the same ACP transport as Qoder CLI under a
 	// separate `qoderclicn` binary and account/config root. Register it as an
 	// independent provider so hosts with either or both editions get the
 	// matching runtime without a custom profile.
-	if e, ok := probe("MULTICA_QODERCLICN_PATH", "qoderclicn", "MULTICA_QODERCLICN_MODEL"); ok {
+	if e, ok := probe("LIEXIU_QODERCLICN_PATH", "qoderclicn", "LIEXIU_QODERCLICN_MODEL"); ok {
 		agents["qoderclicn"] = e
 	}
 	// ByteDance official TRAE CLI (the `traecli` binary from https://docs.trae.cn/cli),
-	// driven over ACP via `traecli acp serve --yolo`. MULTICA_TRAECLI_MODEL seeds
+	// driven over ACP via `traecli acp serve --yolo`. LIEXIU_TRAECLI_MODEL seeds
 	// the daemon-wide default model (a model id from the user's logged-in traecli
 	// catalog).
-	if e, ok := probe("MULTICA_TRAECLI_PATH", "traecli", "MULTICA_TRAECLI_MODEL"); ok {
+	if e, ok := probe("LIEXIU_TRAECLI_PATH", "traecli", "LIEXIU_TRAECLI_MODEL"); ok {
 		agents["traecli"] = e
 	}
 	// xAI Grok Build CLI (`grok`), driven over ACP via
-	// `grok agent --always-approve stdio`. MULTICA_GROK_MODEL seeds the
+	// `grok agent --always-approve stdio`. LIEXIU_GROK_MODEL seeds the
 	// daemon-wide default (e.g. grok-4.5).
-	if e, ok := probe("MULTICA_GROK_PATH", "grok", "MULTICA_GROK_MODEL"); ok {
+	if e, ok := probe("LIEXIU_GROK_PATH", "grok", "LIEXIU_GROK_MODEL"); ok {
 		agents["grok"] = e
 	}
 	// Qwen Code (`qwen`) runs headlessly with -p and stream-json. Its native
 	// QWEN.md and .qwen/skills task context is prepared by execenv.
-	if e, ok := probe("MULTICA_QWEN_PATH", "qwen", "MULTICA_QWEN_MODEL"); ok {
+	if e, ok := probe("LIEXIU_QWEN_PATH", "qwen", "LIEXIU_QWEN_MODEL"); ok {
 		agents["qwen"] = e
 	}
 	// QwenPaw (`qwenpaw`) is the QwenPaw CLI agent, driven over ACP via
@@ -255,16 +255,16 @@ var probeAgentCLIs = func() map[string]AgentEntry {
 	// session/set_model (it would rewrite QwenPaw's shared agent config), so
 	// ExecOptions.Model is ignored — see ModelSelectionSupported. Reading one
 	// here would only advertise a knob that silently does nothing.
-	if e, ok := probe("MULTICA_QWENPAW_PATH", "qwenpaw", ""); ok {
+	if e, ok := probe("LIEXIU_QWENPAW_PATH", "qwenpaw", ""); ok {
 		agents["qwenpaw"] = e
 	}
 	return agents
 }
 
-func probeDshMulticaProfile(executablePath string) bool {
+func probeDshLieXiuProfile(executablePath string) bool {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, executablePath, "--profile", "multica", "--probe")
+	cmd := exec.CommandContext(ctx, executablePath, "--profile", "liexiu", "--probe")
 	cmd.WaitDelay = time.Second
 	output, err := cmd.Output()
 	if err != nil {

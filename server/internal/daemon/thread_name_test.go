@@ -11,7 +11,6 @@ func TestDeriveTaskThreadNamePrefersClaimedThreadName(t *testing.T) {
 	got := deriveTaskThreadName(Task{
 		ThreadName:            "  Fix login redirect  ",
 		TriggerCommentContent: "please look at this comment",
-		ChatMessage:           "chat fallback",
 	})
 	if got != "Fix login redirect" {
 		t.Fatalf("thread name = %q, want %q", got, "Fix login redirect")

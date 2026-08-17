@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/multica-ai/multica/server/internal/auth"
+	"github.com/kailonyang/liexiu/server/internal/auth"
 )
 
 // Attachment download capabilities — MUL-5292.
@@ -76,8 +76,8 @@ var (
 )
 
 // attachmentCapabilitySigningKey derives the capability key from the
-// deployment's JWT secret via SHA-256, mirroring composioStateSecret in
-// server/cmd/server/router.go. Deriving rather than reusing means a
+// deployment's JWT secret via SHA-256, mirroring the integration signing
+// secret in the router. Deriving rather than reusing means a
 // capability signature can never collide with a JWT signature; rotating
 // JWT_SECRET additionally invalidates outstanding capabilities, which is the
 // behaviour an operator would expect from a rotation.

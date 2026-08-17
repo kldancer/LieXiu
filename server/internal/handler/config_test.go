@@ -6,7 +6,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/multica-ai/multica/server/internal/auth"
+	"github.com/kailonyang/liexiu/server/internal/auth"
 )
 
 func TestGetConfigReportsCdnSignedMode(t *testing.T) {
@@ -50,17 +50,13 @@ func TestGetConfigReportsCdnSignedMode(t *testing.T) {
 	}
 }
 
-func TestGetConfigIncludesRuntimeAuthConfig(t *testing.T) {
+func TestGetConfigIncludesRuntimeURLs(t *testing.T) {
 	origStorage := testHandler.Storage
 	testHandler.Storage = &mockStorage{}
 	defer func() { testHandler.Storage = origStorage }()
 
-	t.Setenv("ALLOW_SIGNUP", "false")
-	t.Setenv("GOOGLE_CLIENT_ID", "google-client-id")
-	t.Setenv("POSTHOG_API_KEY", "phc_test")
-	t.Setenv("POSTHOG_HOST", "https://eu.i.posthog.com")
-	t.Setenv("MULTICA_PUBLIC_URL", "https://api.example.com/")
-	t.Setenv("MULTICA_APP_URL", "https://app.example.com/")
+	t.Setenv("LIEXIU_PUBLIC_URL", "https://api.example.com/")
+	t.Setenv("LIEXIU_APP_URL", "https://app.example.com/")
 
 	req := httptest.NewRequest(http.MethodGet, "/api/config", nil)
 	w := httptest.NewRecorder()
@@ -77,24 +73,6 @@ func TestGetConfigIncludesRuntimeAuthConfig(t *testing.T) {
 
 	if cfg.CdnDomain != "cdn.example.com" {
 		t.Fatalf("cdn_domain: want cdn.example.com, got %q", cfg.CdnDomain)
-	}
-	if cfg.AllowSignup {
-		t.Fatalf("allow_signup: want false, got true")
-	}
-	if cfg.GoogleClientID != "google-client-id" {
-		t.Fatalf("google_client_id: want google-client-id, got %q", cfg.GoogleClientID)
-	}
-	if cfg.PosthogKey != "phc_test" {
-		t.Fatalf("posthog_key: want phc_test, got %q", cfg.PosthogKey)
-	}
-	if cfg.PosthogHost != "https://eu.i.posthog.com" {
-		t.Fatalf("posthog_host: want https://eu.i.posthog.com, got %q", cfg.PosthogHost)
-	}
-	if cfg.AnalyticsEnvironment != "dev" {
-		t.Fatalf("analytics_environment: want dev, got %q", cfg.AnalyticsEnvironment)
-	}
-	if cfg.WorkspaceCreationDisabled {
-		t.Fatalf("workspace_creation_disabled: want false by default, got true")
 	}
 	if cfg.DaemonServerURL != "https://api.example.com" {
 		t.Fatalf("daemon_server_url: want https://api.example.com, got %q", cfg.DaemonServerURL)
@@ -139,8 +117,8 @@ func TestGetConfigHonorsVCSIntegrationSwitch(t *testing.T) {
 }
 
 func TestGetConfigUsesAppURLForSameOriginDaemonSetup(t *testing.T) {
-	t.Setenv("MULTICA_PUBLIC_URL", "")
-	t.Setenv("MULTICA_APP_URL", "https://multica.internal.example/")
+	t.Setenv("LIEXIU_PUBLIC_URL", "")
+	t.Setenv("LIEXIU_APP_URL", "https://liexiu.internal.example/")
 
 	req := httptest.NewRequest(http.MethodGet, "/api/config", nil)
 	w := httptest.NewRecorder()
@@ -154,18 +132,18 @@ func TestGetConfigUsesAppURLForSameOriginDaemonSetup(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &cfg); err != nil {
 		t.Fatalf("decode config: %v", err)
 	}
-	if cfg.DaemonServerURL != "https://multica.internal.example" {
+	if cfg.DaemonServerURL != "https://liexiu.internal.example" {
 		t.Fatalf("daemon_server_url: want same-origin URL, got %q", cfg.DaemonServerURL)
 	}
-	if cfg.DaemonAppURL != "https://multica.internal.example" {
+	if cfg.DaemonAppURL != "https://liexiu.internal.example" {
 		t.Fatalf("daemon_app_url: want app URL, got %q", cfg.DaemonAppURL)
 	}
 }
 
 func TestGetConfigUsesFrontendOriginForSameOriginDaemonSetup(t *testing.T) {
-	t.Setenv("MULTICA_PUBLIC_URL", "")
-	t.Setenv("MULTICA_APP_URL", "")
-	t.Setenv("FRONTEND_ORIGIN", "https://multica.internal.example/")
+	t.Setenv("LIEXIU_PUBLIC_URL", "")
+	t.Setenv("LIEXIU_APP_URL", "")
+	t.Setenv("FRONTEND_ORIGIN", "https://liexiu.internal.example/")
 
 	req := httptest.NewRequest(http.MethodGet, "/api/config", nil)
 	w := httptest.NewRecorder()
@@ -179,18 +157,18 @@ func TestGetConfigUsesFrontendOriginForSameOriginDaemonSetup(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &cfg); err != nil {
 		t.Fatalf("decode config: %v", err)
 	}
-	if cfg.DaemonServerURL != "https://multica.internal.example" {
+	if cfg.DaemonServerURL != "https://liexiu.internal.example" {
 		t.Fatalf("daemon_server_url: want same-origin URL, got %q", cfg.DaemonServerURL)
 	}
-	if cfg.DaemonAppURL != "https://multica.internal.example" {
+	if cfg.DaemonAppURL != "https://liexiu.internal.example" {
 		t.Fatalf("daemon_app_url: want frontend origin, got %q", cfg.DaemonAppURL)
 	}
 }
 
 func TestGetConfigOmitsOfficialCloudDaemonSetup(t *testing.T) {
-	t.Setenv("MULTICA_PUBLIC_URL", "https://api.multica.ai")
-	t.Setenv("MULTICA_APP_URL", "")
-	t.Setenv("FRONTEND_ORIGIN", "https://multica.ai")
+	t.Setenv("LIEXIU_PUBLIC_URL", "https://api.liexiu.ai")
+	t.Setenv("LIEXIU_APP_URL", "")
+	t.Setenv("FRONTEND_ORIGIN", "https://liexiu.ai")
 
 	req := httptest.NewRequest(http.MethodGet, "/api/config", nil)
 	w := httptest.NewRecorder()
@@ -214,17 +192,17 @@ func TestGetConfigOmitsOfficialCloudDaemonSetup(t *testing.T) {
 
 // TestGetConfigOmitsCloudDaemonSetupWithoutPublicURL reproduces the production
 // regression behind the broken "Add a computer" command: the official cloud
-// frontend is multica.ai, but the deployment does not set MULTICA_PUBLIC_URL to
+// frontend is liexiu.ai, but the deployment does not set LIEXIU_PUBLIC_URL to
 // the api host. Previously this fell through to the same-origin branch and
-// emitted daemon_server_url=https://multica.ai, which the dialog turned into
-// `multica setup self-host --server-url https://multica.ai` — pointing the
+// emitted daemon_server_url=https://liexiu.ai, which the dialog turned into
+// `liexiu setup self-host --server-url https://liexiu.ai` — pointing the
 // daemon's backend at the frontend (no /health, no WebSocket proxy). The
 // official cloud must be recognised by its frontend host alone so the daemon
-// setup URLs are omitted and the dialog falls back to `multica setup`.
+// setup URLs are omitted and the dialog falls back to `liexiu setup`.
 func TestGetConfigOmitsCloudDaemonSetupWithoutPublicURL(t *testing.T) {
-	t.Setenv("MULTICA_PUBLIC_URL", "")
-	t.Setenv("MULTICA_APP_URL", "")
-	t.Setenv("FRONTEND_ORIGIN", "https://multica.ai")
+	t.Setenv("LIEXIU_PUBLIC_URL", "")
+	t.Setenv("LIEXIU_APP_URL", "")
+	t.Setenv("FRONTEND_ORIGIN", "https://liexiu.ai")
 
 	req := httptest.NewRequest(http.MethodGet, "/api/config", nil)
 	w := httptest.NewRecorder()
@@ -247,10 +225,10 @@ func TestGetConfigOmitsCloudDaemonSetupWithoutPublicURL(t *testing.T) {
 }
 
 // TestGetConfigOmitsCloudDaemonSetupForConfiguredAppURL covers the official
-// cloud frontend when it is configured through MULTICA_APP_URL.
+// cloud frontend when it is configured through LIEXIU_APP_URL.
 func TestGetConfigOmitsCloudDaemonSetupForConfiguredAppURL(t *testing.T) {
-	t.Setenv("MULTICA_PUBLIC_URL", "")
-	t.Setenv("MULTICA_APP_URL", "https://multica.ai")
+	t.Setenv("LIEXIU_PUBLIC_URL", "")
+	t.Setenv("LIEXIU_APP_URL", "https://liexiu.ai")
 	t.Setenv("FRONTEND_ORIGIN", "")
 
 	req := httptest.NewRequest(http.MethodGet, "/api/config", nil)
@@ -279,47 +257,20 @@ func TestURLHostEqualsCanonicalizesCommonHostForms(t *testing.T) {
 		raw  string
 		want bool
 	}{
-		{name: "full URL", raw: "https://api.multica.ai", want: true},
-		{name: "bare host", raw: "api.multica.ai", want: true},
-		{name: "host port", raw: "api.multica.ai:8080", want: true},
-		{name: "trailing dot", raw: "https://api.multica.ai.", want: true},
+		{name: "full URL", raw: "https://api.liexiu.ai", want: true},
+		{name: "bare host", raw: "api.liexiu.ai", want: true},
+		{name: "host port", raw: "api.liexiu.ai:8080", want: true},
+		{name: "trailing dot", raw: "https://api.liexiu.ai.", want: true},
 		{name: "different host", raw: "https://evil.example", want: false},
 		{name: "empty", raw: "", want: false},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := urlHostEquals(tt.raw, "api.multica.ai"); got != tt.want {
+			if got := urlHostEquals(tt.raw, "api.liexiu.ai"); got != tt.want {
 				t.Fatalf("urlHostEquals(%q): want %v, got %v", tt.raw, tt.want, got)
 			}
 		})
-	}
-}
-
-// TestGetConfigExposesWorkspaceCreationDisabled verifies that the self-host
-// gate added by #3433 surfaces to the frontend through /api/config so the UI
-// can hide every "Create workspace" affordance.
-func TestGetConfigExposesWorkspaceCreationDisabled(t *testing.T) {
-	origStorage := testHandler.Storage
-	testHandler.Storage = &mockStorage{}
-	defer func() { testHandler.Storage = origStorage }()
-
-	t.Setenv("DISABLE_WORKSPACE_CREATION", "true")
-
-	req := httptest.NewRequest(http.MethodGet, "/api/config", nil)
-	w := httptest.NewRecorder()
-
-	testHandler.GetConfig(w, req)
-	if w.Code != http.StatusOK {
-		t.Fatalf("GetConfig: expected 200, got %d: %s", w.Code, w.Body.String())
-	}
-
-	var cfg AppConfig
-	if err := json.Unmarshal(w.Body.Bytes(), &cfg); err != nil {
-		t.Fatalf("decode config: %v", err)
-	}
-	if !cfg.WorkspaceCreationDisabled {
-		t.Fatalf("workspace_creation_disabled: want true with env on, got false (body=%s)", w.Body.String())
 	}
 }
 
@@ -332,7 +283,7 @@ func TestGetConfigExposesServerVersion(t *testing.T) {
 	defer func() { testHandler.cfg = origCfg }()
 
 	// Self-hosted frontend origin: the version row is meant for these deployments.
-	t.Setenv("MULTICA_APP_URL", "https://multica.self-hosted.example")
+	t.Setenv("LIEXIU_APP_URL", "https://liexiu.self-hosted.example")
 	t.Setenv("FRONTEND_ORIGIN", "")
 
 	testHandler.cfg.ServerVersion = ""
@@ -362,7 +313,7 @@ func TestGetConfigExposesServerVersion(t *testing.T) {
 }
 
 // TestGetConfigOmitsServerVersionOnOfficialCloud verifies the build version is
-// suppressed on the managed cloud (frontend host multica.ai) even when the
+// suppressed on the managed cloud (frontend host liexiu.ai) even when the
 // binary is stamped, while a self-hosted frontend origin still reports it. The
 // managed cloud is continuously deployed, so its users don't need the row.
 func TestGetConfigOmitsServerVersionOnOfficialCloud(t *testing.T) {
@@ -372,8 +323,8 @@ func TestGetConfigOmitsServerVersionOnOfficialCloud(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodGet, "/api/config", nil)
 
-	// Official cloud: frontend host multica.ai -> version omitted.
-	t.Setenv("MULTICA_APP_URL", "https://multica.ai")
+	// Official cloud: frontend host liexiu.ai -> version omitted.
+	t.Setenv("LIEXIU_APP_URL", "https://liexiu.ai")
 	t.Setenv("FRONTEND_ORIGIN", "")
 	w := httptest.NewRecorder()
 	testHandler.GetConfig(w, req)
@@ -386,7 +337,7 @@ func TestGetConfigOmitsServerVersionOnOfficialCloud(t *testing.T) {
 	}
 
 	// Self-hosted: operator's own frontend origin -> version reported.
-	t.Setenv("MULTICA_APP_URL", "https://multica.self-hosted.example")
+	t.Setenv("LIEXIU_APP_URL", "https://liexiu.self-hosted.example")
 	w = httptest.NewRecorder()
 	testHandler.GetConfig(w, req)
 	if err := json.Unmarshal(w.Body.Bytes(), &cfg); err != nil {
@@ -409,73 +360,10 @@ func TestGetConfigExposesFrontendFeatureFlags(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &cfg); err != nil {
 		t.Fatalf("decode default config: %v", err)
 	}
-	if cfg.FeatureFlags["composio_mcp_apps"] {
-		t.Fatalf("composio_mcp_apps: want false by default, got true")
-	}
-	if cfg.FeatureFlags["billing_workspace_subscriptions"] {
-		t.Fatalf("billing_workspace_subscriptions: want false by default, got true")
-	}
-	if cfg.FeatureFlags["plugins_v1"] {
-		t.Fatalf("plugins_v1: want false by default, got true")
-	}
-	if cfg.FeatureFlags["private_plugins_v1"] {
-		t.Fatalf("private_plugins_v1: want false by default, got true")
-	}
 	if !cfg.FeatureFlags["agents_skill_toggles"] {
 		t.Fatalf("agents_skill_toggles: want true for installed v0.4.0 clients, got false")
 	}
 	if !cfg.FeatureFlags["settings_resource_labels"] {
 		t.Fatalf("settings_resource_labels: want true for installed clients, got false")
-	}
-
-	withComposioMCPAppsFlag(t, h, true)
-	w = httptest.NewRecorder()
-	h.GetConfig(w, req)
-	if w.Code != http.StatusOK {
-		t.Fatalf("GetConfig enabled flags: expected 200, got %d: %s", w.Code, w.Body.String())
-	}
-	if err := json.Unmarshal(w.Body.Bytes(), &cfg); err != nil {
-		t.Fatalf("decode enabled config: %v", err)
-	}
-	if !cfg.FeatureFlags["composio_mcp_apps"] {
-		t.Fatalf("composio_mcp_apps: want true with flag enabled, got false")
-	}
-}
-
-func TestGetConfigExposesEnabledPluginsV1Flag(t *testing.T) {
-	h := &Handler{}
-	withPluginsV1Flag(t, h, true)
-
-	req := httptest.NewRequest(http.MethodGet, "/api/config", nil)
-	w := httptest.NewRecorder()
-	h.GetConfig(w, req)
-	if w.Code != http.StatusOK {
-		t.Fatalf("GetConfig enabled plugins_v1: expected 200, got %d: %s", w.Code, w.Body.String())
-	}
-	var cfg AppConfig
-	if err := json.Unmarshal(w.Body.Bytes(), &cfg); err != nil {
-		t.Fatalf("decode enabled config: %v", err)
-	}
-	if !cfg.FeatureFlags["plugins_v1"] {
-		t.Fatal("plugins_v1: want true with flag enabled, got false")
-	}
-}
-
-func TestGetConfigExposesEnabledPrivatePluginsV1Flag(t *testing.T) {
-	h := &Handler{}
-	withPrivatePluginsV1Flag(t, h, true, true)
-
-	req := httptest.NewRequest(http.MethodGet, "/api/config", nil)
-	w := httptest.NewRecorder()
-	h.GetConfig(w, req)
-	if w.Code != http.StatusOK {
-		t.Fatalf("GetConfig enabled private_plugins_v1: expected 200, got %d: %s", w.Code, w.Body.String())
-	}
-	var cfg AppConfig
-	if err := json.Unmarshal(w.Body.Bytes(), &cfg); err != nil {
-		t.Fatalf("decode enabled config: %v", err)
-	}
-	if !cfg.FeatureFlags["plugins_v1"] || !cfg.FeatureFlags["private_plugins_v1"] {
-		t.Fatalf("private Plugin flags not published together: %#v", cfg.FeatureFlags)
 	}
 }

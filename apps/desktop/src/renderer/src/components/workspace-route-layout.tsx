@@ -1,19 +1,16 @@
 import { useEffect } from "react";
 import { Outlet, useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { WorkspaceSlugProvider } from "@multica/core/paths";
+import { WorkspaceSlugProvider } from "@liexiu/core/paths";
 import {
   workspaceBySlugOptions,
   workspaceListOptions,
-} from "@multica/core/workspace";
-import { setCurrentWorkspace } from "@multica/core/platform";
-import { useAuthStore } from "@multica/core/auth";
-import { useWorkspaceSeen } from "@multica/views/workspace/use-workspace-seen";
-import { WelcomeAfterOnboarding } from "@multica/views/workspace/welcome-after-onboarding";
-import { WorkspacePresencePrefetch } from "@multica/views/layout";
-import { SourceBackfillModal } from "@multica/views/onboarding";
+} from "@liexiu/core/workspace";
+import { setCurrentWorkspace } from "@liexiu/core/platform";
+import { useAuthStore } from "@liexiu/core/auth";
+import { useWorkspaceSeen } from "@liexiu/views/workspace/use-workspace-seen";
+import { WorkspacePresencePrefetch } from "@liexiu/views/layout";
 import { useTabStore } from "@/stores/tab-store";
-import { useWindowOverlayStore } from "@/stores/window-overlay-store";
 
 /**
  * Desktop equivalent of apps/web/app/[workspaceSlug]/layout.tsx.
@@ -36,16 +33,6 @@ export function WorkspaceRouteLayout() {
   const { workspaceSlug } = useParams<{ workspaceSlug: string }>();
   const user = useAuthStore((s) => s.user);
   const isAuthLoading = useAuthStore((s) => s.isLoading);
-  // While a WindowOverlay is open (onboarding, accept-invite, new-workspace),
-  // the underlying tab is still mounted in the React tree — so this layout
-  // and its WelcomeAfterOnboarding Modal would render UNDER the overlay.
-  // Because the modal uses a Portal that targets document.body, it ends up
-  // rendered LATER in the DOM and visually outranks the overlay's z-50.
-  // Suppress the modal whenever any overlay is active; the moment the
-  // overlay closes the welcome hook re-evaluates and pops if its store
-  // signal is still set.
-  const overlayActive = useWindowOverlayStore((s) => s.overlay !== null);
-
   // Workspace routes require auth. App.tsx renders <DesktopLoginPage>
   // instead of the shell whenever `user` is null, so this tree never mounts
   // unauthenticated — the old in-router bounce to /login was dead defensive
@@ -98,21 +85,6 @@ export function WorkspaceRouteLayout() {
     <WorkspaceSlugProvider slug={workspaceSlug}>
       <WorkspacePresencePrefetch />
       <Outlet />
-      {/* Reads the welcome-store transient signal parked by
-       *  OnboardingFlow.handleRuntimeNext. Suppressed while a WindowOverlay
-       *  (onboarding / accept-invite / new-workspace) is open so the modal
-       *  doesn't portal-jump in front of an active pre-workspace flow.
-       *  Once the overlay closes the hook re-evaluates and pops the
-       *  Modal — unless the store signal has already been consumed, in
-       *  which case the hook renders null. */}
-      {!overlayActive && <WelcomeAfterOnboarding />}
-      {/* Source-attribution backfill: same Dialog the web shell mounts
-       *  inside DashboardLayout. Desktop's WorkspaceRouteLayout doesn't
-       *  wrap DashboardLayout, so the modal has to be wired in directly
-       *  here. Same overlay-suppression rule as WelcomeAfterOnboarding —
-       *  a portal-rendered Dialog at z-50 would otherwise sit above an
-       *  active pre-workspace overlay. */}
-      {!overlayActive && <SourceBackfillModal />}
     </WorkspaceSlugProvider>
   );
 }

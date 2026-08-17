@@ -11,7 +11,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
-	"github.com/multica-ai/multica/server/internal/storage"
+	"github.com/kailonyang/liexiu/server/internal/storage"
 )
 
 // withAvatarStorage swaps the handler's storage/config for one test and
@@ -406,7 +406,7 @@ func TestServeAvatar_RejectsWorkspaceKeyWithoutAttachmentRow(t *testing.T) {
 
 // TestServeAvatar_AllowsUserNamespaceUpload — UploadFile's no-workspace branch
 // writes to users/<id>/ and creates no attachment row. That namespace never
-// holds issue/comment/chat content, so it stays serveable.
+// holds issue/comment/task content, so it stays serveable.
 func TestServeAvatar_AllowsUserNamespaceUpload(t *testing.T) {
 	withAvatarStorage(t, &mockStorageNoCdn{}, "")
 	key := "users/" + testUserID + "/" + uuid.NewString() + ".png"
@@ -552,19 +552,6 @@ func TestServeAvatar_ShortTTLDisablesRedirectCaching(t *testing.T) {
 	}
 	if got := w.Header().Get("Cache-Control"); got != "no-store" {
 		t.Fatalf("Cache-Control = %q, want no-store", got)
-	}
-}
-
-// TestServeAvatar_RejectsChannelMediaKey — channel ingest writes under
-// `workspaces/<ws>/lark/…` with no attachment row. Those are inbound chat
-// media, not avatars, so the namespace rule must fail closed on them rather
-// than treating "no row" as permission.
-func TestServeAvatar_RejectsChannelMediaKey(t *testing.T) {
-	withAvatarStorage(t, &mockStorageNoCdn{}, "")
-	key := "workspaces/" + testWorkspaceID + "/lark/" + uuid.NewString() + "/deadbeef.png"
-
-	if w := serveAvatarRequest(t, signAvatarKey(key), key); w.Code != http.StatusNotFound {
-		t.Fatalf("status = %d, want 404 for a channel media key", w.Code)
 	}
 }
 

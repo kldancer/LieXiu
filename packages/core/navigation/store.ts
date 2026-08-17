@@ -10,15 +10,10 @@ import { defaultStorage } from "../platform/storage";
 
 // Paths that should not be persisted as "last visited":
 //  - Auth flows (/login, /signup, /logout)
-//  - Pre-workspace routes (/workspaces/new, /auth/, /invite/)
 //  - Pair flow (/pair/)
 const EXCLUDED_PREFIXES = [
   "/login",
-  "/signup",
   "/logout",
-  "/workspaces/",
-  "/auth/",
-  "/invite/",
   "/pair/",
 ];
 
@@ -38,7 +33,7 @@ export const useNavigationStore = create<NavigationState>()(
       },
     }),
     {
-      name: "multica_navigation",
+      name: "liexiu_navigation",
       storage: createJSONStorage(() => createWorkspaceAwareStorage(defaultStorage)),
       partialize: (state) => ({ lastPath: state.lastPath }),
     },

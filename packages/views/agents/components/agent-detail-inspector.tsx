@@ -6,16 +6,16 @@ import type {
   Agent,
   AgentRuntime,
   MemberWithUser,
-} from "@multica/core/types";
+} from "@liexiu/core/types";
 import {
   AGENT_DESCRIPTION_MAX_LENGTH,
   AGENT_MAX_CONCURRENT_TASKS_MAX,
   AGENT_MAX_CONCURRENT_TASKS_MIN,
-} from "@multica/core/agents";
-import { runtimeModelsOptions } from "@multica/core/runtimes";
-import { isImeComposing } from "@multica/core/utils";
-import { Input } from "@multica/ui/components/ui/input";
-import { Textarea } from "@multica/ui/components/ui/textarea";
+} from "@liexiu/core/agents";
+import { runtimeModelsOptions } from "@liexiu/core/runtimes";
+import { isImeComposing } from "@liexiu/core/utils";
+import { Input } from "@liexiu/ui/components/ui/input";
+import { Textarea } from "@liexiu/ui/components/ui/textarea";
 import { AvatarUploadControl } from "../../common/avatar-upload-control";
 import {
   SettingsCard,

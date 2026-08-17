@@ -49,6 +49,11 @@ func TestParseMentions(t *testing.T) {
 			want:    []Mention{{Type: "all", ID: "all"}},
 		},
 		{
+			name:    "retired squad mention is not parsed",
+			content: "[@Squad](mention://squad/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa) coordinate",
+			want:    nil,
+		},
+		{
 			name:    "deduplicate same mention",
 			content: "[@A](mention://agent/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa) and again [@A](mention://agent/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa)",
 			want:    []Mention{{Type: "agent", ID: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"}},

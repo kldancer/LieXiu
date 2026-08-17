@@ -3,9 +3,9 @@
 import { useState } from "react";
 import { FolderKanban } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
-import { projectListOptions } from "@multica/core/projects/queries";
-import { useWorkspaceId } from "@multica/core/hooks";
-import type { UpdateIssueRequest } from "@multica/core/types";
+import { projectListOptions } from "@liexiu/core/projects/queries";
+import { useWorkspaceId } from "@liexiu/core/hooks";
+import type { UpdateIssueRequest } from "@liexiu/core/types";
 import { ProjectIcon } from "./project-icon";
 import {
   PropertyPicker,
@@ -64,8 +64,8 @@ export function ProjectPicker({
     (p) => p.title.toLowerCase().includes(query) || matchesPinyin(p.title, query),
   );
 
-  // Callers that bring their own trigger (create pill, chat pill, autopilot
-  // card, table cell) take over the trigger entirely.
+  // Callers that bring their own trigger (create pill, toolbar chip, table
+  // cell) take over the trigger entirely.
   const resolvedTriggerRender = triggerRender ?? (
     <button type="button" disabled={disabled} className={PICKER_TRIGGER_CLASS} />
   );

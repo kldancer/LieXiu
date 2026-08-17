@@ -22,14 +22,14 @@ import (
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sync/singleflight"
 
-	"github.com/multica-ai/multica/server/internal/cli"
-	"github.com/multica-ai/multica/server/internal/daemon/execenv"
-	"github.com/multica-ai/multica/server/internal/daemon/repocache"
-	"github.com/multica-ai/multica/server/internal/selfexec"
-	"github.com/multica-ai/multica/server/pkg/agent"
-	"github.com/multica-ai/multica/server/pkg/redact"
-	"github.com/multica-ai/multica/server/pkg/skillbundle"
-	"github.com/multica-ai/multica/server/pkg/taskfailure"
+	"github.com/kailonyang/liexiu/server/internal/cli"
+	"github.com/kailonyang/liexiu/server/internal/daemon/execenv"
+	"github.com/kailonyang/liexiu/server/internal/daemon/repocache"
+	"github.com/kailonyang/liexiu/server/internal/selfexec"
+	"github.com/kailonyang/liexiu/server/pkg/agent"
+	"github.com/kailonyang/liexiu/server/pkg/redact"
+	"github.com/kailonyang/liexiu/server/pkg/skillbundle"
+	"github.com/kailonyang/liexiu/server/pkg/taskfailure"
 )
 
 // ErrRepoNotConfigured is returned by ensureRepoReady when the requested repo
@@ -67,7 +67,7 @@ var errSkillBundleUnavailable = errors.New("skill bundle unavailable")
 const (
 	taskSlotWaitTimeout      = 2 * time.Second
 	taskSlotCapacityBackoff  = 5 * time.Second
-	repoCheckoutModeEnv      = "MULTICA_REPO_CHECKOUT_MODE"
+	repoCheckoutModeEnv      = "LIEXIU_REPO_CHECKOUT_MODE"
 	repoCheckoutModeIsolated = "isolated"
 	// defaultTaskPrepareTimeout is a hard liveness bound for everything after
 	// claim and before StartTask succeeds: runtime resolution, skill bundles,
@@ -92,12 +92,12 @@ const (
 var pendingWorkHintMinInterval = time.Second
 
 // repoCheckoutModeFor picks the Git metadata layout for a task's
-// `multica repo checkout`. Under Codex's workspace-write sandbox a linked
+// `liexiu repo checkout`. Under Codex's workspace-write sandbox a linked
 // worktree's gitdir resolves into the shared cache and stays read-only even
 // when the task workdir is an explicit writable root, so `git add` /
 // `git commit` fail from inside the checkout — Linux hit this in
-// multica-ai/multica#2925, Codex's native Windows sandbox in
-// multica-ai/multica#6449.
+// kailonyang/liexiu#2925, Codex's native Windows sandbox in
+// kailonyang/liexiu#6449.
 //
 // Both platforms now default to danger-full-access (execenv's
 // codexSandboxPolicyFor), so in practice only a user who opted into
@@ -133,18 +133,18 @@ func taskScopedAuthToken(task Task) (string, error) {
 	return token, nil
 }
 
-func taskMulticaEnvironment(task Task, agentName, token, configRoot, workspacesRoot, serverURL string, healthPort, slot int, tempDir string) map[string]string {
+func taskLieXiuEnvironment(task Task, agentName, token, configRoot, workspacesRoot, serverURL string, healthPort, slot int, tempDir string) map[string]string {
 	return map[string]string{
-		"MULTICA_TOKEN":        token,
+		"LIEXIU_TOKEN":        token,
 		cli.TaskConfigRootEnv:  configRoot,
 		TaskWorkspacesRootEnv:  workspacesRoot,
-		"MULTICA_SERVER_URL":   serverURL,
-		"MULTICA_DAEMON_PORT":  strconv.Itoa(healthPort),
-		"MULTICA_WORKSPACE_ID": task.WorkspaceID,
-		"MULTICA_AGENT_NAME":   agentName,
-		"MULTICA_AGENT_ID":     task.AgentID,
-		"MULTICA_TASK_ID":      task.ID,
-		"MULTICA_TASK_SLOT":    strconv.Itoa(slot),
+		"LIEXIU_SERVER_URL":   serverURL,
+		"LIEXIU_DAEMON_PORT":  strconv.Itoa(healthPort),
+		"LIEXIU_WORKSPACE_ID": task.WorkspaceID,
+		"LIEXIU_AGENT_NAME":   agentName,
+		"LIEXIU_AGENT_ID":     task.AgentID,
+		"LIEXIU_TASK_ID":      task.ID,
+		"LIEXIU_TASK_SLOT":    strconv.Itoa(slot),
 		"TMPDIR":               tempDir,
 		"TMP":                  tempDir,
 		"TEMP":                 tempDir,
@@ -199,7 +199,7 @@ type terminalTaskReport struct {
 	sessionRolloutMissing bool
 	// retiredSessionID names a session this run was told to resume and then
 	// abandoned as unresumable (GH #6066). The server records it so no later
-	// run on the issue or chat can select it again, however many clean rows
+	// run on the issue can select it again, however many clean rows
 	// still reference it.
 	retiredSessionID string
 }
@@ -500,7 +500,7 @@ type Daemon struct {
 	// the cache that is up to two uncached `brew --prefix` forks per tick.
 	brewTargetOnce sync.Once
 	brewInstall    bool        // resolved once: was this binary installed via brew?
-	brewTarget     string      // "<prefix>/bin/multica" when brewInstall and the prefix resolved
+	brewTarget     string      // "<prefix>/bin/liexiu" when brewInstall and the prefix resolved
 	updating       atomic.Bool // prevents concurrent update attempts
 	// activeTasks is the ownership-safe count of tasks currently in handleTask.
 	// It deliberately includes preparation and local-directory waiters because
@@ -514,7 +514,7 @@ type Daemon struct {
 	runningTasks      atomic.Int64
 	resourceWaitTasks atomic.Int64
 	ready             atomic.Bool // false until preflight completes; gates /health status (starting -> running)
-	// reloadPendingReason explains why a confirmed multica version change hasn't
+	// reloadPendingReason explains why a confirmed liexiu version change hasn't
 	// restarted the daemon yet (a task was running at the barrier check). Set
 	// and cleared by trySelfReload, read by /health. Diagnostic only.
 	reloadPendingReason atomic.Pointer[string]
@@ -850,7 +850,7 @@ type healedAgent struct {
 //     the normal (never-healed) case: a live pinned binary is never
 //     second-guessed even if PATH now points elsewhere.
 //   - Pinned Path gone and no live heal -> re-resolve entry.Command once
-//     (preserving the ~/.multica/hooks exclusion and the login-shell fallback).
+//     (preserving the ~/.liexiu/hooks exclusion and the login-shell fallback).
 //     Before adopting the re-resolved binary it is version-detected and run
 //     through the same minimum-version gate registration applies. This
 //     reproduces exactly what a daemon restart would resolve, so it is no less
@@ -1833,7 +1833,7 @@ func (d *Daemon) Run(ctx context.Context) error {
 	)
 
 	// Mark the daemon-owned workspaces tree before any task runs. A sandbox
-	// fault can strip every MULTICA_* env var from an agent subprocess; the
+	// fault can strip every LIEXIU_* env var from an agent subprocess; the
 	// per-workdir marker then only protects cwds inside the workdir, and a
 	// subprocess that escaped to the workdir's parent would fall back to the
 	// user's config PAT. The root marker makes the CLI fail closed anywhere
@@ -1931,9 +1931,9 @@ func (d *Daemon) resolveAuth() error {
 		return fmt.Errorf("load CLI config: %w", err)
 	}
 	if cfg.Token == "" {
-		loginHint := "'multica login'"
+		loginHint := "'liexiu login'"
 		if d.cfg.Profile != "" {
-			loginHint = fmt.Sprintf("'multica login --profile %s'", d.cfg.Profile)
+			loginHint = fmt.Sprintf("'liexiu login --profile %s'", d.cfg.Profile)
 		}
 		d.logger.Warn("not authenticated — run " + loginHint + " to authenticate, then restart the daemon")
 		return fmt.Errorf("not authenticated: run %s first", loginHint)
@@ -2570,7 +2570,7 @@ func (d *Daemon) appendProfileRuntimes(ctx context.Context, workspaceID string, 
 			continue
 		}
 		// Resolve the executable to launch for this profile. A per-machine
-		// path override (MUL-3284, `multica runtime profile set-path`) wins
+		// path override (MUL-3284, `liexiu runtime profile set-path`) wins
 		// over the PATH lookup when it is set AND points at a real
 		// executable — this is how an operator pins a profile to a binary
 		// that isn't on the daemon's PATH, or selects between multiple
@@ -2809,7 +2809,7 @@ func (d *Daemon) workspaceCoAuthoredByEnabled(workspaceID string) bool {
 //
 // It's safe to call with the workspace's own repos — duplicates are
 // idempotent. Called from runTask before the agent spawns so
-// `multica repo checkout` accepts project-only URLs without an extra round
+// `liexiu repo checkout` accepts project-only URLs without an extra round
 // trip back to GetWorkspaceRepos (which doesn't carry project resources).
 func (d *Daemon) registerTaskRepos(workspaceID, taskID string, repos []RepoData) {
 	if len(repos) == 0 {
@@ -3227,7 +3227,7 @@ const DefaultTokenRenewalInterval = 3 * 24 * time.Hour
 // preflightAuth runs the two auth-sensitive startup steps in their
 // required order: a synchronous PAT renewal first, then the initial
 // workspace sync. The order matters — running tryRenewToken before any
-// other API call is what surfaces a user-actionable "run multica login"
+// other API call is what surfaces a user-actionable "run liexiu login"
 // WARN when the PAT is already revoked or expired. If we let the
 // workspace sync go first, its 401 would short-circuit Run before the
 // renewal loop's first tick ever fires, and the operator would see only
@@ -3283,9 +3283,9 @@ func (d *Daemon) tryRenewToken(ctx context.Context) {
 	resp, err := d.client.RenewToken(reqCtx)
 	if err != nil {
 		if isUnauthorizedError(err) {
-			loginHint := "'multica login'"
+			loginHint := "'liexiu login'"
 			if d.cfg.Profile != "" {
-				loginHint = fmt.Sprintf("'multica login --profile %s'", d.cfg.Profile)
+				loginHint = fmt.Sprintf("'liexiu login --profile %s'", d.cfg.Profile)
 			}
 			d.logger.Warn("auth token rejected by server — run "+loginHint+" to re-authenticate, then restart the daemon", "error", err)
 			return
@@ -4116,7 +4116,7 @@ func (d *Daemon) handleUpdate(ctx context.Context, runtimeID string, update *Pen
 		d.logger.Info("refusing CLI self-update: daemon is managed by Desktop", "runtime_id", runtimeID, "update_id", update.ID)
 		d.reportUpdateResult(ctx, runtimeID, update.ID, map[string]any{
 			"status": "failed",
-			"error":  "CLI is managed by Multica Desktop — update the Desktop app to upgrade the CLI",
+			"error":  "CLI is managed by LieXiu Desktop — update the Desktop app to upgrade the CLI",
 		})
 		return
 	}
@@ -4393,7 +4393,7 @@ func (d *Daemon) triggerRestart() bool {
 // restartTargetBinary resolves the path a restart would re-exec.
 //
 // For brew installs it keeps the stable symlink path (e.g.
-// /opt/homebrew/bin/multica) so the restarted daemon picks up the new Cellar
+// /opt/homebrew/bin/liexiu) so the restarted daemon picks up the new Cellar
 // version automatically: on Linux os.Executable() reads /proc/self/exe, which
 // the kernel resolves to the Cellar path, and brew cleanup deletes that path
 // after an upgrade. For non-brew installs it resolves to the absolute path of
@@ -4416,9 +4416,9 @@ func (d *Daemon) restartTargetBinary() (string, error) {
 			return
 		}
 		if brewPrefix := getBrewPrefix(); brewPrefix != "" {
-			d.brewTarget = filepath.Join(brewPrefix, "bin", "multica")
+			d.brewTarget = filepath.Join(brewPrefix, "bin", "liexiu")
 		} else if prefix := matchKnownBrewPrefix(newBin); prefix != "" {
-			d.brewTarget = filepath.Join(prefix, "bin", "multica")
+			d.brewTarget = filepath.Join(prefix, "bin", "liexiu")
 		}
 	})
 	if d.brewInstall {
@@ -4576,9 +4576,6 @@ func (d *Daemon) runBatchPoller(pollerCtx, parentCtx context.Context, sem chan i
 			t := *tasks[i]
 			slot := slots[i]
 			taskTarget := t.IssueID
-			if taskTarget == "" && t.ChatSessionID != "" {
-				taskTarget = "chat:" + shortID(t.ChatSessionID)
-			}
 			d.logger.Info("task received", "task", shortID(t.ID), "target", taskTarget)
 			taskWG.Add(1)
 			d.activeTasks.Add(1)
@@ -4682,7 +4679,7 @@ func waitForTaskSlot(ctx context.Context, sem chan int, wakeup <-chan struct{}, 
 
 // newTaskSlotSemaphore returns a buffered channel pre-populated with stable
 // slot indices [0, n). Receive to acquire a slot, send the same slot back to
-// release. Used by pollLoop to expose MULTICA_TASK_SLOT to spawned tasks.
+// release. Used by pollLoop to expose LIEXIU_TASK_SLOT to spawned tasks.
 func newTaskSlotSemaphore(maxConcurrentTasks int) chan int {
 	sem := make(chan int, maxConcurrentTasks)
 	for i := 0; i < maxConcurrentTasks; i++ {
@@ -4807,18 +4804,13 @@ func (d *Daemon) handleTask(ctx context.Context, task Task, slot int) {
 	if task.Agent != nil {
 		agentName = task.Agent.Name
 	}
-	if task.ChatSessionID != "" {
-		taskLog.Info("picked chat task", "chat_session", shortID(task.ChatSessionID), "agent", agentName, "provider", provider)
-	} else {
-		taskLog.Info("picked task", "issue", task.IssueID, "agent", agentName, "provider", provider)
-	}
+	taskLog.Info("picked task", "issue", task.IssueID, "agent", agentName, "provider", provider)
 	taskLog.Debug("task context",
 		"workspace_id", task.WorkspaceID,
 		"runtime_id", task.RuntimeID,
 		"agent_id", task.AgentID,
 		"repos", len(task.Repos),
 		"project_id", task.ProjectID,
-		"autopilot_run_id", task.AutopilotRunID,
 		"trigger_comment_id", task.TriggerCommentID,
 		"resume_session", task.PriorSessionID != "",
 		"reuse_workdir", task.PriorWorkDir != "",
@@ -4906,8 +4898,8 @@ func (d *Daemon) handleTask(ctx context.Context, task Task, slot int) {
 		taskLog.Info("task cancelled during execution, discarding result",
 			"branch_name", result.BranchName, "error", err)
 		// runner.run has returned, so the transcript flush is complete —
-		// tell the server it can settle its deferred chat finalization
-		// (#5219). The sweeper grace period covers a lost ack's chat settle,
+		// tell the server it can settle its deferred task finalization
+		// (#5219). The sweeper grace period covers a lost ack's task settle,
 		// but NOT the payload: the branch rides along because the worktree was
 		// already finalized before this check, and when Finalize instead
 		// ABORTED, the preserved-worktree error is the only pointer left to
@@ -4958,7 +4950,7 @@ func (d *Daemon) handleTask(ctx context.Context, task Task, slot int) {
 		taskLog.Info("task cancelled during execution, discarding result",
 			"status", status, "error", err, "branch_name", result.BranchName)
 		// Same contract as the poll-cancelled path above: the transcript is
-		// flushed, so let the server settle its deferred chat finalization, and
+		// flushed, so let the server settle its deferred task finalization, and
 		// carry the finalized branch so cancelled work stays discoverable. No
 		// error to carry here — this branch is only reached with err == nil.
 		// This fires for ANY observed terminal status; the server applies the
@@ -4975,8 +4967,7 @@ func (d *Daemon) handleTask(ctx context.Context, task Task, slot int) {
 	d.reportTaskResult(ctx, task.ID, result, taskLog)
 
 	// Write GC metadata after the task finishes so the periodic GC loop
-	// can look up the parent record (issue / chat session / autopilot run /
-	// task itself for quick-create) later. Written last so that a mid-task
+	// can look up the parent record (issue / task itself for quick-create) later. Written last so that a mid-task
 	// crash leaves the directory as an orphan (cleaned up by GCOrphanTTL).
 	if result.EnvRoot != "" {
 		if meta, ok := gcMetaForTask(task); ok {
@@ -5215,7 +5206,7 @@ func (d *Daemon) acquireLocalDirectoryLockIfNeeded(ctx context.Context, task Tas
 // result can never be displayed as "Completed" in the UI (e.g. provider 429 /
 // out-of-credit / runtime crash). Forward SessionID/WorkDir on every path:
 // the agent may have built a real session before getting stuck, and we want
-// the next chat turn to resume there rather than start over and "forget"
+// the next issue turn to resume there rather than start over and "forget"
 // the conversation.
 func (d *Daemon) reportTaskResult(ctx context.Context, taskID string, result TaskResult, taskLog *slog.Logger) {
 	switch result.Status {
@@ -5334,10 +5325,9 @@ func (d *Daemon) reportTerminalTask(parentCtx context.Context, report terminalTa
 	}
 }
 
-// gcMetaForTask classifies a finished task and produces a GCMeta of the right
-// kind. The discriminator order matters: a task carrying both an issue_id
-// and a chat_session_id (theoretical, not produced today) should be treated
-// as a chat task because the chat session is the longer-lived parent record.
+// gcMetaForTask classifies a finished task and produces GC metadata only for
+// parent records that still have a server-side GC contract.
+// Historical directories are handled by the daemon.s orphan-by-mtime fallback.
 //
 // Returns ok=false when the task has no recognizable parent (e.g. an
 // internal task with no IDs at all). The caller skips writing a meta file
@@ -5345,12 +5335,6 @@ func (d *Daemon) reportTerminalTask(parentCtx context.Context, report terminalTa
 func gcMetaForTask(task Task) (execenv.GCMeta, bool) {
 	meta := execenv.GCMeta{WorkspaceID: task.WorkspaceID}
 	switch {
-	case task.ChatSessionID != "":
-		meta.Kind = execenv.GCKindChat
-		meta.ChatSessionID = task.ChatSessionID
-	case task.AutopilotRunID != "":
-		meta.Kind = execenv.GCKindAutopilotRun
-		meta.AutopilotRunID = task.AutopilotRunID
 	case task.IssueID != "":
 		meta.Kind = execenv.GCKindIssue
 		meta.IssueID = task.IssueID
@@ -5504,78 +5488,15 @@ func sessionHomeReachable(provider string, env *execenv.Environment, envReused b
 	return envReused
 }
 
-// shouldReusePriorWorkdir keeps the local_directory lock invariant without
-// forcing every squad-leader follow-up onto a fresh provider session. Worker
-// tasks already expose their current local-directory assignment, so their
-// existing reuse behavior remains unchanged. Leader tasks intentionally skip
-// that assignment and its lock; they may therefore reuse only directories
-// that resolve to the {workspace}/{task}/workdir shape, carry Prepare-time
-// managed-env provenance for the same workspace/issue/agent, and carry a
-// matching daemon task-context marker.
-//
-// Reuse eligibility is deliberately keyed off .managed_env.json (written by
-// execenv.Prepare) and NOT .gc_meta.json (written only after the task reaches
-// terminal state). The server's task-complete handler reconciles a follow-up
-// and wakes the runtime before the prior task's daemon handler writes the GC
-// file, so a successor can be claimed inside that window; keying off the
-// terminal file raced and dropped the session (MUL-4886). Both proofs this
-// function reads — the env-root provenance and the workdir task-context marker
-// — are written at Prepare time, so neither depends on completion ordering.
+// shouldReusePriorWorkdir keeps prior issue workdirs reusable when there is no
+// active local-directory assignment. All agent tasks use the same policy;
+// task role or historical routing metadata never changes workdir reuse.
 func shouldReusePriorWorkdir(task Task, localAssignment *localDirectoryAssignment, workspacesRoot string) bool {
 	if task.PriorWorkDir == "" || localAssignment != nil {
 		return false
 	}
-	if !task.IsLeaderTask {
-		return true
-	}
-
-	root, err := filepath.EvalSymlinks(workspacesRoot)
-	if err != nil {
-		return false
-	}
-	workdir, err := filepath.EvalSymlinks(task.PriorWorkDir)
-	if err != nil {
-		return false
-	}
-	info, err := os.Stat(workdir)
-	if err != nil || !info.IsDir() {
-		return false
-	}
-	rel, err := filepath.Rel(root, workdir)
-	if err != nil || !filepath.IsLocal(rel) {
-		return false
-	}
-	parts := strings.Split(rel, string(filepath.Separator))
-	if len(parts) != 3 || parts[0] != task.WorkspaceID || parts[1] == "" || parts[2] != "workdir" {
-		return false
-	}
-	if task.AgentID == "" || task.IssueID == "" {
-		return false
-	}
-	// Managed-env provenance is written only for non-local managed issue envs,
-	// so its presence (plus the workspace/issue/agent match) proves this is a
-	// safe daemon-managed reuse target and not a residual local_directory path.
-	prov, err := execenv.ReadManagedEnvProvenance(filepath.Dir(workdir))
-	if err != nil || prov.ManagedBy != execenv.ManagedEnvProvenanceManagedBy ||
-		prov.WorkspaceID != task.WorkspaceID || prov.IssueID != task.IssueID ||
-		prov.AgentID != task.AgentID {
-		return false
-	}
-
-	data, err := os.ReadFile(filepath.Join(workdir, execenv.TaskContextMarkerRelPath))
-	if err != nil {
-		return false
-	}
-	var marker struct {
-		ManagedBy string `json:"managed_by"`
-		AgentID   string `json:"agent_id"`
-		IssueID   string `json:"issue_id"`
-	}
-	if json.Unmarshal(data, &marker) != nil {
-		return false
-	}
-	return marker.ManagedBy == execenv.TaskContextMarkerManagedBy &&
-		marker.AgentID == task.AgentID && marker.IssueID == task.IssueID
+	_ = workspacesRoot
+	return true
 }
 
 // gateCodexResumeToRolloutPresence drops the prior Codex session when its
@@ -5759,14 +5680,10 @@ func (d *Daemon) resolveSkillBundle(ctx context.Context, task *Task, ref SkillRe
 		return SkillData{}, fmt.Errorf("resolve skill bundle returned wrong skill: requested source=%s id=%s, got source=%s id=%s", ref.Source, ref.ID, bundle.Source, bundle.ID)
 	}
 	bundleRef := skillRefFromBundle(bundle)
-	validationRef := bundleRef
-	if ref.Source == skillbundle.SourcePlugin {
-		validationRef = ref
-	}
-	if !validateSkillBundle(validationRef, bundle) {
+	if !validateSkillBundle(bundleRef, bundle) {
 		return SkillData{}, fmt.Errorf("resolve skill bundle returned invalid bundle: skill_id=%s source=%s hash=%s", bundle.ID, bundle.Source, bundle.Hash)
 	}
-	if err := d.skillCache.WithRefLock(task.WorkspaceID, validationRef, func() error {
+	if err := d.skillCache.WithRefLock(task.WorkspaceID, bundleRef, func() error {
 		return d.skillCache.Store(task.WorkspaceID, bundle)
 	}); err != nil {
 		return SkillData{}, fmt.Errorf("store skill bundle cache: %w", err)
@@ -5899,7 +5816,7 @@ func skillRefFromBundle(bundle SkillData) SkillRefData {
 
 func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot int, taskLog *slog.Logger) (taskResult TaskResult, returnErr error) {
 	// Refuse to spawn an agent without a workspace. An empty workspace_id
-	// here would make MULTICA_WORKSPACE_ID empty in the agent env, and the
+	// here would make LIEXIU_WORKSPACE_ID empty in the agent env, and the
 	// CLI would otherwise silently fall back to the user-global config — a
 	// path that can leak operations into an unrelated workspace when
 	// multiple workspaces share a host.
@@ -5926,7 +5843,7 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 	// claimed task belongs to a project with github_repo resources the server
 	// has already narrowed it to project repos only. Make sure those URLs are
 	// in the per-workspace allowlist and the local cache, otherwise
-	// `multica repo checkout` would reject project-only URLs that aren't also
+	// `liexiu repo checkout` would reject project-only URLs that aren't also
 	// bound at the workspace level.
 	d.registerTaskRepos(task.WorkspaceID, task.ID, task.Repos)
 	defer d.clearTaskRepoRefs(task.WorkspaceID, task.ID)
@@ -5994,7 +5911,7 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 
 	// Prepare isolated execution environment.
 	// Repos are passed as metadata only — the agent checks them out on demand
-	// via `multica repo checkout <url>`.
+	// via `liexiu repo checkout <url>`.
 	taskCtx := execenv.TaskContextForEnv{
 		IssueID:             task.IssueID,
 		TriggerCommentID:    task.TriggerCommentID,
@@ -6018,18 +5935,8 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 		ProjectTitle:                     task.ProjectTitle,
 		ProjectDescription:               task.ProjectDescription,
 		ProjectResources:                 convertProjectResourcesForEnv(task.ProjectResources),
-		ChatSessionID:                    task.ChatSessionID,
-		ChatChannelType:                  task.ChatChannelType,
-		ChatChannelDeliversFiles:         task.ChatChannelDeliversFiles,
-		AutopilotRunID:                   task.AutopilotRunID,
-		AutopilotID:                      task.AutopilotID,
-		AutopilotTitle:                   task.AutopilotTitle,
-		AutopilotDescription:             task.AutopilotDescription,
-		AutopilotSource:                  task.AutopilotSource,
-		AutopilotTriggerPayload:          strings.TrimSpace(string(task.AutopilotTriggerPayload)),
 		QuickCreatePrompt:                task.QuickCreatePrompt,
 		HandoffNote:                      task.HandoffNote,
-		IsSquadLeader:                    taskIsSquadLeader(task),
 		RequestingUserName:               task.RequestingUserName,
 		RequestingUserProfileDescription: task.RequestingUserProfileDescription,
 		InitiatorType:                    task.InitiatorType,
@@ -6157,7 +6064,7 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 		// the user's provider config at all, and it is derived from the daemon
 		// PROCESS environment — invisible from the shell the user tests
 		// `hermes acp` in, which is why a mismatch reads as "works by hand,
-		// fails under Multica" (GH #6872). One line, at Info, so the answer is
+		// fails under LieXiu" (GH #6872). One line, at Info, so the answer is
 		// in the daemon log before anything fails rather than reconstructed
 		// afterwards.
 		taskLog.Info("hermes home resolved",
@@ -6396,7 +6303,7 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 	// already disabled above (see localAssignment == nil), and the brief
 	// would otherwise live on inside the user's repository — a subsequent
 	// manual `claude` / `codex` run in that directory would pick
-	// up stale Multica instructions (issue id, trigger comment id, reply
+	// up stale LieXiu instructions (issue id, trigger comment id, reply
 	// rules) and start acting on the previous task's context. Excise the
 	// marker block on the way out instead.
 	//
@@ -6415,7 +6322,7 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 	// also precede every early return between here and provider launch
 	// (temp-dir setup, StartTask): those paths still run Finalize, and without
 	// this pass Finalize would auto-commit the sidecars Prepare just wrote and
-	// deliver a branch whose only content is Multica's own runtime files — or,
+	// deliver a branch whose only content is LieXiu's own runtime files — or,
 	// in place, leave them behind in the user's tree.
 	if env.LocalDirectory || env.LocalWorktree != nil {
 		defer func() {
@@ -6424,7 +6331,7 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 				cleanupErr = cerr
 				d.logger.Warn("execenv: cleanup runtime config failed", "error", cerr)
 			}
-			// Excise the sidecar tree (.agent_context/, .multica/,
+			// Excise the sidecar tree (.agent_context/, .liexiu/,
 			// provider-specific .claude/skills/ etc.) that Prepare wrote
 			// into the user's repo. Without this pass the user's tree
 			// accumulates one directory layer per task — see MUL-2784.
@@ -6441,7 +6348,7 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 			// In worktree mode a failed cleanup is NOT survivable: Finalize is
 			// about to `git add -A`, so whatever the cleanup could not remove
 			// gets committed and delivered as the task's branch — a diff whose
-			// content is Multica's own runtime files, which is precisely what
+			// content is LieXiu's own runtime files, which is precisely what
 			// this mode promises never to produce. Tell Finalize to abort
 			// instead, so nothing is committed and the worktree is kept for
 			// inspection. (In place there is no commit and no branch, so a
@@ -6467,7 +6374,7 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 	// server-side state machine dispatched (or waiting_local_directory) →
 	// running. Calling StartTask before Prepare/Reuse let any consumer
 	// that read status==running and resolved
-	// /multica_workspaces/{ws}/{short-id}/workdir hit FileNotFoundError in
+	// /liexiu_workspaces/{ws}/{short-id}/workdir hit FileNotFoundError in
 	// the microsecond window before os.MkdirAll ran.
 	//
 	// On error we return early so handleTask's existing FailTask +
@@ -6501,11 +6408,11 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 	prompt := BuildPrompt(task, provider)
 
 	// Pass task-scoped auth credentials and context so the spawned agent CLI
-	// can call the Multica API and the local daemon (e.g. `multica repo checkout`).
-	// MULTICA_TASK_SLOT is allocated from the daemon-wide concurrency pool, not
+	// can call the LieXiu API and the local daemon (e.g. `liexiu repo checkout`).
+	// LIEXIU_TASK_SLOT is allocated from the daemon-wide concurrency pool, not
 	// per-agent. When one daemon hosts multiple agents, slots index shared
 	// daemon-level resources such as GPUs.
-	// MULTICA_TOKEN is bound to (agent, task) by the server. Never fall back
+	// LIEXIU_TOKEN is bound to (agent, task) by the server. Never fall back
 	// to the daemon's own credential here: doing so lets agent CLI writes land
 	// as the runtime owner's member actor and can retrigger the same agent.
 	agentToken, err := taskScopedAuthToken(task)
@@ -6513,34 +6420,28 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 		taskLog.Error("task auth token invalid; refusing to start agent", "error", err)
 		return TaskResult{}, err
 	}
-	agentEnv := taskMulticaEnvironment(task, agentName, agentToken, env.MulticaConfigRoot, d.cfg.WorkspacesRoot, d.cfg.ServerBaseURL, d.cfg.HealthPort, slot, taskTempDir)
+	agentEnv := taskLieXiuEnvironment(task, agentName, agentToken, env.LieXiuConfigRoot, d.cfg.WorkspacesRoot, d.cfg.ServerBaseURL, d.cfg.HealthPort, slot, taskTempDir)
 	if checkoutMode := repoCheckoutModeFor(provider, runtime.GOOS); checkoutMode != "" {
 		agentEnv[repoCheckoutModeEnv] = checkoutMode
 	}
-	if task.AutopilotRunID != "" {
-		agentEnv["MULTICA_AUTOPILOT_RUN_ID"] = task.AutopilotRunID
-	}
-	if task.AutopilotID != "" {
-		agentEnv["MULTICA_AUTOPILOT_ID"] = task.AutopilotID
-	}
-	// Quick-create marker — when set, the multica CLI's `issue create`
+	// Quick-create marker — when set, the liexiu CLI's `issue create`
 	// command stamps the new issue with origin_type=quick_create +
 	// origin_id=<task_id> so the completion handler can find it
 	// deterministically (see GetIssueByOrigin).
 	if task.QuickCreatePrompt != "" {
-		agentEnv["MULTICA_QUICK_CREATE_TASK_ID"] = task.ID
+		agentEnv["LIEXIU_QUICK_CREATE_TASK_ID"] = task.ID
 		if len(task.QuickCreateAttachmentIDs) > 0 {
 			if raw, err := json.Marshal(task.QuickCreateAttachmentIDs); err == nil {
-				agentEnv["MULTICA_QUICK_CREATE_ATTACHMENT_IDS"] = string(raw)
+				agentEnv["LIEXIU_QUICK_CREATE_ATTACHMENT_IDS"] = string(raw)
 			} else {
 				taskLog.Warn("quick-create attachment ids: marshal failed; skipping env injection", "error", err)
 			}
 		}
 	}
-	// Ensure the multica CLI is on PATH inside the agent's environment.
+	// Ensure the liexiu CLI is on PATH inside the agent's environment.
 	// Some runtimes (e.g. Codex) run in an isolated sandbox that may not
 	// inherit the daemon's PATH. Prepend the directory of the running
-	// multica binary so that `multica` commands in the agent always resolve.
+	// liexiu binary so that `liexiu` commands in the agent always resolve.
 	if selfBin, err := resolveSelfExecutable(); err == nil {
 		binDir := filepath.Dir(selfBin)
 		agentEnv["PATH"] = binDir + string(os.PathListSeparator) + os.Getenv("PATH")
@@ -6552,8 +6453,8 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 	}
 	// HOME and the XDG base dirs are deliberately not touched here: provider
 	// tools such as gh, aws, kubectl, and npm continue resolving the daemon
-	// user's existing state (MUL-5578). The Multica CLI is the exception:
-	// MULTICA_TASK_CONFIG_ROOT above redirects its implicit profile lookup to
+	// user's existing state (MUL-5578). The LieXiu CLI is the exception:
+	// LIEXIU_TASK_CONFIG_ROOT above redirects its implicit profile lookup to
 	// private task-local state and prevents Owner-profile fallback.
 	// (Hermes HERMES_HOME is applied after custom_env below so the per-task
 	// overlay can win over a user-set HERMES_HOME; see
@@ -6603,7 +6504,7 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 		if err != nil {
 			return TaskResult{}, fmt.Errorf("prepare dsh session root: %w", err)
 		}
-		agentEnv["MULTICA_DSH_SESSION_ROOT"] = dshSessionRoot
+		agentEnv["LIEXIU_DSH_SESSION_ROOT"] = dshSessionRoot
 		agentEnv["DSH_TELEMETRY_DISABLED"] = "1"
 	}
 	if err := configureCodexTaskShellEnvironment(provider, env.CodexHome, os.Environ(), agentEnv, agentCustomEnv, d.logger); err != nil {
@@ -6655,7 +6556,7 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 		customArgs = hermesLaunchArgs(customArgs, env != nil && env.HermesHome != "")
 	}
 	// Two-tier model resolution: an explicit agent.model wins,
-	// then the daemon-wide MULTICA_<PROVIDER>_MODEL env var. If
+	// then the daemon-wide LIEXIU_<PROVIDER>_MODEL env var. If
 	// both are empty we deliberately pass "" through — each
 	// backend omits `--model` from the CLI invocation, so the
 	// provider picks its own default (Claude Code's shipped
@@ -6778,7 +6679,7 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 	// identity/persona + skills + project context) so the backend prepends the
 	// same payload that file-based runtimes pick up from disk. Without this,
 	// these providers silently miss the workflow section and never call
-	// `multica issue status` / `multica issue comment add`, leaving issues
+	// `liexiu issue status` / `liexiu issue comment add`, leaving issues
 	// stuck in `todo`.
 	//
 	// Hermes and Kiro are intentionally excluded: their ACP sessions start in
@@ -6792,7 +6693,7 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 
 	// A quick-actions refresh task from a server that predates server-side
 	// generation (MUL-5573). This daemon no longer has a suggestion pass to run
-	// it with, and it must NOT fall through to the ordinary chat path below:
+	// it with, and it must NOT fall through to the ordinary task path below:
 	// the task carries no user message, so the agent would answer a prompt
 	// nobody wrote and that server would persist the result as a real assistant
 	// reply. Complete it empty instead — the same shape the retired pass
@@ -6831,7 +6732,7 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 	// reported on EVERY terminal path — the retry succeeding is exactly when
 	// the abandoned id would otherwise survive, unreferenced by this task's
 	// row but still reachable through an older completed row on the issue or
-	// through the chat_session pointer (GH #6066).
+	// through the task session pointer (GH #6066).
 	var retiredSessionID string
 	defer func() { taskResult.RetiredSessionID = retiredSessionID }()
 
@@ -6994,7 +6895,7 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 		}
 		return taskResult, nil
 	case "timeout":
-		// Surface session_id/work_dir so the chat resume pointer is kept
+		// Surface session_id/work_dir so the task resume pointer is kept
 		// in sync even when the agent times out after building a session.
 		// We mark as "blocked" (not a hard error return) so handleTask
 		// goes through the FailTask path that forwards session info.
@@ -7058,9 +6959,9 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 		}
 		// Forward SessionID/WorkDir on the blocked path: backends commonly
 		// emit a real session_id before failing (rate-limit, tool error,
-		// model reject, …). Without this the chat_session resume pointer
+		// model reject, …). Without this the task session pointer
 		// would either be left stale or overwritten with NULL on the
-		// server, causing the next chat turn to lose context.
+		// server, causing the next issue turn to lose context.
 		//
 		// Classify upstream API 400 invalid_request_error failures with a
 		// dedicated failure_reason so GetLastTaskSession excludes the
@@ -7084,7 +6985,7 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 				// the reason above nor any error-text filter on this row can
 				// identify WHICH session to avoid. retired_session_id is the
 				// one channel that does not depend on the failed row carrying
-				// the session, and it is what the resume lookups and the chat
+				// the session, and it is what the resume lookups and the
 				// pointer cleanup both key off.
 				//
 				// Belt-and-braces, not the live path: an overflowed resume
@@ -7387,7 +7288,7 @@ func (d *Daemon) executeAndDrain(ctx context.Context, backend agent.Backend, pro
 	// window — so the failure message reports the real duration.
 	idleWindow := d.cfg.AgentIdleWatchdog
 	// A provider may opt into a shorter per-run no-message budget. The global
-	// zero remains authoritative so MULTICA_AGENT_IDLE_WATCHDOG=0 still disables
+	// zero remains authoritative so LIEXIU_AGENT_IDLE_WATCHDOG=0 still disables
 	// the entire watchdog suite. Tool calls continue to use AgentToolWatchdog.
 	if idleWindow > 0 && opts.IdleWatchdogTimeout > 0 && opts.IdleWatchdogTimeout < idleWindow {
 		idleWindow = opts.IdleWatchdogTimeout
@@ -8059,10 +7960,10 @@ func ensureTaskTempDir(envRoot string, workspaceID string, taskID string) (strin
 	if err != nil {
 		return "", err
 	}
-	dir, err := os.MkdirTemp(base, "multica-task-")
+	dir, err := os.MkdirTemp(base, "liexiu-task-")
 	if err != nil {
 		if overrideConfigured {
-			return "", fmt.Errorf("MULTICA_AGENT_TEMP_BASE: create task temp dir: %w", err)
+			return "", fmt.Errorf("LIEXIU_AGENT_TEMP_BASE: create task temp dir: %w", err)
 		}
 		return "", err
 	}
@@ -8074,7 +7975,7 @@ func ensureTaskTempDir(envRoot string, workspaceID string, taskID string) (strin
 
 // taskTempBaseDir resolves the parent directory for private per-task temp
 // dirs on Linux and macOS. The daemon operator can relocate it with
-// MULTICA_AGENT_TEMP_BASE, which must be an absolute path to an existing,
+// LIEXIU_AGENT_TEMP_BASE, which must be an absolute path to an existing,
 // writable directory; an invalid value fails task startup instead of silently
 // falling back. Windows ignores the variable. Unset keeps the platform default
 // exactly as before, down to the syscalls made.
@@ -8084,12 +7985,12 @@ func taskTempBaseDir() (string, bool, error) {
 	if runtime.GOOS == "windows" {
 		return socketSafeTempBaseDir(), false, nil
 	}
-	base := strings.TrimSpace(os.Getenv("MULTICA_AGENT_TEMP_BASE"))
+	base := strings.TrimSpace(os.Getenv("LIEXIU_AGENT_TEMP_BASE"))
 	if base == "" {
 		return socketSafeTempBaseDir(), false, nil
 	}
 	if !filepath.IsAbs(base) {
-		return "", true, fmt.Errorf("MULTICA_AGENT_TEMP_BASE must be an absolute path, got %q", base)
+		return "", true, fmt.Errorf("LIEXIU_AGENT_TEMP_BASE must be an absolute path, got %q", base)
 	}
 	return base, true, nil
 }
@@ -8108,7 +8009,7 @@ func socketSafeTempBaseDir() string {
 // daemon-internal variables and critical system paths.
 func isBlockedEnvKey(key string) bool {
 	upper := strings.ToUpper(key)
-	if strings.HasPrefix(upper, "MULTICA_") {
+	if strings.HasPrefix(upper, "LIEXIU_") {
 		return true
 	}
 	switch upper {
@@ -8167,9 +8068,9 @@ func hermesLaunchArgs(customArgs []string, overlayActive bool) []string {
 // It must stay clear of every phrase the resume guards match, because this text
 // is persisted in agent_task_queue.error and re-scanned there indefinitely:
 // service.ResumeUnsafeFailure, taskfailure.Classify, and the ILIKE/regex guards
-// in pkg/db/queries/agent.sql (GetLastTaskSession / GetLastChatTaskSession).
+// in pkg/db/queries/agent.sql (GetLastTaskSession / GetLastTaskSession).
 // TestAnnotationCannotChangeMachineDecisions pins that.
-const hermesProviderUnconfiguredHint = " [multica] hermes did not read the HERMES_HOME your shell uses: " +
+const hermesProviderUnconfiguredHint = " [liexiu] hermes did not read the HERMES_HOME your shell uses: " +
 	"this task ran against a per-task overlay, seeded from the home the daemon process resolved. " +
 	"The daemon log line \"hermes home resolved\" for this task names that source home — if your hermes " +
 	"config lives somewhere else, set HERMES_HOME in the agent's custom_env to point at it."
@@ -8178,7 +8079,7 @@ const hermesProviderUnconfiguredHint = " [multica] hermes did not read the HERME
 // failure that Hermes itself cannot explain.
 //
 // Hermes reports it against whichever HERMES_HOME it was started with and tells
-// the user to run `hermes model` — but under Multica it was started with a
+// the user to run `hermes model` — but under LieXiu it was started with a
 // per-task overlay, seeded from a source home the daemon resolved from ITS OWN
 // process environment. When that disagrees with where the user keeps their
 // config, the remedy Hermes names edits a file the task will never read, and
@@ -8187,7 +8088,7 @@ const hermesProviderUnconfiguredHint = " [multica] hermes did not read the HERME
 //
 // The two paths themselves are deliberately NOT interpolated here. They are
 // user-controlled (HERMES_HOME comes from the agent's custom_env, the overlay
-// root from MULTICA_WORKSPACES_ROOT), and this string is persisted as the
+// root from LIEXIU_WORKSPACES_ROOT), and this string is persisted as the
 // task's error text, which the resume guards keep matching against for the life
 // of the row. A source home under /srv/400-invalid_request_error/ would trip
 // ResumeUnsafeFailure and the SQL guard, dropping a healthy session pointer —
@@ -8222,7 +8123,7 @@ func layerCustomEnvAndHermesHome(agentEnv, customEnv map[string]string, overlayH
 // (runtime, agent) while leaving REASONIX_HOME untouched. Current Reasonix
 // reads credentials/config from REASONIX_HOME and state from
 // REASONIX_STATE_HOME, so `reasonix setup` remains the sole credential owner
-// and Multica never copies API keys into task-managed files.
+// and LieXiu never copies API keys into task-managed files.
 func prepareReasonixTaskStateHome(profile, runtimeID, agentID string) (string, error) {
 	profileDir, err := cli.ProfileDir(profile)
 	if err != nil {
@@ -8246,7 +8147,7 @@ func prepareReasonixTaskStateHome(profile, runtimeID, agentID string) (string, e
 	return path, nil
 }
 
-// prepareDshTaskSessionRoot keeps DSH transcripts private to one Multica
+// prepareDshTaskSessionRoot keeps DSH transcripts private to one LieXiu
 // runtime/agent pair. Credentials and the user's DSH profile remain in the
 // ordinary DSH_HOME; only session persistence is redirected.
 func prepareDshTaskSessionRoot(profile, runtimeID, agentID string) (string, error) {

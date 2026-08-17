@@ -1,0 +1,1 @@
+DROP INDEX CONCURRENTLY IF EXISTS idx_orchestration_activity_sequence_unique;

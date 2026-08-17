@@ -2,7 +2,7 @@ import React from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import type { Project } from "@multica/core/types";
+import type { Project } from "@liexiu/core/types";
 import { renderWithI18n } from "../../test/i18n";
 import { NavigationProvider, type NavigationAdapter } from "../../navigation";
 import { ProjectDetail } from "./project-detail";
@@ -11,7 +11,6 @@ const mocks = vi.hoisted(() => ({
   role: "admin",
   deleteProject: vi.fn(),
   push: vi.fn(),
-  recordVisit: vi.fn(),
   toastSuccess: vi.fn(),
 }));
 
@@ -26,7 +25,6 @@ vi.mock("@tanstack/react-query", () => ({
           isLoading: false,
         };
       case "agents":
-      case "pins":
         return { data: [], isLoading: false };
       default:
         return { data: undefined, isLoading: false };
@@ -34,48 +32,37 @@ vi.mock("@tanstack/react-query", () => ({
   },
 }));
 
-vi.mock("@multica/core/projects/queries", () => ({
+vi.mock("@liexiu/core/projects/queries", () => ({
   projectDetailOptions: () => ({ queryKey: ["project-detail"] }),
 }));
 
-vi.mock("@multica/core/projects/mutations", () => ({
+vi.mock("@liexiu/core/projects/mutations", () => ({
   useUpdateProject: () => ({ mutate: vi.fn() }),
   useDeleteProject: () => ({ mutate: mocks.deleteProject }),
 }));
 
-vi.mock("@multica/core/pins", () => ({
-  pinListOptions: () => ({ queryKey: ["pins"] }),
-  useCreatePin: () => ({ mutate: vi.fn() }),
-  useDeletePin: () => ({ mutate: vi.fn() }),
-}));
 
-vi.mock("@multica/core/workspace/queries", () => ({
+vi.mock("@liexiu/core/workspace/queries", () => ({
   memberListOptions: () => ({ queryKey: ["members"] }),
   agentListOptions: () => ({ queryKey: ["agents"] }),
 }));
 
-vi.mock("@multica/core/hooks", () => ({
+vi.mock("@liexiu/core/hooks", () => ({
   useWorkspaceId: () => "workspace-1",
 }));
 
-vi.mock("@multica/core/auth", () => ({
+vi.mock("@liexiu/core/auth", () => ({
   useAuthStore: (selector: (state: { user: { id: string } }) => unknown) =>
     selector({ user: { id: "user-1" } }),
 }));
 
-vi.mock("@multica/core/chat", () => ({
-  useRecentContextStore: (
-    selector: (state: { recordVisit: typeof mocks.recordVisit }) => unknown,
-  ) => selector({ recordVisit: mocks.recordVisit }),
-}));
-
-vi.mock("@multica/core/paths", () => ({
+vi.mock("@liexiu/core/paths", () => ({
   useWorkspacePaths: () => ({
     projects: () => "/test-workspace/projects",
   }),
 }));
 
-vi.mock("@multica/core/workspace/hooks", () => ({
+vi.mock("@liexiu/core/workspace/hooks", () => ({
   useActorName: () => ({ getActorName: () => "User One" }),
 }));
 
@@ -97,15 +84,15 @@ vi.mock("react-resizable-panels", () => ({
   }),
 }));
 
-vi.mock("@multica/ui/hooks/use-mobile", () => ({
+vi.mock("@liexiu/ui/hooks/use-mobile", () => ({
   useIsMobile: () => false,
 }));
 
-vi.mock("@multica/ui/components/common/emoji-picker", () => ({
+vi.mock("@liexiu/ui/components/common/emoji-picker", () => ({
   EmojiPicker: () => null,
 }));
 
-vi.mock("@multica/ui/components/ui/resizable", () => ({
+vi.mock("@liexiu/ui/components/ui/resizable", () => ({
   ResizablePanelGroup: ({ children }: { children: React.ReactNode }) => (
     <div>{children}</div>
   ),
@@ -115,7 +102,7 @@ vi.mock("@multica/ui/components/ui/resizable", () => ({
   ResizableHandle: () => null,
 }));
 
-vi.mock("@multica/ui/components/ui/dropdown-menu", () => ({
+vi.mock("@liexiu/ui/components/ui/dropdown-menu", () => ({
   DropdownMenu: ({ children }: { children: React.ReactNode }) => <>{children}</>,
   DropdownMenuTrigger: ({ render }: { render: React.ReactNode }) => <>{render}</>,
   DropdownMenuContent: ({ children }: { children: React.ReactNode }) => (
@@ -135,7 +122,7 @@ vi.mock("@multica/ui/components/ui/dropdown-menu", () => ({
   DropdownMenuSeparator: () => <hr />,
 }));
 
-vi.mock("@multica/ui/components/ui/popover", () => ({
+vi.mock("@liexiu/ui/components/ui/popover", () => ({
   Popover: ({ children }: { children: React.ReactNode }) => <>{children}</>,
   PopoverTrigger: ({ render }: { render: React.ReactNode }) => <>{render}</>,
   PopoverContent: ({ children }: { children: React.ReactNode }) => (
@@ -143,7 +130,7 @@ vi.mock("@multica/ui/components/ui/popover", () => ({
   ),
 }));
 
-vi.mock("@multica/ui/components/ui/tooltip", () => ({
+vi.mock("@liexiu/ui/components/ui/tooltip", () => ({
   Tooltip: ({ children }: { children: React.ReactNode }) => <>{children}</>,
   TooltipTrigger: ({ render }: { render: React.ReactNode }) => <>{render}</>,
   TooltipContent: ({ children }: { children: React.ReactNode }) => (
@@ -151,14 +138,14 @@ vi.mock("@multica/ui/components/ui/tooltip", () => ({
   ),
 }));
 
-vi.mock("@multica/ui/components/ui/sheet", () => ({
+vi.mock("@liexiu/ui/components/ui/sheet", () => ({
   Sheet: ({ children }: { children: React.ReactNode }) => <>{children}</>,
   SheetContent: ({ children }: { children: React.ReactNode }) => (
     <div>{children}</div>
   ),
 }));
 
-vi.mock("@multica/ui/components/ui/alert-dialog", () => ({
+vi.mock("@liexiu/ui/components/ui/alert-dialog", () => ({
   AlertDialog: ({
     open,
     children,
@@ -289,7 +276,6 @@ beforeEach(() => {
   mocks.role = "admin";
   mocks.deleteProject.mockReset();
   mocks.push.mockReset();
-  mocks.recordVisit.mockReset();
   mocks.toastSuccess.mockReset();
 });
 

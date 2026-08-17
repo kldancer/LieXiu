@@ -2,10 +2,10 @@
 
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { useWorkspaceId } from "@multica/core/hooks";
-import { useWorkspacePaths } from "@multica/core/paths";
-import { runtimeDisplayLabel } from "@multica/core/runtimes";
-import { agentListOptions } from "@multica/core/workspace/queries";
+import { useWorkspaceId } from "@liexiu/core/hooks";
+import { useWorkspacePaths } from "@liexiu/core/paths";
+import { runtimeDisplayLabel } from "@liexiu/core/runtimes";
+import { agentListOptions } from "@liexiu/core/workspace/queries";
 import { useBackOrReplace, useNavigation } from "../../navigation";
 import { useT } from "../../i18n";
 import { AgentConfigurationPanel } from "./agent-configuration-panel";
@@ -33,7 +33,6 @@ export function ManualCreateAgentPage() {
   const navigation = useNavigation();
   const backOrReplace = useBackOrReplace();
   const duplicateId = navigation.searchParams.get("duplicate");
-  const squadId = navigation.searchParams.get("squad");
 
   const form = useCreateAgentForm();
   const { data: agents = [] } = useQuery(agentListOptions(wsId));
@@ -81,7 +80,6 @@ export function ManualCreateAgentPage() {
   const submit = useCreateAgentSubmit({
     draft: form.draft,
     runtimeId: form.selectedRuntime?.id ?? null,
-    squadId,
     duplicateSource: duplicateAgent,
     // The work is committed; leaving it stored would hand the finished agent's
     // fields to whoever opens this form next. Only this flow's slot — another
@@ -99,9 +97,7 @@ export function ManualCreateAgentPage() {
           ? t(($) => $.creation_studio.duplicate_title, {
               name: duplicateAgent.name,
             })
-          : squadId
-            ? t(($) => $.creation_studio.squad_title)
-            : t(($) => $.creation_studio.title)
+          : t(($) => $.creation_studio.title)
       }
       step={t(($) => $.creation_studio.step_configure)}
       // A duplicate arrives from the agents list, not from the chooser, so it
@@ -151,7 +147,6 @@ export function ManualCreateAgentPage() {
         <CreateAgentFooter
           canCreate={canCreate}
           creating={submit.creating}
-          squad={!!squadId}
           error={submit.formError}
           onCreate={() => void submit.create()}
         />

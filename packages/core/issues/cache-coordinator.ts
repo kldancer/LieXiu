@@ -10,8 +10,6 @@ import {
   type IssueSortParam,
   type MyIssuesFilter,
 } from "./queries";
-import { inboxKeys } from "../inbox/queries";
-import { patchInboxIssueStatus } from "../inbox/ws-updaters";
 import { projectKeys } from "../projects/queries";
 import {
   decrementBucketTotal,
@@ -26,7 +24,6 @@ import {
   type IssueChangedDims,
 } from "./surface/membership";
 import type {
-  InboxItem,
   Issue,
   IssueTableRowsResponse,
   ListIssuesCache,
@@ -73,8 +70,8 @@ export type IssueTableRowCache = IssueTableRowsResponse;
  * uncommitted state and stomp the optimistic patch), the WS path invalidates
  * immediately (the server already committed).
  *
- * The detail cache and the Inbox `issue_status` projection are patched in the
- * same pass. Aggregate projections that cannot be recomputed from one entity
+ * The detail cache is patched in the same pass. Aggregate projections that
+ * cannot be recomputed from one entity
  * (assignee-grouped boards, Gantt, project metrics) go through
  * {@link invalidateIssueDerivatives}.
  */
@@ -86,7 +83,6 @@ export interface IssueCacheChangeResult {
   prevFlatLists: [QueryKey, IssueFlatCache][];
   prevTableRows: [QueryKey, IssueTableRowCache][];
   prevDetail: Issue | undefined;
-  prevInboxList: InboxItem[] | undefined;
   /** Loaded list keys whose server result may have drifted (membership
    *  unknown, possible enter/leave beyond the loaded window, bucket-count
    *  drift). Invalidate on settle (mutation) or immediately (WS). */
@@ -428,20 +424,11 @@ export function applyIssueChange(
     if (!prevIssue) prevIssue = prevDetail;
   }
 
-  // Inbox rows carry an `issue_status` display snapshot; the issue's status
-  // is the real state, so the projection follows every status write.
-  let prevInboxList: InboxItem[] | undefined;
-  if (patch.status !== undefined) {
-    prevInboxList = qc.getQueryData<InboxItem[]>(inboxKeys.list(wsId));
-    if (prevInboxList) patchInboxIssueStatus(qc, wsId, id, patch.status);
-  }
-
   return {
     prevLists,
     prevFlatLists,
     prevTableRows,
     prevDetail,
-    prevInboxList,
     staleKeys,
     prevIssue,
   };
@@ -459,7 +446,6 @@ export function rollbackIssueChange(
     | "prevFlatLists"
     | "prevTableRows"
     | "prevDetail"
-    | "prevInboxList"
   >,
 ) {
   for (const [key, snapshot] of result.prevLists) {
@@ -473,9 +459,6 @@ export function rollbackIssueChange(
   }
   if (result.prevDetail !== undefined) {
     qc.setQueryData(issueKeys.detail(wsId, id), result.prevDetail);
-  }
-  if (result.prevInboxList !== undefined) {
-    qc.setQueryData(inboxKeys.list(wsId), result.prevInboxList);
   }
 }
 

@@ -1,7 +1,7 @@
 "use client";
 
-import { cn } from "@multica/ui/lib/utils";
-import { SidebarTrigger, useSidebarSafe } from "@multica/ui/components/ui/sidebar";
+import { cn } from "@liexiu/ui/lib/utils";
+import { SidebarTrigger, useSidebarSafe } from "@liexiu/ui/components/ui/sidebar";
 
 /**
  * The left edge every page shares: the header, the toolbar under it, and any
@@ -46,7 +46,7 @@ interface PageHeaderProps {
    * Replaces the mobile sidebar trigger at the far left.
    *
    * For a surface a phone reaches by drilling in rather than by navigating —
-   * the inbox's issue detail — "go back" is the leading affordance that
+   * an issue detail surface — "go back" is the leading affordance that
    * matters, and the sidebar is still one step away behind it. Rendering both
    * would spend two of the header's 48px on navigation chrome and leave the
    * title nothing to truncate into.

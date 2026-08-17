@@ -15,7 +15,7 @@ import { NavigationProvider } from "../navigation/context";
 import type { NavigationAdapter } from "../navigation/types";
 import { DeferredPopup } from "./deferred-popup";
 
-vi.mock("@multica/core/workspace/hooks", () => ({
+vi.mock("@liexiu/core/workspace/hooks", () => ({
   useActorName: () => ({
     getActorName: () => "Ada Lovelace",
     getActorInitials: () => "AL",
@@ -23,16 +23,15 @@ vi.mock("@multica/core/workspace/hooks", () => ({
   }),
 }));
 
-vi.mock("@multica/core/paths", () => ({
+vi.mock("@liexiu/core/paths", () => ({
   useWorkspacePaths: () => ({
     memberDetail: (id: string) => `/acme/members/${id}`,
     agentDetail: (id: string) => `/acme/agents/${id}`,
-    squadDetail: (id: string) => `/acme/squads/${id}`,
   }),
   useCurrentWorkspace: () => ({ id: "ws1", slug: "acme" }),
 }));
 
-vi.mock("@multica/core/agents", () => ({
+vi.mock("@liexiu/core/agents", () => ({
   useAgentPresenceDetail: () => ({ availability: "offline", workload: null }),
 }));
 
@@ -45,10 +44,6 @@ vi.mock("../agents/components/agent-live-peek-card", () => ({
 vi.mock("../members/member-profile-card", () => ({
   MemberProfileCard: () => null,
 }));
-vi.mock("../squads/components/squad-profile-card", () => ({
-  SquadProfileCard: () => null,
-}));
-
 import { ActorAvatar } from "./actor-avatar";
 
 const MEMBER_ID = "8f14e45f-ceea-4d0e-a1a2-9b1c0d3e4f5a";

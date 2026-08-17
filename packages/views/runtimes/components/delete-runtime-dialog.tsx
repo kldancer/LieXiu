@@ -4,28 +4,28 @@ import { useEffect, useMemo, useState } from "react";
 import { AlertTriangle, Globe, Info, Lock } from "lucide-react";
 import { toast } from "sonner";
 import { useQuery } from "@tanstack/react-query";
-import { ApiError } from "@multica/core/api";
-import type { Agent, AgentRuntime, MemberWithUser } from "@multica/core/types";
-import { runtimeDisplayLabel } from "@multica/core/runtimes";
+import { ApiError } from "@liexiu/core/api";
+import type { Agent, AgentRuntime, MemberWithUser } from "@liexiu/core/types";
+import { runtimeDisplayLabel } from "@liexiu/core/runtimes";
 import {
   useDeleteRuntime,
   useUnbindAgentsAndDeleteRuntime,
-} from "@multica/core/runtimes/mutations";
+} from "@liexiu/core/runtimes/mutations";
 import {
   agentListOptions,
   memberListOptions,
-} from "@multica/core/workspace/queries";
+} from "@liexiu/core/workspace/queries";
 import {
   type AgentPresenceDetail,
   useWorkspacePresenceMap,
-} from "@multica/core/agents";
-import { useAuthStore } from "@multica/core/auth";
+} from "@liexiu/core/agents";
+import { useAuthStore } from "@liexiu/core/auth";
 import {
   AlertDialog,
   AlertDialogContent,
-} from "@multica/ui/components/ui/alert-dialog";
-import { Button } from "@multica/ui/components/ui/button";
-import { Checkbox } from "@multica/ui/components/ui/checkbox";
+} from "@liexiu/ui/components/ui/alert-dialog";
+import { Button } from "@liexiu/ui/components/ui/button";
+import { Checkbox } from "@liexiu/ui/components/ui/checkbox";
 import { ActorAvatar } from "../../common/actor-avatar";
 import { availabilityConfig, workloadConfig } from "../../agents/presence";
 import { useT } from "../../i18n";
@@ -326,7 +326,7 @@ function LightBody({
 // ---------------------------------------------------------------------------
 // Cascade mode — destructive warning, agent table, checkbox-confirmed
 // destructive button. Copy follows 赵刚's English text verbatim per the
-// squad lead's directive.
+// product directive.
 // ---------------------------------------------------------------------------
 
 function CascadeBody({

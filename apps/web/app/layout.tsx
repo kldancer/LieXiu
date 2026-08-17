@@ -2,17 +2,21 @@ import type { Metadata, Viewport } from "next";
 import Script from "next/script";
 import { Inter, Geist_Mono, Source_Serif_4 } from "next/font/google";
 import { ThemeProvider } from "@/components/theme-provider";
-import { Toaster } from "@multica/ui/components/ui/sonner";
-import { cn } from "@multica/ui/lib/utils";
+import { Toaster } from "@liexiu/ui/components/ui/sonner";
+import { cn } from "@liexiu/ui/lib/utils";
 import { WebProviders } from "@/components/web-providers";
-import type { SupportedLocale } from "@multica/core/i18n";
-import { RESOURCES } from "@multica/views/locales";
+import type { SupportedLocale } from "@liexiu/core/i18n";
+import { RESOURCES } from "@liexiu/views/locales";
 import { getRequestLocale } from "@/lib/request-locale";
+import { resolveProductName, resolveProductUrl } from "@/lib/product-name";
 import {
   resolveBrowserApiBaseUrl,
   resolveBrowserWsUrl,
 } from "@/config/runtime-urls";
 import "./globals.css";
+
+const productName = resolveProductName(process.env);
+const productUrl = resolveProductUrl(process.env);
 
 // Inter is the Latin UI face. next/font produces a hashed family (`__Inter_xxx`)
 // plus a synthetic size-adjusted fallback face to prevent FOUT layout shift —
@@ -27,7 +31,7 @@ import "./globals.css";
 //
 // Italic is loaded explicitly: `style` defaults to `["normal"]`, and without a real
 // italic face the ~20 semantic italic labels (chat empty states, model-picker's
-// "Managed by runtime", dashboard/squad placeholders) plus every markdown <em> and
+// "Managed by runtime" and dashboard placeholders) plus every markdown <em> and
 // blockquote rendered as browser-synthesized oblique. Keep in sync with desktop's
 // `@fontsource-variable/inter/wght-italic.css` import.
 const inter = Inter({
@@ -72,10 +76,10 @@ export const viewport: Viewport = {
 };
 
 export const metadata: Metadata = {
-  metadataBase: new URL("https://www.multica.ai"),
+  metadataBase: productUrl,
   title: {
-    default: "Multica — Project Management for Human + Agent Teams",
-    template: "%s | Multica",
+    default: `${productName} — Project Management for Human + Agent Teams`,
+    template: `%s | ${productName}`,
   },
   description:
     "Open-source platform that turns coding agents into real teammates. Assign tasks, track progress, compound skills.",
@@ -85,13 +89,11 @@ export const metadata: Metadata = {
   },
   openGraph: {
     type: "website",
-    siteName: "Multica",
+    siteName: productName,
     locale: "en_US",
   },
   twitter: {
     card: "summary_large_image",
-    site: "@multica_hq",
-    creator: "@multica_hq",
   },
   alternates: {
     canonical: "/",
@@ -126,6 +128,7 @@ export default async function RootLayout({
   return (
     <html
       lang={HTML_LANG[locale]}
+      data-product-name={productName}
       suppressHydrationWarning
       className={cn("antialiased font-sans h-full", inter.variable, geistMono.variable, sourceSerif.variable)}
     >

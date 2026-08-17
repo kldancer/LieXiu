@@ -5,8 +5,8 @@ import (
 	"net/http"
 
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/multica-ai/multica/server/internal/util"
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
+	"github.com/kailonyang/liexiu/server/internal/util"
+	db "github.com/kailonyang/liexiu/server/pkg/db/generated"
 )
 
 // ---------------------------------------------------------------------------
@@ -62,11 +62,6 @@ const restrictedAgentsRowID = "__restricted_agents__"
 // whole workspace, which told a plain member that a private agent exists, how
 // much it runs, and what it fails on. The client already collapsed those rows,
 // but client-side filtering is decoration: one curl bypasses it.
-//
-// The same fold covers the hidden `kind = 'system'` builder carriers, which no
-// list endpoint returns to anyone: aggregating over agent_task_queue /
-// task_usage picks them up regardless of kind, so without this they arrive as a
-// bare UUID no client can name.
 //
 // Folding rather than dropping: each of these responses is the per-agent half
 // of a pair whose other half (usage/daily, runtime/daily, failures/daily) is

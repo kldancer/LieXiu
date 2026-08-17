@@ -18,16 +18,14 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/multica-ai/multica/server/internal/channelmedia"
-	"github.com/multica-ai/multica/server/internal/dispatch"
-	"github.com/multica-ai/multica/server/internal/issueguard"
-	"github.com/multica-ai/multica/server/internal/logger"
-	"github.com/multica-ai/multica/server/internal/middleware"
-	"github.com/multica-ai/multica/server/internal/service"
-	"github.com/multica-ai/multica/server/internal/util"
-	agentpkg "github.com/multica-ai/multica/server/pkg/agent"
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
-	"github.com/multica-ai/multica/server/pkg/protocol"
+	"github.com/kailonyang/liexiu/server/internal/dispatch"
+	"github.com/kailonyang/liexiu/server/internal/issueguard"
+	"github.com/kailonyang/liexiu/server/internal/logger"
+	"github.com/kailonyang/liexiu/server/internal/middleware"
+	"github.com/kailonyang/liexiu/server/internal/service"
+	"github.com/kailonyang/liexiu/server/internal/util"
+	db "github.com/kailonyang/liexiu/server/pkg/db/generated"
+	"github.com/kailonyang/liexiu/server/pkg/protocol"
 )
 
 // IssueResponse is the JSON response for an issue.
@@ -58,12 +56,8 @@ type IssueResponse struct {
 	// Metadata is the per-issue KV map (see issue_metadata.go). Always emitted
 	// (empty object when unset) so frontend code can `issue.metadata[key]`
 	// without nil-guarding the parent field.
-	Metadata map[string]any `json:"metadata"`
-	// Properties is the custom-property value bag keyed by property definition
-	// UUID (see property.go). Always emitted, mirroring Metadata.
-	Properties  map[string]any          `json:"properties"`
-	Reactions   []IssueReactionResponse `json:"reactions,omitempty"`
-	Attachments []AttachmentResponse    `json:"attachments,omitempty"`
+	Metadata    map[string]any       `json:"metadata"`
+	Attachments []AttachmentResponse `json:"attachments,omitempty"`
 	// Labels are bulk-attached by list/detail endpoints so the client can render
 	// chips without an N+1 round-trip per row. Pointer + omitempty so paths that
 	// don't load labels (e.g. UpdateIssue, batch UpdateIssues, the issue:updated
@@ -114,7 +108,6 @@ func issueToResponse(i db.Issue, issuePrefix string) IssueResponse {
 		CreatedAt:     timestampToString(i.CreatedAt),
 		UpdatedAt:     timestampToString(i.UpdatedAt),
 		Metadata:      parseIssueMetadata(i.Metadata),
-		Properties:    parseIssueProperties(i.Properties),
 	}
 }
 
@@ -143,7 +136,6 @@ func issueListRowToResponse(i db.ListIssuesRow, issuePrefix string) IssueRespons
 		CreatedAt:     timestampToString(i.CreatedAt),
 		UpdatedAt:     timestampToString(i.UpdatedAt),
 		Metadata:      parseIssueMetadata(i.Metadata),
-		Properties:    parseIssueProperties(i.Properties),
 	}
 }
 
@@ -204,7 +196,6 @@ func openIssueRowToResponse(i db.ListOpenIssuesRow, issuePrefix string) IssueRes
 		CreatedAt:     timestampToString(i.CreatedAt),
 		UpdatedAt:     timestampToString(i.UpdatedAt),
 		Metadata:      parseIssueMetadata(i.Metadata),
-		Properties:    parseIssueProperties(i.Properties),
 	}
 }
 
@@ -857,8 +848,8 @@ func (h *Handler) ListIssues(w http.ResponseWriter, r *http.Request) {
 		projectFilter = id
 	}
 	// involves_user_id widens the assignee filter to surface issues where the
-	// user is the indirect assignee (their owned agent, or a squad they belong
-	// to / lead / have an agent inside). Direct member-assignment is excluded
+	// user is the indirect assignee through an agent they own. Direct
+	// member-assignment is excluded
 	// by design — that is the meaning of `assignee_id` (tab 1), and tab 3 must
 	// be disjoint from tab 1.
 	var involvesUserFilter pgtype.UUID
@@ -874,10 +865,6 @@ func (h *Handler) ListIssues(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	propertiesFilter, ok := parsePropertiesFilterParam(w, r.URL.Query().Get("properties"))
-	if !ok {
-		return
-	}
 	dateFilter, ok := parseIssueDateFilter(w, r.URL.Query())
 	if !ok {
 		return
@@ -885,27 +872,15 @@ func (h *Handler) ListIssues(w http.ResponseWriter, r *http.Request) {
 
 	// open_only=true returns all non-done/cancelled issues (no limit).
 	if r.URL.Query().Get("open_only") == "true" {
-		// Serialize the parsed AND-of-ORs groups into the single jsonb param
-		// the static query unrolls (see properties_filter in ListOpenIssues).
-		var openPropertiesFilter []byte
-		if len(propertiesFilter) > 0 {
-			marshaled, marshalErr := json.Marshal(propertiesFilter)
-			if marshalErr != nil {
-				writeError(w, http.StatusInternalServerError, "failed to list issues")
-				return
-			}
-			openPropertiesFilter = marshaled
-		}
 		issues, err := h.Queries.ListOpenIssues(ctx, db.ListOpenIssuesParams{
-			WorkspaceID:      wsUUID,
-			Priority:         priorityFilter,
-			AssigneeID:       assigneeFilter,
-			AssigneeIds:      assigneeIdsFilter,
-			CreatorID:        creatorFilter,
-			ProjectID:        projectFilter,
-			InvolvesUserID:   involvesUserFilter,
-			MetadataFilter:   metadataFilter,
-			PropertiesFilter: openPropertiesFilter,
+			WorkspaceID:    wsUUID,
+			Priority:       priorityFilter,
+			AssigneeID:     assigneeFilter,
+			AssigneeIds:    assigneeIdsFilter,
+			CreatorID:      creatorFilter,
+			ProjectID:      projectFilter,
+			InvolvesUserID: involvesUserFilter,
+			MetadataFilter: metadataFilter,
 		})
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, "failed to list issues")
@@ -961,7 +936,7 @@ func (h *Handler) ListIssues(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// assignee_types narrows the list to issues assigned to the given actor
-	// kinds (member / agent / squad). Mirrors the same param on
+	// kinds (member / agent). Mirrors the same param on
 	// ListGroupedIssues so the workspace Members/Agents tabs can filter
 	// server-side instead of post-filtering loaded pages on the client.
 	assigneeTypesFilter := splitCommaParam(r.URL.Query().Get("assignee_types"))
@@ -986,7 +961,6 @@ func (h *Handler) ListIssues(w http.ResponseWriter, r *http.Request) {
 	// product meaning.
 	sortCol := "position"
 	sortIsExpr := false
-	sortIsProperty := false
 	if s := r.URL.Query().Get("sort"); s != "" {
 		switch s {
 		case "position", "title", "created_at", "updated_at", "start_date", "due_date":
@@ -998,28 +972,8 @@ func (h *Handler) ListIssues(w http.ResponseWriter, r *http.Request) {
 			sortCol = "CASE i.priority WHEN 'urgent' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 WHEN 'low' THEN 3 ELSE 4 END"
 			sortIsExpr = true
 		default:
-			// property:<definitionId> sorts by the custom-property value
-			// (typed expression); unknown/archived definitions degrade to
-			// position order instead of erroring stale clients.
-			expr, handled, sortErr := h.propertySortExpr(r, workspaceID, s)
-			if !handled {
-				writeError(w, http.StatusBadRequest, "invalid sort value")
-				return
-			}
-			if sortErr != nil {
-				if sortErr.Error() == "invalid sort value" || sortErr.Error() == "invalid workspace id" {
-					writeError(w, http.StatusBadRequest, sortErr.Error())
-					return
-				}
-				slog.Warn("propertySortExpr failed", append(logger.RequestAttrs(r), "error", sortErr)...)
-				writeError(w, http.StatusInternalServerError, "failed to resolve sort")
-				return
-			}
-			if expr != "" {
-				sortCol = expr
-				sortIsExpr = true
-				sortIsProperty = true
-			}
+			writeError(w, http.StatusBadRequest, "invalid sort value")
+			return
 		}
 	}
 	sortDir := "ASC"
@@ -1156,42 +1110,15 @@ func (h *Handler) ListIssues(w http.ResponseWriter, r *http.Request) {
 	if metadataFilter != nil {
 		where = append(where, fmt.Sprintf("i.metadata @> %s::jsonb", addArg(string(metadataFilter))))
 	}
-	if propertiesFilter != nil {
-		where = append(where, propertiesFilterPredicate(propertiesFilter, addArg))
-	}
 	where = appendIssueDateFilter(where, addArg, dateFilter)
 	if involvesUserFilter.Valid {
 		ref := addArg(involvesUserFilter)
 		where = append(where, fmt.Sprintf(`(
-    (i.assignee_type = 'agent' AND i.assignee_id IN (
+    i.assignee_type = 'agent' AND i.assignee_id IN (
        SELECT a.id FROM agent a
         WHERE a.workspace_id = $1
           AND a.owner_id     = %[1]s::uuid
-    ))
-    OR (i.assignee_type = 'squad' AND i.assignee_id IN (
-       SELECT sm.squad_id
-         FROM squad_member sm
-         JOIN squad s ON s.id = sm.squad_id
-        WHERE s.workspace_id = $1
-          AND sm.member_type = 'member'
-          AND sm.member_id   = %[1]s::uuid
-       UNION
-       SELECT s.id
-         FROM squad s
-         JOIN agent a ON a.id = s.leader_id
-        WHERE s.workspace_id = $1
-          AND a.workspace_id = $1
-          AND a.owner_id     = %[1]s::uuid
-       UNION
-       SELECT sm.squad_id
-         FROM squad_member sm
-         JOIN squad s ON s.id = sm.squad_id
-         JOIN agent a ON a.id = sm.member_id
-        WHERE s.workspace_id = $1
-          AND sm.member_type = 'agent'
-          AND a.workspace_id = $1
-          AND a.owner_id     = %[1]s::uuid
-    ))
+    )
 )`, ref))
 	}
 
@@ -1203,9 +1130,7 @@ func (h *Handler) ListIssues(w http.ResponseWriter, r *http.Request) {
 		orderBy = "i." + sortCol
 	}
 	orderBy += " " + sortDir
-	if sortCol == "start_date" || sortCol == "due_date" || sortIsProperty {
-		// Property values are sparse: issues without one sort last in both
-		// directions (mirrors the client comparator).
+	if sortCol == "start_date" || sortCol == "due_date" {
 		orderBy += " NULLS LAST"
 	}
 	// created_at alone is not unique (bulk imports share timestamps); without
@@ -1218,7 +1143,7 @@ func (h *Handler) ListIssues(w http.ResponseWriter, r *http.Request) {
 
 	query := fmt.Sprintf(`SELECT i.id, i.workspace_id, i.title, i.description, i.status, i.priority,
        i.assignee_type, i.assignee_id, i.creator_type, i.creator_id,
-       i.parent_issue_id, i.position, i.start_date, i.due_date, i.created_at, i.updated_at, i.number, i.project_id, i.metadata, i.stage, i.properties
+	       i.parent_issue_id, i.position, i.start_date, i.due_date, i.created_at, i.updated_at, i.number, i.project_id, i.metadata, i.stage
 FROM issue i
 WHERE %s
 ORDER BY %s
@@ -1256,7 +1181,6 @@ LIMIT %s OFFSET %s`, whereSql, orderBy, limitRef, offsetRef)
 			&row.ProjectID,
 			&row.Metadata,
 			&row.Stage,
-			&row.Properties,
 		); err != nil {
 			slog.Warn("ListIssues scan failed", "error", err)
 			writeError(w, http.StatusInternalServerError, "failed to list issues")
@@ -1413,7 +1337,7 @@ func splitCommaParam(raw string) []string {
 }
 
 func isIssueActorType(s string) bool {
-	return s == "member" || s == "agent" || s == "squad"
+	return s == "member" || s == "agent"
 }
 
 func parseUUIDParamList(w http.ResponseWriter, raw, fieldName string) ([]pgtype.UUID, bool) {
@@ -1563,11 +1487,6 @@ func (h *Handler) ListGroupedIssues(w http.ResponseWriter, r *http.Request) {
 	} else if filter != nil {
 		where = append(where, fmt.Sprintf("i.metadata @> %s::jsonb", addArg(string(filter))))
 	}
-	if filter, ok := parsePropertiesFilterParam(w, r.URL.Query().Get("properties")); !ok {
-		return
-	} else if filter != nil {
-		where = append(where, propertiesFilterPredicate(filter, addArg))
-	}
 	// Mirror the involves_user_id 4-branch UNION from sqlc's ListIssues /
 	// ListOpenIssues / CountIssues. ListGroupedIssues is a hand-written dynamic
 	// SQL builder that does not share parameters with sqlc, so the fragment is
@@ -1581,35 +1500,11 @@ func (h *Handler) ListGroupedIssues(w http.ResponseWriter, r *http.Request) {
 		}
 		ref := addArg(id)
 		where = append(where, fmt.Sprintf(`(
-    (i.assignee_type = 'agent' AND i.assignee_id IN (
+    i.assignee_type = 'agent' AND i.assignee_id IN (
        SELECT a.id FROM agent a
         WHERE a.workspace_id = $1
           AND a.owner_id     = %[1]s::uuid
-    ))
-    OR (i.assignee_type = 'squad' AND i.assignee_id IN (
-       SELECT sm.squad_id
-         FROM squad_member sm
-         JOIN squad s ON s.id = sm.squad_id
-        WHERE s.workspace_id = $1
-          AND sm.member_type = 'member'
-          AND sm.member_id   = %[1]s::uuid
-       UNION
-       SELECT s.id
-         FROM squad s
-         JOIN agent a ON a.id = s.leader_id
-        WHERE s.workspace_id = $1
-          AND a.workspace_id = $1
-          AND a.owner_id     = %[1]s::uuid
-       UNION
-       SELECT sm.squad_id
-         FROM squad_member sm
-         JOIN squad s ON s.id = sm.squad_id
-         JOIN agent a ON a.id = sm.member_id
-        WHERE s.workspace_id = $1
-          AND sm.member_type = 'agent'
-          AND a.workspace_id = $1
-          AND a.owner_id     = %[1]s::uuid
-    ))
+    )
 )`, ref))
 	}
 
@@ -1709,7 +1604,6 @@ func (h *Handler) ListGroupedIssues(w http.ResponseWriter, r *http.Request) {
 
 	sortCol := "position"
 	sortIsExpr := false
-	sortIsProperty := false
 	if s := r.URL.Query().Get("sort"); s != "" {
 		switch s {
 		case "position", "title", "created_at", "updated_at", "start_date", "due_date":
@@ -1721,28 +1615,8 @@ func (h *Handler) ListGroupedIssues(w http.ResponseWriter, r *http.Request) {
 			sortCol = "CASE i.priority WHEN 'urgent' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 WHEN 'low' THEN 3 ELSE 4 END"
 			sortIsExpr = true
 		default:
-			// property:<definitionId> sorts by the custom-property value
-			// (typed expression); unknown/archived definitions degrade to
-			// position order instead of erroring stale clients.
-			expr, handled, sortErr := h.propertySortExpr(r, workspaceID, s)
-			if !handled {
-				writeError(w, http.StatusBadRequest, "invalid sort value")
-				return
-			}
-			if sortErr != nil {
-				if sortErr.Error() == "invalid sort value" || sortErr.Error() == "invalid workspace id" {
-					writeError(w, http.StatusBadRequest, sortErr.Error())
-					return
-				}
-				slog.Warn("propertySortExpr failed", append(logger.RequestAttrs(r), "error", sortErr)...)
-				writeError(w, http.StatusInternalServerError, "failed to resolve sort")
-				return
-			}
-			if expr != "" {
-				sortCol = expr
-				sortIsExpr = true
-				sortIsProperty = true
-			}
+			writeError(w, http.StatusBadRequest, "invalid sort value")
+			return
 		}
 	}
 	sortDir := "ASC"
@@ -1765,7 +1639,7 @@ func (h *Handler) ListGroupedIssues(w http.ResponseWriter, r *http.Request) {
 		intraGroupOrder = "i." + sortCol
 	}
 	intraGroupOrder += " " + sortDir
-	if sortCol == "start_date" || sortCol == "due_date" || sortIsProperty {
+	if sortCol == "start_date" || sortCol == "due_date" {
 		intraGroupOrder += " NULLS LAST"
 	}
 	// Unique final key — see ListIssues: created_at ties would otherwise make
@@ -1780,7 +1654,7 @@ WITH ranked AS (
 		i.id, i.workspace_id, i.title, i.description, i.status, i.priority,
 		i.assignee_type, i.assignee_id, i.creator_type, i.creator_id,
 		i.parent_issue_id, i.position, i.start_date, i.due_date, i.created_at, i.updated_at,
-		i.number, i.project_id, i.metadata, i.stage, i.properties,
+		i.number, i.project_id, i.metadata, i.stage,
 		COUNT(*) OVER (PARTITION BY i.assignee_type, i.assignee_id) AS group_total,
 		ROW_NUMBER() OVER (
 			PARTITION BY i.assignee_type, i.assignee_id
@@ -1793,15 +1667,14 @@ SELECT
 	id, workspace_id, title, description, status, priority,
 	assignee_type, assignee_id, creator_type, creator_id,
 	parent_issue_id, position, start_date, due_date, created_at, updated_at,
-	number, project_id, metadata, stage, properties, group_total
+	number, project_id, metadata, stage, group_total
 FROM ranked
 WHERE rn > %s AND rn <= %s + %s
 ORDER BY
 	CASE assignee_type
 		WHEN 'member' THEN 0
-		WHEN 'agent' THEN 1
-		WHEN 'squad' THEN 2
-		ELSE 3
+			WHEN 'agent' THEN 1
+			ELSE 2
 	END,
 	assignee_type NULLS LAST,
 	assignee_id NULLS LAST,
@@ -1839,7 +1712,6 @@ ORDER BY
 			&row.ProjectID,
 			&row.Metadata,
 			&row.Stage,
-			&row.Properties,
 			&row.GroupTotal,
 		); err != nil {
 			slog.Warn("ListGroupedIssues scan failed", "error", err)
@@ -1903,15 +1775,6 @@ func (h *Handler) GetIssue(w http.ResponseWriter, r *http.Request) {
 		detailLabels = []LabelResponse{}
 	}
 	resp.Labels = &detailLabels
-
-	// Fetch issue reactions.
-	reactions, err := h.Queries.ListIssueReactions(r.Context(), issue.ID)
-	if err == nil && len(reactions) > 0 {
-		resp.Reactions = make([]IssueReactionResponse, len(reactions))
-		for i, rx := range reactions {
-			resp.Reactions[i] = issueReactionToResponse(rx)
-		}
-	}
 
 	// Fetch issue-level attachments.
 	attachments, err := h.Queries.ListAttachmentsByIssue(r.Context(), db.ListAttachmentsByIssueParams{
@@ -2070,243 +1933,6 @@ func (h *Handler) ChildIssueProgress(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// QuickCreateIssueRequest is the body for POST /api/issues/quick-create. The
-// user picks an actor (agent or squad) in the modal and types one line of
-// natural language; the server validates the actor's reachability up front,
-// queues a quick-create task, and returns 202 immediately. The agent
-// translates the prompt into a `multica issue create` invocation in the
-// background; success and failure both surface as inbox notifications to
-// the requester.
-//
-// Exactly one of AgentID / SquadID is required. When SquadID is set, the
-// task is enqueued against the squad's leader agent and the leader receives
-// the same Operating Protocol briefing it would for an issue assigned to
-// the squad, so it can choose to delegate to a squad member as usual.
-//
-// ProjectID is optional and lets the modal target a specific project so
-// the agent's `multica issue create` invocation passes `--project <uuid>`
-// instead of letting it default. The frontend remembers the user's last
-// pick per workspace, so frequent users skip retyping "in project X".
-//
-// ParentIssueID is optional and is set by the "Add sub issue" entry point
-// when the modal is opened from an existing issue. The agent passes it
-// through as `--parent <uuid>` so the new issue is filed as a sub-issue,
-// keeping the sub-issue intent of the entry point regardless of whether
-// the user submits via manual or agent mode.
-type QuickCreateIssueRequest struct {
-	AgentID       string   `json:"agent_id,omitempty"`
-	SquadID       string   `json:"squad_id,omitempty"`
-	Prompt        string   `json:"prompt"`
-	Priority      string   `json:"priority,omitempty"`
-	DueDate       string   `json:"due_date,omitempty"`
-	ProjectID     string   `json:"project_id,omitempty"`
-	ParentIssueID string   `json:"parent_issue_id,omitempty"`
-	AttachmentIDs []string `json:"attachment_ids,omitempty"`
-}
-
-// QuickCreateIssueResponse echoes the queued task id so the frontend can
-// correlate the eventual inbox item, even though completion is fully async.
-type QuickCreateIssueResponse struct {
-	TaskID string `json:"task_id"`
-}
-
-func (h *Handler) QuickCreateIssue(w http.ResponseWriter, r *http.Request) {
-	var req QuickCreateIssueRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
-		return
-	}
-	prompt := strings.TrimSpace(req.Prompt)
-	if prompt == "" {
-		writeError(w, http.StatusBadRequest, "prompt is required")
-		return
-	}
-	priority := strings.ToLower(strings.TrimSpace(req.Priority))
-	if priority != "" && priority != "urgent" && priority != "high" && priority != "medium" && priority != "low" {
-		writeError(w, http.StatusBadRequest, "priority must be one of: urgent, high, medium, low")
-		return
-	}
-	dueDate := strings.TrimSpace(req.DueDate)
-	if dueDate != "" {
-		parsed, err := util.ParseCalendarDate(dueDate)
-		if err != nil {
-			writeError(w, http.StatusBadRequest, "invalid due_date format, expected YYYY-MM-DD")
-			return
-		}
-		dueDate = parsed.Time.Format("2006-01-02")
-	}
-
-	hasAgent := strings.TrimSpace(req.AgentID) != ""
-	hasSquad := strings.TrimSpace(req.SquadID) != ""
-	if hasAgent == hasSquad {
-		writeError(w, http.StatusBadRequest, "exactly one of agent_id or squad_id is required")
-		return
-	}
-
-	workspaceID := h.resolveWorkspaceID(r)
-	wsUUID, ok := parseUUIDOrBadRequest(w, workspaceID, "workspace_id")
-	if !ok {
-		return
-	}
-
-	requesterID, ok := requireUserID(w, r)
-	if !ok {
-		return
-	}
-	requesterUUID, ok := parseUUIDOrBadRequest(w, requesterID, "requester_id")
-	if !ok {
-		return
-	}
-
-	// Resolve the actor to the agent that will actually run the task. For
-	// agent picks that's the agent itself; for squad picks it's the squad's
-	// leader agent. The leader receives a squad-leader briefing on dispatch
-	// (see daemon.go), matching the behavior of an issue assigned to the
-	// squad — picking a squad here is functionally "ask the squad leader to
-	// create this issue, on behalf of the squad".
-	var agentUUID pgtype.UUID
-	var squadUUID pgtype.UUID
-	if hasSquad {
-		var ok bool
-		squadUUID, ok = parseUUIDOrBadRequest(w, req.SquadID, "squad_id")
-		if !ok {
-			return
-		}
-		squad, err := h.Queries.GetSquadInWorkspace(r.Context(), db.GetSquadInWorkspaceParams{
-			ID:          squadUUID,
-			WorkspaceID: wsUUID,
-		})
-		if err != nil {
-			writeError(w, http.StatusNotFound, "squad not found")
-			return
-		}
-		if squad.ArchivedAt.Valid {
-			writeError(w, http.StatusBadRequest, "squad is archived")
-			return
-		}
-		agentUUID = squad.LeaderID
-	} else {
-		var ok bool
-		agentUUID, ok = parseUUIDOrBadRequest(w, req.AgentID, "agent_id")
-		if !ok {
-			return
-		}
-	}
-
-	// Reuse the same workspace-membership / archived / private-agent
-	// ownership rules as `validateAssigneePair` so a user can't POST a
-	// private agent_id they shouldn't be able to dispatch (the frontend
-	// filters them out, but the handler is the trust boundary). Squad
-	// picks reach this with the resolved leader agent; the same rules
-	// apply — a private leader behind a squad the user can't reach
-	// should still be rejected.
-	if status, msg := h.validateAssigneePair(
-		r.Context(), r, workspaceID,
-		pgtype.Text{String: "agent", Valid: true},
-		agentUUID,
-	); status != 0 {
-		writeError(w, status, msg)
-		return
-	}
-
-	// Re-load the agent for the runtime liveness check below. Safe by
-	// construction: validateAssigneePair just confirmed it exists in this
-	// workspace and the caller has visibility.
-	agent, err := h.Queries.GetAgentInWorkspace(r.Context(), db.GetAgentInWorkspaceParams{
-		ID:          agentUUID,
-		WorkspaceID: wsUUID,
-	})
-	if err != nil {
-		writeError(w, http.StatusNotFound, "agent not found")
-		return
-	}
-	if !agent.RuntimeID.Valid {
-		writeAgentUnavailable(w, "agent has no runtime", ReasonAgentRuntimeRequired)
-		return
-	}
-	if !h.isRuntimeOnline(r.Context(), agent.RuntimeID) {
-		writeAgentUnavailable(w, "agent's runtime is offline", ReasonRuntimeOffline)
-		return
-	}
-
-	// Daemon CLI version gate. The agent-side prompt + create-flow rely on
-	// behaviors introduced in MinQuickCreateCLIVersion (URL attachment
-	// handling, quick-create attachment binding, no-retry on partial failure).
-	// Older daemons either double-create issues on partial CLI failures, drop
-	// attachment bindings, or mishandle pasted screenshot URLs; fail closed
-	// before enqueuing rather than surface the breakage as an inbox failure
-	// twenty seconds later. Dev-built
-	// daemons (git-describe shape) are exempted inside CheckMinCLIVersion
-	// so `make daemon` works without weakening staging or production.
-	if status, payload := h.checkQuickCreateDaemonVersion(r.Context(), agent.RuntimeID); status != 0 {
-		writeJSON(w, status, payload)
-		return
-	}
-	if priority != "" || dueDate != "" {
-		if status, payload := h.checkQuickCreateDaemonVersionAtLeast(
-			r.Context(), agent.RuntimeID, agentpkg.MinQuickCreateFieldsCLIVersion,
-		); status != 0 {
-			writeJSON(w, status, payload)
-			return
-		}
-	}
-
-	attachmentIDs, ok := parseUUIDSliceOrBadRequest(w, req.AttachmentIDs, "attachment_ids")
-	if !ok {
-		return
-	}
-
-	// Optional project_id — validate it belongs to the same workspace before
-	// pinning the task to it. The handler is the trust boundary; the frontend
-	// already only shows projects from the active workspace, but we re-check
-	// here so a forged request can't smuggle a foreign project ID through.
-	var projectUUID pgtype.UUID
-	if strings.TrimSpace(req.ProjectID) != "" {
-		pid, ok := parseUUIDOrBadRequest(w, req.ProjectID, "project_id")
-		if !ok {
-			return
-		}
-		if _, err := h.Queries.GetProjectInWorkspace(r.Context(), db.GetProjectInWorkspaceParams{
-			ID:          pid,
-			WorkspaceID: wsUUID,
-		}); err != nil {
-			writeError(w, http.StatusBadRequest, "project not found")
-			return
-		}
-		projectUUID = pid
-	}
-
-	// Optional parent_issue_id — validate same-workspace membership just like
-	// the regular CreateIssue path. Frontend seeds this from the "Add sub
-	// issue" entry, but the handler re-checks so a forged request can't
-	// smuggle a foreign parent UUID through.
-	var parentIssueUUID pgtype.UUID
-	if strings.TrimSpace(req.ParentIssueID) != "" {
-		pid, ok := parseUUIDOrBadRequest(w, req.ParentIssueID, "parent_issue_id")
-		if !ok {
-			return
-		}
-		parent, err := h.Queries.GetIssueInWorkspace(r.Context(), db.GetIssueInWorkspaceParams{
-			ID:          pid,
-			WorkspaceID: wsUUID,
-		})
-		if err != nil || !parent.ID.Valid {
-			writeError(w, http.StatusBadRequest, "parent issue not found in this workspace")
-			return
-		}
-		parentIssueUUID = pid
-	}
-
-	task, err := h.TaskService.EnqueueQuickCreateTask(r.Context(), wsUUID, requesterUUID, agentUUID, squadUUID, prompt, priority, dueDate, projectUUID, parentIssueUUID, attachmentIDs)
-	if err != nil {
-		slog.Warn("quick-create enqueue failed", append(logger.RequestAttrs(r), "error", err)...)
-		writeError(w, http.StatusInternalServerError, "failed to enqueue quick-create task")
-		return
-	}
-
-	writeJSON(w, http.StatusAccepted, QuickCreateIssueResponse{TaskID: uuidToString(task.ID)})
-}
-
 // writeAgentUnavailable returns 422 with a stable error code so the modal
 // can show a "switch agent" hint without parsing the human-readable reason.
 // writeAgentUnavailable refuses a trigger whose agent cannot run. `code` stays
@@ -2323,72 +1949,8 @@ func writeAgentUnavailable(w http.ResponseWriter, reason string, reasonCode disp
 	})
 }
 
-// isRuntimeOnline returns true when the given runtime is currently
-// reachable (status == "online"). Quick-create rejects submissions whose
-// agent's runtime is offline so the user gets immediate feedback in the
-// modal instead of an inbox failure twenty seconds later.
-func (h *Handler) isRuntimeOnline(ctx context.Context, runtimeID pgtype.UUID) bool {
-	rt, err := h.Queries.GetAgentRuntime(ctx, runtimeID)
-	if err != nil {
-		return false
-	}
-	return rt.Status == "online"
-}
-
-// checkQuickCreateDaemonVersion enforces MinQuickCreateCLIVersion against the
-// CLI version the daemon reported at registration time (stored on the runtime
-// row's metadata.cli_version). Returns (0, nil) when the version is
-// acceptable, otherwise (status, payload) ready to hand to writeJSON.
-//
-// Failure shape is stable so the modal can branch on the `code` field and
-// surface a "needs upgrade" hint that points at the specific runtime:
-//
-//	422 {
-//	  "code": "daemon_version_unsupported",
-//	  "current_version": "0.2.18" | "",
-//	  "min_version":     "0.2.21",
-//	  "runtime_id":      "<uuid>"
-//	}
-func (h *Handler) checkQuickCreateDaemonVersion(ctx context.Context, runtimeID pgtype.UUID) (int, map[string]any) {
-	return h.checkQuickCreateDaemonVersionAtLeast(ctx, runtimeID, agentpkg.MinQuickCreateCLIVersion)
-}
-
-func (h *Handler) checkQuickCreateDaemonVersionAtLeast(ctx context.Context, runtimeID pgtype.UUID, minimum string) (int, map[string]any) {
-	rt, err := h.Queries.GetAgentRuntime(ctx, runtimeID)
-	if err != nil {
-		// Runtime row vanished between the online check and here — treat
-		// as unavailable rather than wedging the request on a 500.
-		return http.StatusUnprocessableEntity, map[string]any{
-			"code":   "agent_unavailable",
-			"reason": "agent's runtime is no longer registered",
-		}
-	}
-	current := readRuntimeCLIVersion(rt.Metadata)
-	switch err := agentpkg.CheckMinCLIVersionFor(current, minimum); {
-	case err == nil:
-		return 0, nil
-	case errors.Is(err, agentpkg.ErrCLIVersionMissing), errors.Is(err, agentpkg.ErrCLIVersionTooOld):
-		return http.StatusUnprocessableEntity, map[string]any{
-			"code":            "daemon_version_unsupported",
-			"current_version": current,
-			"min_version":     minimum,
-			"runtime_id":      uuidToString(runtimeID),
-		}
-	default:
-		// Defensive fall-through: unknown error from the version check is
-		// also fail-closed, since the gate exists precisely because we
-		// can't trust older daemons with this flow.
-		return http.StatusUnprocessableEntity, map[string]any{
-			"code":            "daemon_version_unsupported",
-			"current_version": current,
-			"min_version":     minimum,
-			"runtime_id":      uuidToString(runtimeID),
-		}
-	}
-}
-
 // readRuntimeCLIVersion pulls metadata.cli_version off a runtime row. The
-// metadata column is JSONB on the wire; the daemon stores the multica CLI
+// metadata column is JSONB on the wire; the daemon stores the liexiu CLI
 // version under that key during registration (see DaemonRegister).
 func readRuntimeCLIVersion(metadata []byte) string {
 	if len(metadata) == 0 {
@@ -2551,7 +2113,7 @@ func (h *Handler) CreateIssue(w http.ResponseWriter, r *http.Request) {
 	// Determine creator identity: agent (via X-Agent-ID header) or member.
 	creatorType, actualCreatorID := h.resolveActor(r, creatorID, workspaceID)
 
-	// Optional origin stamping (quick-create / autopilot). Only the
+	// Optional origin stamping (currently quick-create). Only the
 	// allowed origin types are accepted; anything else is rejected so a
 	// rogue caller can't mint arbitrary origin labels. Both fields must
 	// be provided together.
@@ -2579,7 +2141,7 @@ func (h *Handler) CreateIssue(w http.ResponseWriter, r *http.Request) {
 		// MUL-4305: an agent creating an issue via the ordinary create path
 		// carries no explicit origin, which historically left the new issue
 		// unattributed. Any run later derived from it (agent assignment,
-		// squad-leader trigger) then lost the top-of-chain human originator,
+		// agent-triggered run) then lost the top-of-chain human originator,
 		// so A2A @-mentions from those runs failed the canInvokeAgent gate
 		// against private agents. Stamp the acting task as the issue's origin
 		// so resolveOriginatorForIssueTask can inherit its originator — the
@@ -2708,24 +2270,18 @@ func (h *Handler) CreateIssue(w http.ResponseWriter, r *http.Request) {
 }
 
 type UpdateIssueRequest struct {
-	Title       *string `json:"title"`
-	Description *string `json:"description"`
-	// DescriptionBase is the authoritative Markdown the editor had adopted
-	// before producing Description. It lets the server preserve channel media
-	// that landed asynchronously after that base without making media already
-	// present in the base impossible for the user to delete. Older clients omit
-	// it and receive conservative channel-media preservation.
-	DescriptionBase *string  `json:"description_base,omitempty"`
-	Status          *string  `json:"status"`
-	Priority        *string  `json:"priority"`
-	AssigneeType    *string  `json:"assignee_type"`
-	AssigneeID      *string  `json:"assignee_id"`
-	Position        *float64 `json:"position"`
-	StartDate       *string  `json:"start_date"`
-	DueDate         *string  `json:"due_date"`
-	ParentIssueID   *string  `json:"parent_issue_id"`
-	ProjectID       *string  `json:"project_id"`
-	Stage           *int32   `json:"stage"`
+	Title         *string  `json:"title"`
+	Description   *string  `json:"description"`
+	Status        *string  `json:"status"`
+	Priority      *string  `json:"priority"`
+	AssigneeType  *string  `json:"assignee_type"`
+	AssigneeID    *string  `json:"assignee_id"`
+	Position      *float64 `json:"position"`
+	StartDate     *string  `json:"start_date"`
+	DueDate       *string  `json:"due_date"`
+	ParentIssueID *string  `json:"parent_issue_id"`
+	ProjectID     *string  `json:"project_id"`
+	Stage         *int32   `json:"stage"`
 	// AttachmentIDs lets the description editor bind newly uploaded files to
 	// this issue so they surface in `GET /api/issues/:id/attachments` and the
 	// editor's preview Eye keeps working past a refresh. Existing bindings
@@ -2738,59 +2294,10 @@ type UpdateIssueRequest struct {
 	// false keeps today's behavior. Mirrors comment suppress_agent_ids.
 	SuppressRun bool `json:"suppress_run,omitempty"`
 	// HandoffNote is an optional free-text instruction injected into the run's
-	// opening context when this write starts an agent/squad run ("交接说明" —
+	// opening context when this write starts an agent run ("交接说明" —
 	// MUL-3375). Only consumed when a run actually starts: SuppressRun=true or
 	// a parked/non-triggering write drops it. Never fabricates a comment.
 	HandoffNote string `json:"handoff_note,omitempty"`
-}
-
-func mergeIssueChannelMediaDescription(current, incoming string, base *string, attachments []db.Attachment) string {
-	currentIDs := channelmedia.MarkedIDs(current)
-	if len(currentIDs) == 0 {
-		return incoming
-	}
-
-	baseIDs := map[string]bool{}
-	if base != nil {
-		for _, id := range channelmedia.MarkedIDs(*base) {
-			baseIDs[id] = true
-		}
-	}
-	attachmentsByID := make(map[string]db.Attachment, len(attachments))
-	for _, attachment := range attachments {
-		attachmentsByID[uuidToString(attachment.ID)] = attachment
-	}
-
-	merged := incoming
-	for _, id := range currentIDs {
-		attachment, exists := attachmentsByID[id]
-		if !exists {
-			// A deleted attachment must not be resurrected from stale Markdown.
-			continue
-		}
-		downloadPath := channelmedia.DownloadPath(id)
-		hasLink := strings.Contains(merged, downloadPath)
-		knownToEditor := base != nil && baseIDs[id]
-		if knownToEditor && !hasLink {
-			// The editor adopted this media and then removed its link: preserve
-			// the user's explicit deletion rather than treating it as a race.
-			continue
-		}
-		if !hasLink {
-			merged = channelmedia.Append(merged, channelmedia.Block(
-				id,
-				attachment.Filename,
-				strings.HasPrefix(attachment.ContentType, "image/"),
-			))
-			continue
-		}
-		// Tiptap may omit HTML comments when serializing an otherwise intact
-		// image. Restore provenance without duplicating the visible link.
-		if !channelmedia.HasMarker(merged, id) {
-			merged = channelmedia.Append(merged, channelmedia.Marker(id))
-		}
-	}
-	return merged
 }
 
 func refreshUntouchedNullableIssueParams(params *db.UpdateIssueParams, current db.Issue, rawFields map[string]json.RawMessage) {
@@ -2821,7 +2328,7 @@ func refreshUntouchedNullableIssueParams(params *db.UpdateIssueParams, current d
 	}
 }
 
-func (h *Handler) updateIssueWithDescriptionMerge(ctx context.Context, workspaceID pgtype.UUID, params db.UpdateIssueParams, rawFields map[string]json.RawMessage, base *string) (db.Issue, db.Issue, error) {
+func (h *Handler) updateIssueWithDescriptionLock(ctx context.Context, workspaceID pgtype.UUID, params db.UpdateIssueParams, rawFields map[string]json.RawMessage) (db.Issue, db.Issue, error) {
 	if h.TxStarter == nil {
 		return db.Issue{}, db.Issue{}, errors.New("issue description update requires transaction starter")
 	}
@@ -2838,26 +2345,6 @@ func (h *Handler) updateIssueWithDescriptionMerge(ctx context.Context, workspace
 	})
 	if err != nil {
 		return db.Issue{}, db.Issue{}, fmt.Errorf("lock issue description: %w", err)
-	}
-	attachments, err := qtx.ListAttachmentsByIssue(ctx, db.ListAttachmentsByIssueParams{
-		IssueID:     current.ID,
-		WorkspaceID: current.WorkspaceID,
-	})
-	if err != nil {
-		return db.Issue{}, db.Issue{}, fmt.Errorf("list issue attachments for description merge: %w", err)
-	}
-
-	currentDescription := ""
-	if current.Description.Valid {
-		currentDescription = current.Description.String
-	}
-	incomingDescription := ""
-	if params.Description.Valid {
-		incomingDescription = params.Description.String
-	}
-	params.Description = pgtype.Text{
-		String: mergeIssueChannelMediaDescription(currentDescription, incomingDescription, base, attachments),
-		Valid:  true,
 	}
 	refreshUntouchedNullableIssueParams(&params, current, rawFields)
 
@@ -3069,8 +2556,8 @@ func (h *Handler) UpdateIssue(w http.ResponseWriter, r *http.Request) {
 	var issue db.Issue
 	if req.Description != nil {
 		var lockedPrev db.Issue
-		issue, lockedPrev, err = h.updateIssueWithDescriptionMerge(
-			r.Context(), prevIssue.WorkspaceID, params, rawFields, req.DescriptionBase,
+		issue, lockedPrev, err = h.updateIssueWithDescriptionLock(
+			r.Context(), prevIssue.WorkspaceID, params, rawFields,
 		)
 		if err == nil {
 			prevIssue = lockedPrev
@@ -3135,35 +2622,21 @@ func (h *Handler) UpdateIssue(w http.ResponseWriter, r *http.Request) {
 		"creator_id":          uuidToString(prevIssue.CreatorID),
 	})
 
-	// Reconcile the task queue. Whether this write starts an agent run — and
-	// for whom (agent assignee or squad leader) — is decided by the single
-	// WillEnqueueRun predicate, shared verbatim with the preview endpoint so
-	// the two never drift (MUL-3375).
+	// Direct agent assignment is ownership metadata only. Ordinary
+	// Issue writes do not produce AgentTasks; executable work is created by
+	// explicit Mission orchestration.
 	//
 	// A reassignment intentionally does NOT cancel existing tasks on the issue
 	// (#4963 / MUL-4113). The previous "cancel every active task on the issue"
 	// was too coarse: it silently dropped unrelated in-flight work (a
-	// mention-triggered run for another agent, a squad task) with no requeue,
+	// mention-triggered run for another agent) with no requeue,
 	// and it self-cancelled a run that reassigned the issue from inside itself.
-	// Ownership handoff no longer implies interruption; the new assignee's run,
-	// if any, is enqueued by WillEnqueueRun below and runs alongside whatever
-	// was already in flight. No status change — not even → cancelled — cancels
+	// Ownership handoff no longer implies interruption or a new agent run. No
+	// status change — not even → cancelled — cancels
 	// active tasks: a user clicking "cancel" on an issue has no expectation that
 	// it stops in-flight agent runs, so that implicit coupling is gone
 	// (MUL-4465). Deleting an issue still cancels its tasks (see DeleteIssue),
 	// because the tasks' owning issue ceases to exist.
-	if trigger, ok := h.IssueService.WillEnqueueRun(r.Context(),
-		service.IssueTriggerInput{
-			Issue:           issue,
-			PrevStatus:      prevIssue.Status,
-			AssigneeChanged: assigneeChanged,
-			StatusChanged:   statusChanged,
-		},
-		h.issueTriggerWriteProbe(r, actorType, actorID, issue),
-	); ok && !req.SuppressRun {
-		h.dispatchIssueRun(r.Context(), issue, trigger, actorType, actorID, req.HandoffNote)
-	}
-
 	// Platform-driven parent notification: when this issue transitions into
 	// `done` and has a parent, post a top-level system comment on the parent
 	// (MUL-2538 — replaces the agent-prompt rule that caused self-mention
@@ -3224,41 +2697,9 @@ func (h *Handler) validateAssigneePair(ctx context.Context, r *http.Request, wor
 			return http.StatusForbidden, "cannot assign to private agent"
 		}
 		return 0, ""
-	case "squad":
-		squad, err := h.Queries.GetSquadInWorkspace(ctx, db.GetSquadInWorkspaceParams{
-			ID:          assigneeID,
-			WorkspaceID: wsUUID,
-		})
-		if err != nil {
-			return http.StatusBadRequest, "assignee_id does not refer to a squad in this workspace"
-		}
-		if squad.ArchivedAt.Valid {
-			return http.StatusBadRequest, "cannot assign to an archived squad"
-		}
-		leader, err := h.Queries.GetAgent(ctx, squad.LeaderID)
-		if err != nil || leader.ArchivedAt.Valid {
-			return http.StatusBadRequest, "squad leader is archived; cannot assign to this squad"
-		}
-		actorType, actorID := h.resolveActor(r, requestUserID(r), workspaceID)
-		if !h.canInvokeAgent(ctx, leader, actorType, actorID, h.invokeOriginatorFromRequest(r, actorType, actorID), workspaceID) {
-			return http.StatusForbidden, "cannot assign to squad with private leader"
-		}
-		return 0, ""
 	default:
-		return http.StatusBadRequest, "assignee_type must be 'member', 'agent', or 'squad'"
+		return http.StatusBadRequest, "assignee_type must be 'member' or 'agent'"
 	}
-}
-
-// shouldEnqueueAgentTask returns true when an issue creation or assignment
-// should trigger the assigned agent. Backlog issues are skipped — backlog
-// acts as a parking lot where issues can be pre-assigned without immediately
-// triggering execution. Moving out of backlog is handled separately in
-// UpdateIssue.
-func (h *Handler) shouldEnqueueAgentTask(ctx context.Context, issue db.Issue) bool {
-	if issue.Status == "backlog" {
-		return false
-	}
-	return h.isAgentAssigneeReady(ctx, issue)
 }
 
 // shouldEnqueueAssigneeFallback returns true when comment routing can fall back
@@ -3356,8 +2797,6 @@ func (h *Handler) DeleteIssue(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.TaskService.CancelTasksForIssue(r.Context(), issue.ID)
-	// Fail any linked autopilot runs before delete (ON DELETE SET NULL clears issue_id).
-	h.Queries.FailAutopilotRunsByIssue(r.Context(), issue.ID)
 
 	attachmentURLs, err := h.deleteIssueAndCollectAttachmentURLs(r.Context(), issue)
 	if err != nil {
@@ -3459,7 +2898,7 @@ func (h *Handler) BatchUpdateIssues(w http.ResponseWriter, r *http.Request) {
 	// real-world cases that hit this path are caller mistakes (status placed
 	// at the top level, "update" misspelled as singular). Telling the truth
 	// here — `{"updated": 0}` — keeps the wire shape stable while making the
-	// count match reality. See multica-ai/multica#1660.
+	// count match reality. See kailonyang/liexiu#1660.
 	hasMutation := req.Updates.Title != nil ||
 		req.Updates.Description != nil ||
 		req.Updates.Status != nil ||
@@ -3669,12 +3108,9 @@ func (h *Handler) BatchUpdateIssues(w http.ResponseWriter, r *http.Request) {
 
 		var issue db.Issue
 		if req.Updates.Description != nil {
-			// One batch-level base cannot describe multiple issue documents.
-			// Preserve every marked channel-media block conservatively, matching
-			// legacy single-update clients that omit description_base.
 			var lockedPrev db.Issue
-			issue, lockedPrev, err = h.updateIssueWithDescriptionMerge(
-				r.Context(), prevIssue.WorkspaceID, params, rawUpdates, nil,
+			issue, lockedPrev, err = h.updateIssueWithDescriptionLock(
+				r.Context(), prevIssue.WorkspaceID, params, rawUpdates,
 			)
 			if err == nil {
 				prevIssue = lockedPrev
@@ -3708,20 +3144,8 @@ func (h *Handler) BatchUpdateIssues(w http.ResponseWriter, r *http.Request) {
 		// Reassignment does not cancel existing tasks (#4963 / MUL-4113) —
 		// mirrors UpdateIssue. See that handler for the rationale.
 		//
-		// Same single predicate as UpdateIssue — batch must not grow its own
-		// copy of the enqueue rule (the historical source of four-entry-point
-		// drift, MUL-3375). suppress_run applies batch-wide.
-		if trigger, ok := h.IssueService.WillEnqueueRun(r.Context(),
-			service.IssueTriggerInput{
-				Issue:           issue,
-				PrevStatus:      prevIssue.Status,
-				AssigneeChanged: assigneeChanged,
-				StatusChanged:   statusChanged,
-			},
-			h.issueTriggerWriteProbe(r, actorType, actorID, issue),
-		); ok && !req.Updates.SuppressRun {
-			h.dispatchIssueRun(r.Context(), issue, trigger, actorType, actorID, req.Updates.HandoffNote)
-		}
+		// Direct agent assignment remains metadata-only. HandoffNote
+		// is accepted for client compatibility but cannot create a task here.
 
 		// No status change — not even → cancelled — cancels active tasks here,
 		// mirroring UpdateIssue (MUL-4465). See that handler for the rationale.
@@ -3793,7 +3217,6 @@ func (h *Handler) BatchDeleteIssues(w http.ResponseWriter, r *http.Request) {
 		}
 
 		h.TaskService.CancelTasksForIssue(r.Context(), issue.ID)
-		h.Queries.FailAutopilotRunsByIssue(r.Context(), issue.ID)
 
 		attachmentURLs, err := h.deleteIssueAndCollectAttachmentURLs(r.Context(), issue)
 		if err != nil {

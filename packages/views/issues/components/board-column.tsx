@@ -10,17 +10,16 @@ import type {
   IssueAssigneeType,
   IssueStatus,
   Project,
-} from "@multica/core/types";
-import { Button } from "@multica/ui/components/ui/button";
+} from "@liexiu/core/types";
+import { Button } from "@liexiu/ui/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuTrigger,
   DropdownMenuContent,
   DropdownMenuItem,
-} from "@multica/ui/components/ui/dropdown-menu";
-import { STATUS_CONFIG } from "@multica/core/issues/config";
-import { useViewStoreApi } from "@multica/core/issues/stores/view-store-context";
-import { useViewBaseline } from "../surface/view-baseline-context";
+} from "@liexiu/ui/components/ui/dropdown-menu";
+import { STATUS_CONFIG } from "@liexiu/core/issues/config";
+import { useViewStoreApi } from "@liexiu/core/issues/stores/view-store-context";
 import { StatusHeading } from "./status-heading";
 import { DraggableBoardCard } from "./board-card";
 import type { ChildProgress } from "./list-row";
@@ -77,11 +76,6 @@ export interface BoardColumnGroup {
   status?: IssueStatus;
   assigneeType?: IssueAssigneeType | null;
   assigneeId?: string | null;
-  /** Set when the board is grouped by a select-type custom property. */
-  propertyId?: string;
-  /** Option id for this column; null = the "No value" column. */
-  propertyOptionId?: string | null;
-  propertyOptionColor?: string;
   totalCount?: number;
   createData?: IssueCreateDefaults;
 }
@@ -114,10 +108,6 @@ export const BoardColumn = memo(function BoardColumn({
   const cfg = status ? STATUS_CONFIG[status] : null;
   const { setNodeRef, isOver } = useDroppable({ id: group.id });
   const viewStoreApi = useViewStoreApi();
-  // A status fixed by the open saved view cannot be hidden from the board —
-  // that would silently strip one of the view's own conditions.
-  const viewBaseline = useViewBaseline();
-  const statusFixedByView = !!status && viewBaseline?.status.has(status) === true;
   const { t } = useT("issues");
 
   // Resolve IDs to Issue objects, preserving parent-provided order
@@ -208,8 +198,6 @@ export const BoardColumn = memo(function BoardColumn({
                   />
                   <DropdownMenuContent align="end">
                     <DropdownMenuItem
-                      disabled={statusFixedByView}
-                      title={statusFixedByView ? t(($) => $.filters.in_view) : undefined}
                       onClick={() => viewStoreApi.getState().hideStatus(status)}
                     >
                       <EyeOff className="size-3.5" />
@@ -336,23 +324,6 @@ function BoardGroupHeading({
 }) {
   if (group.status) {
     return <StatusHeading status={group.status} count={count} />;
-  }
-
-  if (group.propertyId !== undefined) {
-    return (
-      <div className="flex min-w-0 items-center gap-2">
-        <span
-          className="size-2.5 shrink-0 rounded-full bg-muted-foreground/30"
-          style={group.propertyOptionColor ? { backgroundColor: group.propertyOptionColor } : undefined}
-        />
-        <span className="truncate text-body font-medium" title={group.title}>
-          {group.title}
-        </span>
-        <span className="shrink-0 rounded-full bg-background px-1.5 py-0.5 text-micro font-medium tabular-nums text-muted-foreground">
-          {count}
-        </span>
-      </div>
-    );
   }
 
   const actorIcon =

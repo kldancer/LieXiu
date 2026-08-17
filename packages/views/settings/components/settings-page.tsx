@@ -6,58 +6,40 @@ import {
   SlidersHorizontal,
   Key,
   Settings,
-  Users,
   FolderGit2,
   FlaskConical,
-  Bell,
   Plug,
-  MessageCircle,
   Tags,
   Keyboard,
   ListTodo,
   Zap,
-  Blocks,
-  CreditCard,
 } from "lucide-react";
 import { GitHubMark } from "./github-mark";
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "@multica/ui/components/ui/tabs";
-import { useIsMobile } from "@multica/ui/hooks/use-mobile";
-import { useCurrentWorkspace } from "@multica/core/paths";
-import { useFeatureEnabled } from "@multica/core/config";
-import {
-  BILLING_WORKSPACE_SUBSCRIPTIONS_FLAG,
-  PLUGINS_V1_FLAG,
-} from "@multica/core/feature-flags";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@liexiu/ui/components/ui/tabs";
+import { useIsMobile } from "@liexiu/ui/hooks/use-mobile";
+import { useCurrentWorkspace } from "@liexiu/core/paths";
 import { useNavigation } from "../../navigation";
 import { AccountTab } from "./account-tab";
 import { PreferencesTab } from "./preferences-tab";
-import { ChatTab } from "./chat-tab";
 import { IssueTab } from "./issue-tab";
 import { TokensTab } from "./tokens-tab";
 import { WorkspaceTab } from "./workspace-tab";
-import { MembersTab } from "./members-tab";
 import { RepositoriesTab } from "./repositories-tab";
 import { GitHubTab } from "./github-tab";
 import { IntegrationsTab } from "./integrations-tab";
 import { LabsTab } from "./labs-tab";
-import { NotificationsTab } from "./notifications-tab";
 import { LabelsTab } from "./labels-tab";
-import { PropertiesTab } from "./properties-tab";
 import { QuickActionsTab } from "./quick-actions-tab";
 import { KeyboardShortcutsTab } from "./keyboard-shortcuts-tab";
-import { PluginsTab } from "./plugins-tab";
-import { BillingTab } from "./billing-tab";
 import { CollapsedNavTrigger } from "../../layout/page-header";
 import { useT } from "../../i18n";
 
-const ACCOUNT_TAB_KEYS = ["profile", "preferences", "shortcuts", "issue", "chat", "notifications", "tokens"] as const;
+const ACCOUNT_TAB_KEYS = ["profile", "preferences", "shortcuts", "issue", "tokens"] as const;
 const ACCOUNT_TAB_ICONS = {
   profile: User,
   preferences: SlidersHorizontal,
   shortcuts: Keyboard,
   issue: ListTodo,
-  chat: MessageCircle,
-  notifications: Bell,
   tokens: Key,
 } as const;
 
@@ -67,12 +49,8 @@ const WORKSPACE_TAB_KEYS = [
   "github",
   "integrations",
   "labs",
-  "members",
-  "billing",
   "labels",
-  "properties",
   "quick_actions",
-  "plugins",
 ] as const;
 const WORKSPACE_TAB_VALUES = {
   general: "workspace",
@@ -80,12 +58,8 @@ const WORKSPACE_TAB_VALUES = {
   github: "github",
   integrations: "integrations",
   labs: "labs",
-  members: "members",
-  billing: "billing",
   labels: "labels",
-  properties: "properties",
   quick_actions: "quick-actions",
-  plugins: "plugins",
 } as const;
 const WORKSPACE_TAB_ICONS = {
   general: Settings,
@@ -93,24 +67,17 @@ const WORKSPACE_TAB_ICONS = {
   github: GitHubMark,
   integrations: Plug,
   labs: FlaskConical,
-  members: Users,
-  billing: CreditCard,
   labels: Tags,
-  properties: SlidersHorizontal,
   quick_actions: Zap,
-  plugins: Blocks,
 } as const;
 
 const DEFAULT_TAB = "profile";
 const TAB_QUERY_KEY = "tab";
 
 // Legacy `?tab=…` values that have been collapsed into another tab. Old
-// bookmarks still land on the correct surface without us preserving a
-// dead TabsContent entry. Lark used to be its own top-level workspace
-// tab; it now lives inside Integrations.
-const LEGACY_WORKSPACE_TAB_REDIRECTS: Record<string, string> = {
-  lark: "integrations",
-};
+// bookmarks still land on the correct surface without preserving dead tab
+// entries.
+const LEGACY_WORKSPACE_TAB_REDIRECTS: Record<string, string> = {};
 
 const SETTINGS_TAB_TRIGGER_CLASS =
   "h-8 shrink-0 px-2.5 hover:bg-surface-hover data-active:!bg-surface-selected data-active:!text-surface-selected-foreground data-active:hover:!bg-surface-selected md:!w-full md:px-2 md:after:hidden";
@@ -132,21 +99,8 @@ export function SettingsPage({ extraAccountTabs }: SettingsPageProps = {}) {
   const workspaceName = useCurrentWorkspace()?.name;
   const navigation = useNavigation();
   const isMobile = useIsMobile();
-  const pluginsEnabled = useFeatureEnabled(PLUGINS_V1_FLAG, false);
-  const billingEnabled = useFeatureEnabled(
-    BILLING_WORKSPACE_SUBSCRIPTIONS_FLAG,
-    false,
-  );
 
-  const visibleWorkspaceTabKeys = React.useMemo(
-    () =>
-      WORKSPACE_TAB_KEYS.filter(
-        (key) =>
-          (key !== "plugins" || pluginsEnabled) &&
-          (key !== "billing" || billingEnabled),
-      ),
-    [billingEnabled, pluginsEnabled],
-  );
+  const visibleWorkspaceTabKeys = React.useMemo(() => WORKSPACE_TAB_KEYS, []);
 
   // Whitelist of valid tab values; unknown ?tab=… values silently fall back to
   // the default. Whitelisting also blocks junk like ?tab=<script> from
@@ -163,9 +117,7 @@ export function SettingsPage({ extraAccountTabs }: SettingsPageProps = {}) {
 
   const tabFromUrl = navigation.searchParams.get(TAB_QUERY_KEY);
   const candidateTab = tabFromUrl
-    ? tabFromUrl === "billing" && !billingEnabled
-      ? "workspace"
-      : LEGACY_WORKSPACE_TAB_REDIRECTS[tabFromUrl] ?? tabFromUrl
+    ? LEGACY_WORKSPACE_TAB_REDIRECTS[tabFromUrl] ?? tabFromUrl
     : null;
   const activeTab =
     candidateTab && validTabs.has(candidateTab) ? candidateTab : DEFAULT_TAB;
@@ -254,29 +206,21 @@ export function SettingsPage({ extraAccountTabs }: SettingsPageProps = {}) {
 
       {/* Right content */}
       <div className="min-w-0 flex-1 md:overflow-y-auto">
-        <div className={`mx-auto w-full p-4 sm:p-6 md:p-8 ${activeTab === "labels" || activeTab === "properties" || activeTab === "quick-actions"
+        <div className={`mx-auto w-full p-4 sm:p-6 md:p-8 ${activeTab === "labels" || activeTab === "quick-actions"
               ? "max-w-5xl"
               : "max-w-3xl"}`}>
           <TabsContent value="profile"><AccountTab /></TabsContent>
           <TabsContent value="preferences"><PreferencesTab /></TabsContent>
           <TabsContent value="shortcuts"><KeyboardShortcutsTab /></TabsContent>
           <TabsContent value="issue"><IssueTab /></TabsContent>
-          <TabsContent value="chat"><ChatTab /></TabsContent>
-          <TabsContent value="notifications"><NotificationsTab /></TabsContent>
           <TabsContent value="tokens"><TokensTab /></TabsContent>
           <TabsContent value="workspace"><WorkspaceTab /></TabsContent>
           <TabsContent value="repositories"><RepositoriesTab /></TabsContent>
           <TabsContent value="github"><GitHubTab /></TabsContent>
           <TabsContent value="integrations"><IntegrationsTab /></TabsContent>
           <TabsContent value="labs"><LabsTab /></TabsContent>
-          <TabsContent value="members"><MembersTab /></TabsContent>
-          {billingEnabled ? (
-            <TabsContent value="billing"><BillingTab /></TabsContent>
-          ) : null}
           <TabsContent value="labels"><LabelsTab /></TabsContent>
-          <TabsContent value="properties"><PropertiesTab /></TabsContent>
           <TabsContent value="quick-actions"><QuickActionsTab /></TabsContent>
-          {pluginsEnabled ? <TabsContent value="plugins"><PluginsTab /></TabsContent> : null}
           {extraAccountTabs?.map((tab) => (
             <TabsContent key={tab.value} value={tab.value}>{tab.content}</TabsContent>
           ))}

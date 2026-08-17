@@ -4,8 +4,8 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/multica-ai/multica/server/internal/events"
-	"github.com/multica-ai/multica/server/pkg/protocol"
+	"github.com/kailonyang/liexiu/server/internal/events"
+	"github.com/kailonyang/liexiu/server/pkg/protocol"
 )
 
 // fakeBroadcaster records every fanout call so tests can assert which scope a
@@ -53,24 +53,18 @@ func (f *fakeBroadcaster) Broadcast(message []byte) {
 	f.broadcastCalled++
 }
 
-// TestRegisterListeners_TaskChatGoToWorkspace pins the must-fix #1 contract
+// TestRegisterListeners_TaskGoToWorkspace pins the fanout contract
 // from the PR #1429 review: until the WS client supports scope-subscribe and
-// reconnect-replay, high-frequency task/chat events MUST keep going through
-// workspace fanout. Routing them via BroadcastToScope("task"|"chat", ...)
-// with no client-side subscriber would silently drop every chat / task
-// message and break the live timeline + chat unread badges.
-func TestRegisterListeners_TaskChatGoToWorkspace(t *testing.T) {
+// reconnect-replay, high-frequency task events must keep going through
+// workspace fanout.
+func TestRegisterListeners_TaskGoToWorkspace(t *testing.T) {
 	cases := []struct {
 		name      string
 		eventType string
 		taskID    string
-		chatID    string
 	}{
-		{"task:message with TaskID", protocol.EventTaskMessage, "task-1", ""},
-		{"task:progress with TaskID", protocol.EventTaskProgress, "task-2", ""},
-		{"chat:message with ChatSessionID", protocol.EventChatMessage, "", "chat-1"},
-		{"chat:done with ChatSessionID", protocol.EventChatDone, "", "chat-2"},
-		{"chat:session_read with ChatSessionID", protocol.EventChatSessionRead, "", "chat-3"},
+		{"task:message with TaskID", protocol.EventTaskMessage, "task-1"},
+		{"task:progress with TaskID", protocol.EventTaskProgress, "task-2"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -79,11 +73,10 @@ func TestRegisterListeners_TaskChatGoToWorkspace(t *testing.T) {
 			registerListeners(bus, fb)
 
 			bus.Publish(events.Event{
-				Type:          tc.eventType,
-				WorkspaceID:   "ws-1",
-				TaskID:        tc.taskID,
-				ChatSessionID: tc.chatID,
-				Payload:       map[string]any{"hello": "world"},
+				Type:        tc.eventType,
+				WorkspaceID: "ws-1",
+				TaskID:      tc.taskID,
+				Payload:     map[string]any{"hello": "world"},
 			})
 
 			if len(fb.scopeCalls) != 0 {

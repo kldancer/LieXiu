@@ -18,28 +18,24 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/multica-ai/multica/server/internal/analytics"
-	"github.com/multica-ai/multica/server/internal/auth"
-	"github.com/multica-ai/multica/server/internal/cloudruntime"
-	"github.com/multica-ai/multica/server/internal/daemonws"
-	"github.com/multica-ai/multica/server/internal/events"
-	"github.com/multica-ai/multica/server/internal/integrations/channel/engine"
-	composio "github.com/multica-ai/multica/server/internal/integrations/composio"
-	"github.com/multica-ai/multica/server/internal/integrations/dingtalk"
-	"github.com/multica-ai/multica/server/internal/integrations/ghsnapshot"
-	"github.com/multica-ai/multica/server/internal/integrations/lark"
-	"github.com/multica-ai/multica/server/internal/integrations/slack"
-	"github.com/multica-ai/multica/server/internal/integrations/wecom"
-	obsmetrics "github.com/multica-ai/multica/server/internal/metrics"
-	"github.com/multica-ai/multica/server/internal/middleware"
-	"github.com/multica-ai/multica/server/internal/realtime"
-	"github.com/multica-ai/multica/server/internal/service"
-	"github.com/multica-ai/multica/server/internal/storage"
-	"github.com/multica-ai/multica/server/internal/util"
-	"github.com/multica-ai/multica/server/internal/util/secretbox"
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
-	"github.com/multica-ai/multica/server/pkg/featureflag"
-	"github.com/multica-ai/multica/server/pkg/llm"
+	"github.com/kailonyang/liexiu/server/internal/analytics"
+	"github.com/kailonyang/liexiu/server/internal/auth"
+	"github.com/kailonyang/liexiu/server/internal/cloudruntime"
+	"github.com/kailonyang/liexiu/server/internal/daemonws"
+	"github.com/kailonyang/liexiu/server/internal/events"
+	"github.com/kailonyang/liexiu/server/internal/integrations/ghsnapshot"
+	obsmetrics "github.com/kailonyang/liexiu/server/internal/metrics"
+	"github.com/kailonyang/liexiu/server/internal/middleware"
+	"github.com/kailonyang/liexiu/server/internal/realtime"
+	"github.com/kailonyang/liexiu/server/internal/service"
+	"github.com/kailonyang/liexiu/server/internal/service/localinstance"
+	"github.com/kailonyang/liexiu/server/internal/service/orchestration"
+	"github.com/kailonyang/liexiu/server/internal/storage"
+	"github.com/kailonyang/liexiu/server/internal/util"
+	"github.com/kailonyang/liexiu/server/internal/util/secretbox"
+	db "github.com/kailonyang/liexiu/server/pkg/db/generated"
+	"github.com/kailonyang/liexiu/server/pkg/featureflag"
+	"github.com/kailonyang/liexiu/server/pkg/llm"
 )
 
 // randomID returns a random 16-byte hex string used as a request ID for
@@ -61,31 +57,21 @@ type dbExecutor interface {
 }
 
 type Config struct {
-	AllowSignup         bool
-	AllowedEmails       []string
-	AllowedEmailDomains []string
-	// DisableWorkspaceCreation, when true, makes POST /api/workspaces return
-	// 403 for every caller. There is no role/owner exception because the repo
-	// has no platform-admin concept; operators bootstrap the workspace with
-	// the flag off, then flip it on and restart so subsequent users join via
-	// invitation only. The public /api/config endpoint mirrors this flag so
-	// the UI can hide every "Create workspace" affordance — see #3433.
-	DisableWorkspaceCreation bool
+	OwnerBootstrapSecret string
 	// VCSIntegrationEnabled gates the self-hosted Git provider integration
 	// (Forgejo / Gitea / GitLab) at the deployment level, independent of whether
-	// MULTICA_VCS_SECRET_KEY is set. It is the product boundary: the feature is
-	// intended for self-hosted Multica only (where Multica and the Git instance
+	// LIEXIU_VCS_SECRET_KEY is set. It is the product boundary: the feature is
+	// intended for self-hosted LieXiu only (where LieXiu and the Git instance
 	// can share a network), and is left off on the managed cloud — connect,
 	// rotate, and webhook handlers reject when it is false, and /api/config
 	// omits it so the UI hides the whole section rather than showing a
 	// "missing key" message a cloud user cannot act on. Populated from
-	// MULTICA_VCS_INTEGRATION_ENABLED; the self-host compose defaults it on.
+	// LIEXIU_VCS_INTEGRATION_ENABLED; the self-host compose defaults it on.
 	VCSIntegrationEnabled bool
 	// PublicURL is the absolute base URL the API is reachable at from the
-	// public internet, with no trailing slash (e.g. "https://multica.ai").
-	// Used only to build webhook_url responses for autopilot webhook triggers
-	// — never for auth, routing, or workspace resolution. Empty when unset,
-	// in which case clients fall back to webhook_path + their own origin.
+	// public internet, with no trailing slash (e.g. "https://liexiu.ai").
+	// Used to build durable file/avatar and VCS webhook URLs — never for auth,
+	// routing, or workspace resolution. Empty when unset.
 	// Reading the public host from request headers (Host / X-Forwarded-Host)
 	// is intentionally avoided so a misconfigured reverse proxy cannot trick
 	// the server into minting webhook URLs pointing at an attacker-controlled
@@ -94,7 +80,7 @@ type Config struct {
 	// TrustedProxies are CIDRs whose source IP we trust to set
 	// X-Forwarded-For / X-Real-IP. Empty means "trust nothing": the rate
 	// limiter uses r.RemoteAddr exclusively. Populated via the
-	// MULTICA_TRUSTED_PROXIES env var (comma-separated CIDRs, e.g.
+	// LIEXIU_TRUSTED_PROXIES env var (comma-separated CIDRs, e.g.
 	// "10.0.0.0/8,127.0.0.1/32"). This is specifically to keep the per-IP
 	// webhook limiter from being bypassed by a spoofed XFF on deployments
 	// without a header-stripping reverse proxy in front.
@@ -117,9 +103,9 @@ type Config struct {
 	// MUL-4309; LLM access is internal-only now. When both LLMAPIKey and
 	// LLMBaseURL are empty the layer is disabled and callers fall back
 	// silently (see maybeGenerateChatTitleAsync).
-	//   - LLMAPIKey       -> MULTICA_LLM_API_KEY
-	//   - LLMBaseURL       -> MULTICA_LLM_BASE_URL (OpenAI or any compatible gateway)
-	//   - LLMDefaultModel  -> MULTICA_LLM_DEFAULT_MODEL (used when a request omits `model`)
+	//   - LLMAPIKey       -> LIEXIU_LLM_API_KEY
+	//   - LLMBaseURL       -> LIEXIU_LLM_BASE_URL (OpenAI or any compatible gateway)
+	//   - LLMDefaultModel  -> LIEXIU_LLM_DEFAULT_MODEL (used when a request omits `model`)
 	LLMAPIKey       string
 	LLMBaseURL      string
 	LLMDefaultModel string
@@ -162,10 +148,9 @@ type Handler struct {
 	DaemonWorkspaceRefresh WorkspaceSetRefreshNotifier
 	Bus                    *events.Bus
 	TaskService            *service.TaskService
-	PluginService          *service.PluginService
+	Orchestration          *orchestration.Service
+	LocalInstance          *localinstance.Repository
 	IssueService           *service.IssueService
-	AutopilotService       *service.AutopilotService
-	EmailService           *service.EmailService
 	UpdateStore            UpdateStore
 	ModelListStore         ModelListStore
 	LocalSkillListStore    LocalSkillListStore
@@ -189,7 +174,7 @@ type Handler struct {
 	// Metrics is the shared business-metrics collector built by main.go.
 	// May be nil in tests / self-hosted with the metrics listener disabled;
 	// every Record* method is nil-safe and obsmetrics.RecordEvent treats a
-	// nil Metrics as "PostHog only".
+	// nil Metrics as local observation disabled.
 	Metrics                      *obsmetrics.BusinessMetrics
 	PATCache                     *auth.PATCache
 	DaemonTokenCache             *auth.DaemonTokenCache
@@ -197,118 +182,8 @@ type Handler struct {
 	WebhookRateLimiter           WebhookRateLimiter
 	WebhookIPRateLimiter         WebhookRateLimiter
 	WebhookAbsoluteIPRateLimiter WebhookRateLimiter
-	WebhookDeliveryWorker        *WebhookDeliveryWorker
 	CloudRuntime                 cloudRuntimeProxy
-	// Lark integration. All three are nil when the Lark master key
-	// (MULTICA_LARK_SECRET_KEY) is unset; the corresponding HTTP
-	// handlers return 503 in that case so a misconfigured self-host
-	// deployment surfaces a clear error instead of silently using a
-	// zero key. Wired in cmd/server/router.go after handler.New.
-	LarkInstallations *lark.InstallationService
-	LarkBindingTokens *lark.BindingTokenService
-	// LarkRegistration owns the device-flow install lifecycle: begin
-	// a registration session against accounts.feishu.cn, poll, and
-	// on success write lark_installation + the installer's
-	// lark_user_binding in one DB transaction. Nil when the at-rest
-	// key is unset or the RegistrationService failed to construct at
-	// boot.
-	LarkRegistration *lark.RegistrationService
-	// LarkAPIClient is the live transport that backs SendInteractiveCard,
-	// PatchInteractiveCard, SendBindingPromptCard, GetBotInfo. The
-	// router wires the real Lark HTTP client whenever
-	// MULTICA_LARK_SECRET_KEY is set; tests that need a no-op
-	// behaviour can swap in `lark.NewStubAPIClient(...)` directly. The
-	// UI consults IsConfigured() to decide whether to surface install
-	// entry points.
-	LarkAPIClient lark.APIClient
-	// Composio integration (MUL-3720). Nil when COMPOSIO_API_KEY is unset;
-	// the composio HTTP handlers return 503 in that case. Wired in
-	// cmd/server/router.go after handler.New.
-	Composio *composio.Service
-	// ChannelSupervisor owns the per-installation supervisor goroutines
-	// that hold the §4.4 WS lease and drive each channel.Channel
-	// (MUL-3620 generalized the Feishu-only Hub into this channel-agnostic
-	// engine). The router constructs it UNCONDITIONALLY — it drives any
-	// channel type, not just Feishu, so it does not depend on the Lark
-	// master key; each platform registers its Factory only when configured
-	// (Feishu when MULTICA_LARK_SECRET_KEY is set). The router does NOT
-	// call Run; the process owner (main.go) starts it under a long-running
-	// context and joins via WaitWithTimeout (bounded, fenced by
-	// ShutdownTimeout) during graceful shutdown so the lease renewer yields
-	// cleanly when the DB is healthy without blocking process exit if the
-	// pool is frozen — at worst the next replica waits the full TTL.
-	ChannelSupervisor *engine.Supervisor
-	// ChannelRouter is the channel-agnostic inbound pipeline (the shared
-	// handler the Supervisor injects into every Channel). main.go calls
-	// Drain on it during shutdown, after the Supervisor has stopped
-	// delivering events, to flush debounced run triggers and join in-flight
-	// reply goroutines. Built unconditionally (even without Lark).
-	ChannelRouter *engine.Router
-	// ChannelMediaReconciler settles the channel-media intent ledger
-	// (uploaded-but-unbound object reclaim). Built in cmd/server/router.go
-	// where the storage backend exists; main.go starts it as an independent
-	// worker goroutine. Nil when no storage backend is configured.
-	ChannelMediaReconciler *service.ChannelMediaReconciler
-	// SlackInstall owns the bring-your-own-app Slack install lifecycle (register
-	// pasted tokens / list / revoke) and the at-rest encryption of each app's bot
-	// + app tokens (MUL-3666). Nil unless MULTICA_SLACK_SECRET_KEY is set.
-	SlackInstall *slack.InstallService
-	// SlackBindingTokens mints/redeems the user-binding tokens behind the
-	// "link your Slack account" prompt (MUL-3666). Nil unless Slack is
-	// configured (MULTICA_SLACK_SECRET_KEY set).
-	SlackBindingTokens *slack.BindingTokenService
-	// DingTalkInstall owns the bring-your-own-app DingTalk lifecycle. It is nil
-	// unless MULTICA_DINGTALK_SECRET_KEY is configured.
-	DingTalkInstall *dingtalk.InstallService
-	// DingTalkBindingTokens mints and redeems the single-use account-link tokens.
-	DingTalkBindingTokens *dingtalk.BindingTokenService
-	// SlackHistory backs the agent-facing `multica chat history` command: it
-	// reads a chat session's bound Slack conversation on demand (MUL-3871). Nil
-	// unless Slack is configured; GetChatChannelHistory then reports "no channel
-	// integration". A future platform satisfies the same reader interface.
-	SlackHistory ChatChannelHistoryReader
-	// WecomStore is the read/write handle over channel_installation rows scoped
-	// to channel_type='wecom'. Nil disables the wecom Web-UI endpoints (they
-	// return 503) and prevents boot from wiring the smart-bot supervisor.
-	WecomStore *wecom.Store
-	// WecomCredentials unseals a wecom installation's smart-bot secret for the
-	// WebSocket subscribe frame. Nil disables the wecom integration.
-	WecomCredentials wecom.CredentialsResolver
-	// WecomBindingTokens mints/redeems the user-binding tokens behind the
-	// "link your Multica account" prompt sent to first-time WeCom users
-	// (their aibot userid is a "T"-prefixed anonymized id with no relation
-	// to their real userid or email, so an explicit binding is required —
-	// see wecom/binding.go). Nil disables the redeem endpoint (returns 503)
-	// and the OutboundReplier's binding-prompt path.
-	WecomBindingTokens WecomBindingRedeemer
-
-	// WecomCredentialProbe overrides the install-time control check. Nil in
-	// production, which gets the real handshake probe; tests inject a fake so
-	// the install path runs without a socket.
-	WecomCredentialProbe wecom.CredentialProbe
-
-	// channelFileDelivery names the channel types that can, IN THIS
-	// DEPLOYMENT, carry a file the agent produced the last hop into the
-	// conversation. It answers the claim response's
-	// chat_channel_delivers_files, which the agent's PER-TURN prompt turns into
-	// either "run `multica attachment upload`" or "describe the file in words"
-	// (daemon/prompt.go). Not the brief: the brief is the prompt cache prefix and
-	// this is a per-turn verdict, so stating it there made one session render two
-	// briefs (MUL-5377).
-	//
-	// It is a deployment fact, not a property of the channel type, and that
-	// distinction is the whole reason it lives here. Whether the file arrives
-	// takes TWO things: an adapter that goes back for the bound attachment,
-	// and object storage for it to go back to. The first is a property of the
-	// code, the second of the configuration, and only the process that wired
-	// both knows the conjunction. A daemon that answers this from the channel
-	// type alone promises delivery a storage-less deployment cannot perform.
-	//
-	// Written once at boot by DeclareChannelFileDelivery (cmd/server/router.go,
-	// in the same branch that passes the storage to the adapter, so the two
-	// cannot drift), read-only from then on. Nil means no channel delivers
-	// files, which is what a deployment with no storage configured gets.
-	channelFileDelivery map[string]bool
+	// Obsolete external integration state was removed in Wave 1C.6.
 	// LLM is the basic LLM API layer (MUL-4238): a thin wrapper over the
 	// OpenAI Go SDK backing server-internal one-shot LLM helpers such as chat
 	// title generation. The generic passthrough endpoints were removed in
@@ -318,7 +193,7 @@ type Handler struct {
 	LLM *llm.Client
 	// VCSSecretBox encrypts/decrypts per-workspace Git provider access tokens and
 	// webhook secrets at rest (Forgejo / Gitea / GitLab). Nil when
-	// MULTICA_VCS_SECRET_KEY is unset; the connect/webhook handlers return 503
+	// LIEXIU_VCS_SECRET_KEY is unset; the connect/webhook handlers return 503
 	// in that case so a misconfigured self-host deployment surfaces a clear
 	// error rather than silently storing plaintext. Wired in
 	// cmd/server/router.go after New.
@@ -333,7 +208,7 @@ type Handler struct {
 	cfg       Config
 }
 
-func New(queries *db.Queries, txStarter txStarter, hub *realtime.Hub, bus *events.Bus, emailService *service.EmailService, store storage.Storage, cfSigner *auth.CloudFrontSigner, analyticsClient analytics.Client, cfg Config, daemonHubs ...*daemonws.Hub) *Handler {
+func New(queries *db.Queries, txStarter txStarter, hub *realtime.Hub, bus *events.Bus, store storage.Storage, cfSigner *auth.CloudFrontSigner, analyticsClient analytics.Client, cfg Config, daemonHubs ...*daemonws.Hub) *Handler {
 	var executor dbExecutor
 	if candidate, ok := txStarter.(dbExecutor); ok {
 		executor = candidate
@@ -371,24 +246,18 @@ func New(queries *db.Queries, txStarter txStarter, hub *realtime.Hub, bus *event
 
 	taskSvc := service.NewTaskService(queries, txStarter, hub, bus, daemonHub)
 	taskSvc.Analytics = analyticsClient
-	// Chat follow-up suggestions run through the same internal LLM layer that
-	// backs auto-titling. A deployment with no MULTICA_LLM_* configuration gets
-	// a disabled client, which turns the feature off rather than failing.
-	taskSvc.QuickActions = llmClient
 	h := &Handler{
 		Queries:                      queries,
 		DB:                           executor,
 		TxStarter:                    txStarter,
+		LocalInstance:                localinstance.NewRepository(queries, txStarter),
 		Hub:                          hub,
 		DaemonHub:                    daemonHub,
 		DaemonProfileRefresh:         daemonProfileRefresh,
 		DaemonWorkspaceRefresh:       daemonWorkspaceRefresh,
 		Bus:                          bus,
 		TaskService:                  taskSvc,
-		PluginService:                service.NewPluginService(queries, txStarter),
 		IssueService:                 service.NewIssueService(queries, txStarter, bus, analyticsClient, taskSvc),
-		AutopilotService:             service.NewAutopilotService(queries, txStarter, bus, taskSvc),
-		EmailService:                 emailService,
 		UpdateStore:                  NewInMemoryUpdateStore(),
 		ModelListStore:               NewInMemoryModelListStore(),
 		ModelCatalogCache:            NewInMemoryModelCatalogCache(),
@@ -409,8 +278,6 @@ func New(queries *db.Queries, txStarter txStarter, hub *realtime.Hub, bus *event
 		LLM: llmClient,
 		cfg: cfg,
 	}
-	h.WebhookDeliveryWorker = NewWebhookDeliveryWorker(h)
-
 	// GitHub API snapshot pipeline for PR cards (MUL-5265). Built
 	// unconditionally but inert (every trigger no-ops) when the App private key
 	// is unconfigured, so the feature degrades cleanly. main.go calls
@@ -562,45 +429,6 @@ func parseUUIDSliceOrBadRequest(w http.ResponseWriter, ids []string, fieldName s
 	return uuids, true
 }
 
-// DeclareChannelFileDelivery records that this deployment can put a file the
-// agent produced into a channelType conversation. Call it at boot, from the
-// same branch that gives the adapter what it needs to perform the delivery —
-// the point is that one condition produces both the capability and the claim
-// it is announced under, so a deployment cannot end up promising a hop it does
-// not have.
-//
-// Not safe to call once the server is serving: the map it writes is read
-// without a lock by every task claim.
-func (h *Handler) DeclareChannelFileDelivery(channelType string) {
-	if channelType == "" {
-		return
-	}
-	if h.channelFileDelivery == nil {
-		h.channelFileDelivery = map[string]bool{}
-	}
-	h.channelFileDelivery[channelType] = true
-}
-
-// channelDeliversFiles answers chat_channel_delivers_files for one claim.
-//
-// The default is false in every direction that is not an explicit declaration:
-// a channel nobody declared, a deployment with no object storage, an adapter
-// that was never wired. False is the safe answer because of what the two
-// answers cost. False when the file could have travelled loses a delivery the
-// agent then describes in words. True when it cannot has the agent write "the
-// chart is attached" into a room where nothing is attached, and the reader is
-// left hunting for it.
-//
-// Web chat (empty channel type) is not answered here. It has no adapter and no
-// last hop to have — the browser renders the attachment card off the same bind
-// — and the prompt handles it in its own branch.
-func (h *Handler) channelDeliversFiles(channelType string) bool {
-	if channelType == "" {
-		return false
-	}
-	return h.channelFileDelivery[channelType]
-}
-
 // publish sends a domain event through the event bus.
 func (h *Handler) publish(eventType, workspaceID, actorType, actorID string, payload any) {
 	h.Bus.Publish(events.Event{
@@ -639,19 +467,6 @@ func (h *Handler) publishTask(eventType, workspaceID, actorType, actorID, taskID
 		ActorID:     actorID,
 		TaskID:      taskID,
 		Payload:     payload,
-	})
-}
-
-// publishChat is publish() plus a ChatSessionID hint so the realtime layer
-// can route the event to the per-chat-session scope.
-func (h *Handler) publishChat(eventType, workspaceID, actorType, actorID, chatSessionID string, payload any) {
-	h.Bus.Publish(events.Event{
-		Type:          eventType,
-		WorkspaceID:   workspaceID,
-		ActorType:     actorType,
-		ActorID:       actorID,
-		ChatSessionID: chatSessionID,
-		Payload:       payload,
 	})
 }
 
@@ -1045,46 +860,5 @@ func (h *Handler) loadAgentForUser(w http.ResponseWriter, r *http.Request, agent
 		writeError(w, http.StatusNotFound, "agent not found")
 		return db.Agent{}, false
 	}
-	if agent.Kind != "user" {
-		writeError(w, http.StatusNotFound, "agent not found")
-		return db.Agent{}, false
-	}
 	return agent, true
-}
-
-func (h *Handler) loadInboxItemForUser(w http.ResponseWriter, r *http.Request, itemID string) (db.InboxItem, bool) {
-	userID, ok := requireUserID(w, r)
-	if !ok {
-		return db.InboxItem{}, false
-	}
-
-	workspaceID := h.resolveWorkspaceID(r)
-	if workspaceID == "" {
-		writeError(w, http.StatusBadRequest, "workspace_id is required")
-		return db.InboxItem{}, false
-	}
-
-	itemUUID, ok := parseUUIDOrBadRequest(w, itemID, "inbox item id")
-	if !ok {
-		return db.InboxItem{}, false
-	}
-	wsUUID, ok := parseUUIDOrBadRequest(w, workspaceID, "workspace id")
-	if !ok {
-		return db.InboxItem{}, false
-	}
-
-	item, err := h.Queries.GetInboxItemInWorkspace(r.Context(), db.GetInboxItemInWorkspaceParams{
-		ID:          itemUUID,
-		WorkspaceID: wsUUID,
-	})
-	if err != nil {
-		writeError(w, http.StatusNotFound, "inbox item not found")
-		return db.InboxItem{}, false
-	}
-
-	if item.RecipientType != "member" || uuidToString(item.RecipientID) != userID {
-		writeError(w, http.StatusNotFound, "inbox item not found")
-		return db.InboxItem{}, false
-	}
-	return item, true
 }

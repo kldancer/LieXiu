@@ -1,6 +1,6 @@
 "use client";
 
-import type { Agent, MemberWithUser } from "@multica/core/types";
+import type { Agent, MemberWithUser } from "@liexiu/core/types";
 import {
   SettingsCard,
   SettingsSection,
@@ -37,9 +37,6 @@ export function AgentAccessSettings({
           ownerId={agent.owner_id}
           canEdit={
             currentUserId !== null && agent.owner_id === currentUserId
-          }
-          hasComposioAllowlist={
-            (agent.composio_toolkit_allowlist ?? []).length > 0
           }
           onDirtyChange={onDirtyChange}
           onChange={(next) => onUpdate(agent.id, next)}

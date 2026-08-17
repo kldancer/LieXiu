@@ -1,4 +1,4 @@
-import type { AgentTask } from "@multica/core/types";
+import type { AgentTask } from "@liexiu/core/types";
 import { useT } from "../../i18n";
 import { stripMentionMarkdown } from "../utils/strip-mention-markdown";
 
@@ -11,7 +11,7 @@ import { stripMentionMarkdown } from "../utils/strip-mention-markdown";
  * Human label for what caused this run.
  *
  * Primary source: the canonical snapshot taken at task creation time
- * (comment text / autopilot title). Survives source edits/deletes and is
+ * (comment text). Survives source edits/deletes and is
  * information-dense — far better than a structural label.
  *
  * Retry tasks inherit the parent's trigger_summary on the DB side (so the
@@ -21,8 +21,8 @@ import { stripMentionMarkdown } from "../utils/strip-mention-markdown";
  * summary is inherited.
  *
  * Fallback chain for legacy tasks created before the snapshot field shipped,
- * OR for sources we don't snapshot (direct assignment / chat): degrade to a
- * short structural label by trigger source. New tasks (post-061 migration)
+ * or for direct assignments: degrade to a short structural label by trigger
+ * source. New tasks (post-061 migration)
  * almost always hit the snapshot path.
  */
 export function useTriggerText(task: AgentTask): string {
@@ -40,7 +40,6 @@ export function useTriggerText(task: AgentTask): string {
       ? t(($) => $.execution_log.trigger_retry_attempt, { attempt: task.attempt })
       : t(($) => $.execution_log.trigger_retry);
   }
-  if (task.autopilot_run_id) return t(($) => $.execution_log.trigger_autopilot);
   if (task.trigger_comment_id) return t(($) => $.execution_log.trigger_comment);
   // Assignment-triggered run that carried a handoff note: show the note inline
   // (truncated by the caller) the way comment triggers show their text, so the

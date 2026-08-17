@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import type { ReactElement, ReactNode } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import type { Attachment as AttachmentRecord } from "@multica/core/types";
+import type { Attachment as AttachmentRecord } from "@liexiu/core/types";
 
 const {
   getAttachmentTextContentMock,
@@ -26,7 +26,7 @@ const {
   openByUrlMock: vi.fn(),
 }));
 
-vi.mock("@multica/core/api", () => ({
+vi.mock("@liexiu/core/api", () => ({
   api: {
     getAttachmentTextContent: getAttachmentTextContentMock,
     getAttachment: getAttachmentMock,
@@ -83,8 +83,8 @@ vi.mock("../navigation", () => ({
   }),
 }));
 
-vi.mock("@multica/core/paths", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@multica/core/paths")>();
+vi.mock("@liexiu/core/paths", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@liexiu/core/paths")>();
   return {
     ...actual,
     useWorkspaceSlug: () => "acme",
@@ -127,7 +127,7 @@ vi.mock("./attachment-download-context", () => ({
 }));
 
 import { Attachment } from "./attachment";
-import { configStore } from "@multica/core/config";
+import { configStore } from "@liexiu/core/config";
 
 function makeRecord(overrides: Partial<AttachmentRecord> = {}): AttachmentRecord {
   return {
@@ -135,8 +135,6 @@ function makeRecord(overrides: Partial<AttachmentRecord> = {}): AttachmentRecord
     workspace_id: "ws-1",
     issue_id: null,
     comment_id: null,
-    chat_session_id: null,
-    chat_message_id: null,
     uploader_type: "member",
     uploader_id: "u-1",
     filename: "shot.png",
@@ -270,7 +268,7 @@ describe("Attachment — image dispatch", () => {
   it("renders the configured CDN URL when description markdown stores the stable API URL", () => {
     configStore.setState({ cdnDomain: "cdn.example.test" });
     const id = "11111111-2222-3333-4444-555555555555";
-    const markdownUrl = `https://multica-api.copilothub.ai/api/attachments/${id}/download`;
+    const markdownUrl = `https://liexiu-api.copilothub.ai/api/attachments/${id}/download`;
     const att = makeRecord({
       id,
       url: "https://cdn.example.test/uploads/ws/shot.png",
@@ -337,7 +335,7 @@ describe("Attachment — image dispatch", () => {
   it("opens preview with the same resolved media URL when a reopened draft record has no download_url", () => {
     configStore.setState({ cdnDomain: "cdn.example.test" });
     const id = "11111111-2222-3333-4444-555555555555";
-    const markdownUrl = `https://multica-api.copilothub.ai/api/attachments/${id}/download`;
+    const markdownUrl = `https://liexiu-api.copilothub.ai/api/attachments/${id}/download`;
     const mediaUrl = "https://cdn.example.test/uploads/ws/shot.png";
     const att = makeRecord({
       id,
@@ -444,10 +442,10 @@ describe("Attachment — image dispatch", () => {
     // native <img> fetch, so the renderer must swap in a freshly signed URL
     // from authenticated attachment metadata — the reopened-draft case where
     // the persisted record deliberately strips the expired download_url.
-    getBaseUrlMock.mockReturnValue("https://multica-api.copilothub.ai");
+    getBaseUrlMock.mockReturnValue("https://liexiu-api.copilothub.ai");
     configStore.setState({ cdnDomain: "cdn.example.test", cdnSigned: true });
     const id = "11111111-2222-3333-4444-555555555555";
-    const markdownUrl = `https://multica-api.copilothub.ai/api/attachments/${id}/download`;
+    const markdownUrl = `https://liexiu-api.copilothub.ai/api/attachments/${id}/download`;
     const signed =
       "https://cdn.example.test/uploads/ws/shot.png?Signature=fresh&Key-Pair-Id=K";
     const att = makeRecord({
@@ -481,10 +479,10 @@ describe("Attachment — image dispatch", () => {
     // is still recoverable from the URL itself. Token-mode clients must not
     // depend on the context resolver having a hydrated record before they can
     // fetch fresh signed metadata.
-    getBaseUrlMock.mockReturnValue("https://multica-api.copilothub.ai");
+    getBaseUrlMock.mockReturnValue("https://liexiu-api.copilothub.ai");
     configStore.setState({ cdnDomain: "cdn.example.test", cdnSigned: true });
     const id = "11111111-2222-3333-4444-555555555555";
-    const markdownUrl = `https://multica-api.copilothub.ai/api/attachments/${id}/download`;
+    const markdownUrl = `https://liexiu-api.copilothub.ai/api/attachments/${id}/download`;
     const signed =
       "https://cdn.example.test/uploads/ws/shot.png?Signature=fresh&Key-Pair-Id=K";
     getAttachmentMock.mockResolvedValue(makeRecord({ id, download_url: signed }));
@@ -513,12 +511,12 @@ describe("Attachment — image dispatch", () => {
     // there is nothing to swap in: the renderer must pull the bytes through
     // the authenticated client and paint them from an object URL instead of
     // keeping a src it already knows 401s.
-    getBaseUrlMock.mockReturnValue("https://multica-api.copilothub.ai");
+    getBaseUrlMock.mockReturnValue("https://liexiu-api.copilothub.ai");
     const id = "11111111-2222-3333-4444-555555555555";
-    const markdownUrl = `https://multica-api.copilothub.ai/api/attachments/${id}/download`;
+    const markdownUrl = `https://liexiu-api.copilothub.ai/api/attachments/${id}/download`;
     const att = makeRecord({
       id,
-      url: "https://minio:9000/multica/uploads/ws/shot.png",
+      url: "https://minio:9000/liexiu/uploads/ws/shot.png",
       markdown_url: markdownUrl,
       download_url: "",
     });
@@ -555,13 +553,13 @@ describe("Attachment — image dispatch", () => {
   it("copies the durable URL, not the session-local object URL (MUL-5445)", async () => {
     // A `blob:` URL resolves only inside this renderer session, so Copy Link
     // must keep handing out the persisted attachment URL.
-    getBaseUrlMock.mockReturnValue("https://multica-api.copilothub.ai");
+    getBaseUrlMock.mockReturnValue("https://liexiu-api.copilothub.ai");
     const id = "11111111-2222-3333-4444-555555555555";
-    const markdownUrl = `https://multica-api.copilothub.ai/api/attachments/${id}/download`;
+    const markdownUrl = `https://liexiu-api.copilothub.ai/api/attachments/${id}/download`;
     resolverState.attachments = [
       makeRecord({
         id,
-        url: "https://minio:9000/multica/uploads/ws/shot.png",
+        url: "https://minio:9000/liexiu/uploads/ws/shot.png",
         markdown_url: markdownUrl,
         download_url: "",
       }),
@@ -600,15 +598,15 @@ describe("Attachment — image dispatch", () => {
     // A file card only needs a link. Downloading a large archive into
     // renderer memory to draw a chip would be a bad trade, so the byte
     // fallback stays image-only.
-    getBaseUrlMock.mockReturnValue("https://multica-api.copilothub.ai");
+    getBaseUrlMock.mockReturnValue("https://liexiu-api.copilothub.ai");
     const id = "11111111-2222-3333-4444-555555555555";
-    const markdownUrl = `https://multica-api.copilothub.ai/api/attachments/${id}/download`;
+    const markdownUrl = `https://liexiu-api.copilothub.ai/api/attachments/${id}/download`;
     resolverState.attachments = [
       makeRecord({
         id,
         filename: "archive.zip",
         content_type: "application/zip",
-        url: "https://minio:9000/multica/uploads/ws/archive.zip",
+        url: "https://minio:9000/liexiu/uploads/ws/archive.zip",
         markdown_url: markdownUrl,
         download_url: "",
       }),
@@ -639,10 +637,10 @@ describe("Attachment — image dispatch", () => {
   it("prefers the signed URL over a byte fetch when the server can presign (MUL-5445)", async () => {
     // Presign / CloudFront deployments already hand back a natively-loadable
     // URL. Pulling the bytes as well would double every image download.
-    getBaseUrlMock.mockReturnValue("https://multica-api.copilothub.ai");
+    getBaseUrlMock.mockReturnValue("https://liexiu-api.copilothub.ai");
     configStore.setState({ cdnDomain: "cdn.example.test", cdnSigned: true });
     const id = "11111111-2222-3333-4444-555555555555";
-    const markdownUrl = `https://multica-api.copilothub.ai/api/attachments/${id}/download`;
+    const markdownUrl = `https://liexiu-api.copilothub.ai/api/attachments/${id}/download`;
     const signed =
       "https://cdn.example.test/uploads/ws/shot.png?Signature=fresh&Key-Pair-Id=K";
     getAttachmentMock.mockResolvedValue(makeRecord({ id, download_url: signed }));
@@ -724,14 +722,14 @@ describe("Attachment — image dispatch", () => {
     const att = makeRecord({
       // Raw private-bucket URL — must NOT be the rendered src.
       url: "https://prod.s3.amazonaws.com/key.png",
-      markdown_url: "https://api.multica.test/api/attachments/att-1/download",
+      markdown_url: "https://api.liexiu.test/api/attachments/att-1/download",
       // bare API path on download_url — no signature query.
       download_url: "/api/attachments/att-1/download",
     });
     renderWithQuery(<Attachment attachment={{ kind: "record", attachment: att }} />);
     const img = document.querySelector("img");
     expect(img?.getAttribute("src")).toBe(
-      "https://api.multica.test/api/attachments/att-1/download",
+      "https://api.liexiu.test/api/attachments/att-1/download",
     );
     expect(img?.getAttribute("src")).not.toContain("prod.s3.amazonaws.com");
   });

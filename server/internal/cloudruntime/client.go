@@ -46,24 +46,6 @@ type Request struct {
 	Body      []byte
 	UserID    string
 	RequestID string
-
-	// Op is the high-level operation label fed to the request metric (e.g.
-	// "provision", "terminate", "status", "gateway"). Empty defaults to a
-	// path-derived bucket — useful for ad-hoc proxy calls that don't have
-	// an obvious symbolic name.
-	Op string
-
-	// Headers carries arbitrary outbound headers that the caller wants
-	// forwarded verbatim. They are applied AFTER the client's defaults
-	// (Accept, Content-Type, X-User-ID, X-Request-ID) so a caller
-	// supplying any of those overrides them — useful when proxying a
-	// request whose Content-Type is not application/json or whose
-	// signed body must not be touched (e.g. the Stripe webhook
-	// passthrough preserving Stripe-Signature alongside the raw body).
-	//
-	// Nil / empty is the common case; existing call sites can ignore
-	// this field.
-	Headers http.Header
 }
 
 type Response struct {
@@ -113,7 +95,7 @@ func (c *Client) Do(ctx context.Context, req Request) (*Response, error) {
 		return nil, ErrDisabled
 	}
 
-	op := inferCloudRuntimeOp(req.Op, req.Method, req.Path)
+	op := inferCloudRuntimeOp(req.Method, req.Path)
 	start := time.Now()
 	resp, err := c.doInner(ctx, req)
 	if c.recorder != nil {
@@ -148,25 +130,6 @@ func (c *Client) doInner(ctx context.Context, req Request) (*Response, error) {
 	if len(req.Body) > 0 {
 		httpReq.Header.Set("Content-Type", "application/json")
 	}
-	// Caller-supplied headers go before the X-User-ID / X-Request-ID
-	// stamps, since those are derived from authenticated context and
-	// must not be overridable by the caller. Defaults (Accept,
-	// Content-Type) ARE overridable — a webhook passthrough may need
-	// to preserve a non-JSON Content-Type.
-	for k, vs := range req.Headers {
-		// Skip the headers we stamp authoritatively below. Canonicalize
-		// once per key — http.CanonicalHeaderKey allocates on its
-		// fast path so calling it twice per iteration would double
-		// the per-request header overhead for no reason.
-		canon := http.CanonicalHeaderKey(k)
-		if canon == "X-User-Id" || canon == "X-Request-Id" {
-			continue
-		}
-		httpReq.Header.Del(k)
-		for _, v := range vs {
-			httpReq.Header.Add(k, v)
-		}
-	}
 	if req.UserID != "" {
 		httpReq.Header.Set("X-User-ID", req.UserID)
 	}
@@ -195,16 +158,10 @@ func (c *Client) doInner(ctx context.Context, req Request) (*Response, error) {
 }
 
 // inferCloudRuntimeOp returns the symbolic op label for the request metric.
-// Callers may pin Request.Op explicitly; otherwise the bucket is derived
-// from the path so existing call sites don't need to change.
-func inferCloudRuntimeOp(op, method, path string) string {
-	op = strings.ToLower(strings.TrimSpace(op))
-	if op != "" {
-		return op
-	}
+// The bucket is derived from the request path so callers do not need to
+// provide a separate operation label.
+func inferCloudRuntimeOp(method, path string) string {
 	switch {
-	case strings.Contains(path, "/billing"):
-		return "billing"
 	case strings.Contains(path, "/gateway") || strings.Contains(path, "/proxy"):
 		return "gateway"
 	case strings.Contains(path, "/exec"):

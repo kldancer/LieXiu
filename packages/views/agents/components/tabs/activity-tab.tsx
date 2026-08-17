@@ -6,8 +6,6 @@ import {
   ArrowUpRight,
   CircleHelp,
   Hash,
-  MessageSquare,
-  Workflow,
   X,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -15,22 +13,22 @@ import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
-} from "@multica/ui/components/ui/tooltip";
-import { NumberFlow } from "@multica/ui/components/ui/number-flow";
-import { Skeleton } from "@multica/ui/components/ui/skeleton";
+} from "@liexiu/ui/components/ui/tooltip";
+import { NumberFlow } from "@liexiu/ui/components/ui/number-flow";
+import { Skeleton } from "@liexiu/ui/components/ui/skeleton";
 import { useQueries, useQuery } from "@tanstack/react-query";
-import type { Agent, AgentTask, Issue } from "@multica/core/types";
+import type { Agent, AgentTask, Issue } from "@liexiu/core/types";
 import {
   type AgentActivity,
   agentTaskSnapshotOptions,
   agentTasksOptions,
   summarizeActivityWindow,
   useWorkspaceActivityMap,
-} from "@multica/core/agents";
-import { api } from "@multica/core/api";
-import { useWorkspaceId } from "@multica/core/hooks";
-import { useWorkspacePaths } from "@multica/core/paths";
-import { issueDetailOptions } from "@multica/core/issues/queries";
+} from "@liexiu/core/agents";
+import { api } from "@liexiu/core/api";
+import { useWorkspaceId } from "@liexiu/core/hooks";
+import { useWorkspacePaths } from "@liexiu/core/paths";
+import { issueDetailOptions } from "@liexiu/core/issues/queries";
 import { AppLink } from "../../../navigation";
 import { TranscriptButton } from "../../../common/task-transcript";
 import { AttributionBadge } from "../../../issues/components/attribution-badge";
@@ -84,12 +82,6 @@ export function ActivityTab({ agent, showPerformance = true }: ActivityTabProps)
 
   const [recentDisplayLimit, setRecentDisplayLimit] = useState(RECENT_INITIAL);
 
-  // Chat tasks are intentionally hidden across every Agent-scoped surface
-  // (list / detail / activity). They have their own UI in the chat
-  // experience; mixing them in here muddies "what is this agent doing
-  // for the team" with "what is this agent doing in private chat".
-  const isWorkflowTask = (t: AgentTask) => !t.chat_session_id;
-
   const activeTasks = useMemo(() => {
     const statusRank: Partial<Record<AgentTask["status"], number>> = {
       running: 0,
@@ -101,7 +93,6 @@ export function ActivityTab({ agent, showPerformance = true }: ActivityTabProps)
       .filter(
         (t) =>
           t.agent_id === agent.id &&
-          isWorkflowTask(t) &&
           (t.status === "running" ||
             t.status === "queued" ||
             t.status === "dispatched" ||
@@ -116,12 +107,11 @@ export function ActivityTab({ agent, showPerformance = true }: ActivityTabProps)
 
   // Most recent terminal tasks. Includes cancelled — users searching
   // "what just happened" want to see cancellations alongside completions
-  // and failures. Chat sessions filtered out for the same reason as above.
+  // and failures.
   const recentTasksAll = useMemo(() => {
     return [...agentTasks]
       .filter(
         (t) =>
-          isWorkflowTask(t) &&
           !!t.completed_at &&
           (t.status === "completed" ||
             t.status === "failed" ||
@@ -554,27 +544,15 @@ function TaskRow({
       ? isTerminalStatus
         ? t(($) => $.tab_body.activity.source_quick_create)
         : t(($) => $.tab_body.activity.source_creating_issue)
-      : task.chat_session_id
-        ? t(($) => $.tab_body.activity.source_chat_session)
-        : task.autopilot_run_id
-          ? t(($) => $.tab_body.activity.source_autopilot_run)
-          : t(($) => $.tab_body.activity.source_untracked)
+      : t(($) => $.tab_body.activity.source_untracked)
     : null;
 
   const SourceIcon = hasIssue
     ? Hash
-    : task.chat_session_id
-      ? MessageSquare
-      : task.autopilot_run_id
-        ? Workflow
-        : CircleHelp;
+    : CircleHelp;
   const sourceLabel = hasIssue
     ? t(($) => $.tab_body.activity.source_issue)
-    : task.chat_session_id
-      ? t(($) => $.tab_body.activity.source_chat)
-      : task.autopilot_run_id
-        ? t(($) => $.tab_body.activity.source_autopilot)
-        : t(($) => $.tab_body.activity.source_untracked);
+    : t(($) => $.tab_body.activity.source_untracked);
 
   const timeText =
     timeMode === "active"

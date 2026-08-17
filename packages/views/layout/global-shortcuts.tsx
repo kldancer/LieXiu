@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
-import { useSidebar } from "@multica/ui/components/ui/sidebar";
+import { useSidebar } from "@liexiu/ui/components/ui/sidebar";
 import {
   getShortcut,
   isEditableShortcutTarget,
@@ -9,13 +9,11 @@ import {
   SHORTCUT_ACTION_BY_ID,
   useShortcutStore,
   type ShortcutActionId,
-} from "@multica/core/shortcuts";
-import { useChatStore } from "@multica/core/chat";
-import { openCreateIssueWithPreference } from "@multica/core/issues/stores";
-import { useModalStore } from "@multica/core/modals";
-import { useWorkspacePaths } from "@multica/core/paths";
-import { isImeComposing } from "@multica/core/utils";
-import { isFloatingChatRouteSuppressed } from "../chat/floating-chat-visibility";
+} from "@liexiu/core/shortcuts";
+import { openCreateIssueWithPreference } from "@liexiu/core/issues/stores";
+import { useModalStore } from "@liexiu/core/modals";
+import { useWorkspacePaths } from "@liexiu/core/paths";
+import { isImeComposing } from "@liexiu/core/utils";
 import { useNavigation } from "../navigation";
 import { useSearchStore } from "../search/search-store";
 
@@ -23,17 +21,12 @@ const GLOBAL_ACTIONS: readonly ShortcutActionId[] = [
   "openSearch",
   "createIssue",
   "toggleSidebar",
-  "toggleChat",
   "goBack",
   "goForward",
-  "goInbox",
-  "goChat",
   "goMyIssues",
   "goIssues",
   "goProjects",
-  "goAutopilots",
   "goAgents",
-  "goSquads",
   "goUsage",
   "goRuntimes",
   "goSkills",
@@ -55,30 +48,16 @@ export function GlobalShortcuts() {
   const overrides = useShortcutStore((state) => state.overrides);
 
   useEffect(() => {
-    const chatPath = workspacePaths.chat();
     const destinations: Partial<Record<ShortcutActionId, string>> = {
-      goInbox: workspacePaths.inbox(),
-      goChat: chatPath,
       goMyIssues: workspacePaths.myIssues(),
       goIssues: workspacePaths.issues(),
       goProjects: workspacePaths.projects(),
-      goAutopilots: workspacePaths.autopilots(),
       goAgents: workspacePaths.agents(),
-      goSquads: workspacePaths.squads(),
       goUsage: workspacePaths.usage(),
       goRuntimes: workspacePaths.runtimes(),
       goSkills: workspacePaths.skills(),
       goSettings: workspacePaths.settings(),
     };
-
-    // Read at press time rather than subscribing: the preference only matters
-    // the instant the chord fires, and the overlay is gone from the Chat tab.
-    // An unavailable overlay must not claim the chord either — returning false
-    // from the finder leaves the keypress its outside-the-app meaning instead of
-    // swallowing it for an action that would visibly do nothing.
-    const canToggleFloatingChat = () =>
-      useChatStore.getState().floatingChatEnabled &&
-      !isFloatingChatRouteSuppressed(navigation.pathname, chatPath);
 
     const handleKeyDown = (event: KeyboardEvent) => {
       // Component/editor handlers run before this document-level listener.
@@ -91,7 +70,6 @@ export function GlobalShortcuts() {
         if (!action.allowInEditable && isEditableShortcutTarget(event.target)) {
           return false;
         }
-        if (candidate === "toggleChat" && !canToggleFloatingChat()) return false;
         return shortcutMatchesEvent(getShortcut(candidate), event);
       });
       if (!actionId) return;
@@ -99,10 +77,6 @@ export function GlobalShortcuts() {
       event.preventDefault();
       if (actionId === "openSearch") {
         useSearchStore.getState().toggle();
-        return;
-      }
-      if (actionId === "toggleChat") {
-        useChatStore.getState().toggle();
         return;
       }
       if (actionId === "toggleSidebar") {

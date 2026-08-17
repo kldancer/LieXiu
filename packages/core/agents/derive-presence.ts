@@ -9,7 +9,7 @@
 // They are computed independently and assembled into AgentPresenceDetail.
 // Workload is strictly "what's on the plate right now" — no historical
 // terminal state. Past failures / completions live on the detail page
-// (Recent Work, failure_reason) and Inbox.
+// (Recent Work, failure_reason).
 
 import { deriveRuntimeHealth } from "../runtimes/derive-health";
 import type { Agent, AgentRuntime, AgentTask } from "../types";

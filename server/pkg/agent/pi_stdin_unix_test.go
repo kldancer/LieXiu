@@ -66,42 +66,6 @@ printf '%%s\n' '{"type":"turn_end","message":{"role":"assistant","model":"test",
 	return argv, string(stdinRaw), result
 }
 
-// TestPiExecuteSendsBuilderPromptOnStdinNotArgv is the regression for #6457.
-// The Agent Builder wire envelope contains JSON quotes and Markdown list
-// markers that Windows PowerShell 5.1 can re-tokenise into Pi CLI flags.
-func TestPiExecuteSendsBuilderPromptOnStdinNotArgv(t *testing.T) {
-	t.Parallel()
-
-	prompt := "MULTICA_AGENT_BUILDER_INPUT\n" +
-		"{\n" +
-		`  "user_request": "专注本机 CPA 有关的所有工作",` + "\n" +
-		`  "current_draft": {"instructions": "Run go build -ldflags \"-X main.version=foo\""},` + "\n" +
-		`  "available_workspace_skills": [{"description": "- inspect local changes"}]` + "\n" +
-		"}"
-
-	argv, stdinGot, result := piStdinProbe(t, prompt)
-
-	if stdinGot != prompt {
-		t.Errorf("prompt did not arrive on stdin intact:\n got  %q\n want %q", stdinGot, prompt)
-	}
-	for _, arg := range argv {
-		for _, needle := range []string{"MULTICA_AGENT_BUILDER_INPUT", "user_request", "-X", "inspect local"} {
-			if strings.Contains(arg, needle) {
-				t.Errorf("prompt fragment %q leaked into argv element %q; argv=%v", needle, arg, argv)
-			}
-		}
-	}
-	joined := strings.Join(argv, " ")
-	for _, want := range []string{"-p", "--mode json", "--session", "--provider cpa", "--model grok-4.5-high"} {
-		if !strings.Contains(joined, want) {
-			t.Errorf("expected %q in argv, got %v", want, argv)
-		}
-	}
-	if result.Status != "completed" || result.Output != "ok" {
-		t.Fatalf("result = %+v, want completed with output ok", result)
-	}
-}
-
 // TestPiExecuteLargePromptDoesNotDeadlock forces both process pipes past
 // capacity: the child floods stdout before reading stdin, while the parent
 // writes a large prompt. Only concurrent writing and scanning can advance.
@@ -120,7 +84,7 @@ printf '%%s\n' '{"type":"turn_end","message":{"role":"assistant","model":"test",
 	fakePath := filepath.Join(dir, "pi")
 	writeTestExecutable(t, fakePath, []byte(script))
 
-	prompt := strings.Repeat("multica pi stdin payload 0123456789\n", 16_384)
+	prompt := strings.Repeat("liexiu pi stdin payload 0123456789\n", 16_384)
 	if len(prompt) < 512*1024 {
 		t.Fatalf("test prompt too small: %d bytes", len(prompt))
 	}

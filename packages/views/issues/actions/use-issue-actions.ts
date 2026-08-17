@@ -1,25 +1,19 @@
 "use client";
 
 import { useCallback } from "react";
-import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
-import type { Issue, UpdateIssueRequest } from "@multica/core/types";
-import { useAuthStore } from "@multica/core/auth";
-import { useWorkspaceId } from "@multica/core/hooks";
-import { useWorkspacePaths } from "@multica/core/paths";
-import { useModalStore } from "@multica/core/modals";
-import { useUpdateIssue } from "@multica/core/issues/mutations";
-import { pinListOptions, useCreatePin, useDeletePin } from "@multica/core/pins";
-import { copyText } from "@multica/ui/lib/clipboard";
+import type { Issue, UpdateIssueRequest } from "@liexiu/core/types";
+import { useWorkspacePaths } from "@liexiu/core/paths";
+import { useModalStore } from "@liexiu/core/modals";
+import { useUpdateIssue } from "@liexiu/core/issues/mutations";
+import { copyText } from "@liexiu/ui/lib/clipboard";
 import { useNavigation } from "../../navigation";
 import { useT } from "../../i18n";
 import { useIssueSurfaceActionsOptional } from "../surface/actions-context";
 
 export interface UseIssueActionsResult {
-  isPinned: boolean;
   updateField: (updates: Partial<UpdateIssueRequest>) => void;
   openInNewTab: () => void;
-  togglePin: () => void;
   copyLink: () => Promise<void>;
   openCreateSubIssue: () => void;
   openSetParent: () => void;
@@ -35,27 +29,10 @@ export interface UseIssueActionsResult {
  */
 export function useIssueActions(issue: Issue | null): UseIssueActionsResult {
   const { t } = useT("issues");
-  const wsId = useWorkspaceId();
   const paths = useWorkspacePaths();
   const navigation = useNavigation();
-  const user = useAuthStore((s) => s.user);
-  const userId = user?.id;
-
-  const { data: pinnedItems = [] } = useQuery({
-    ...pinListOptions(wsId, userId ?? ""),
-    enabled: !!userId,
-  });
-
-  const isPinned =
-    !!issue &&
-    pinnedItems.some(
-      (p) => p.item_type === "issue" && p.item_id === issue.id,
-    );
-
   const updateIssue = useUpdateIssue();
   const surfaceActions = useIssueSurfaceActionsOptional();
-  const createPin = useCreatePin();
-  const deletePin = useDeletePin();
   const openModal = useModalStore((s) => s.open);
 
   const issueId = issue?.id ?? null;
@@ -68,7 +45,7 @@ export function useIssueActions(issue: Issue | null): UseIssueActionsResult {
   const updateField = useCallback(
     (updates: Partial<UpdateIssueRequest>) => {
       if (!issueId) return;
-      // Assigning to an agent/squad may start a run. Route through the
+      // Assigning to an agent may start a run. Route through the
       // pre-trigger confirm modal (preview + optional handoff note + "暂不开始"),
       // which applies the change itself — the four entry points share this one
       // backend-driven flow instead of guessing (MUL-3375). Every other field
@@ -79,7 +56,7 @@ export function useIssueActions(issue: Issue | null): UseIssueActionsResult {
       // an empty "won't start" box with a single Apply button. Apply directly,
       // matching the batch backlog short-circuit in BatchActionToolbar.
       if (
-        (updates.assignee_type === "agent" || updates.assignee_type === "squad") &&
+        updates.assignee_type === "agent" &&
         updates.assignee_id &&
         issueStatus !== "backlog"
       ) {
@@ -139,15 +116,6 @@ export function useIssueActions(issue: Issue | null): UseIssueActionsResult {
     );
   }, [issueId, issueIdentifier, navigation, paths]);
 
-  const togglePin = useCallback(() => {
-    if (!issueId) return;
-    if (isPinned) {
-      deletePin.mutate({ itemType: "issue", itemId: issueId });
-    } else {
-      createPin.mutate({ item_type: "issue", item_id: issueId });
-    }
-  }, [isPinned, issueId, createPin, deletePin]);
-
   const copyLink = useCallback(async () => {
     if (!issueId) return;
     // Share the identifier form (`/{ws}/issues/MUL-123`): a pasted link should
@@ -167,7 +135,7 @@ export function useIssueActions(issue: Issue | null): UseIssueActionsResult {
       parent_issue_id: issueId,
       parent_issue_identifier: issueIdentifier,
       ...(issueProjectId ? { project_id: issueProjectId } : {}),
-      // Inherit the parent's assignee (member/agent/squad) so a sub-issue
+      // Inherit the parent's assignee (member/agent) so a sub-issue
       // created from the "Add sub-issue" entry starts with the same owner
       // (discussion #1728). The modal keys off whether these fields are
       // present, not their value, so a seed overrides the sticky last-used
@@ -247,10 +215,8 @@ export function useIssueActions(issue: Issue | null): UseIssueActionsResult {
   );
 
   return {
-    isPinned,
     updateField,
     openInNewTab,
-    togglePin,
     copyLink,
     openCreateSubIssue,
     openSetParent,

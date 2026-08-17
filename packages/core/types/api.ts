@@ -1,6 +1,8 @@
 import type { Issue, IssueMetadata, IssueStatus, IssuePriority, IssueAssigneeType } from "./issue";
-import type { MemberRole } from "./workspace";
 import type { Project } from "./project";
+import type { AgentTask } from "./agent";
+
+export interface CancelTaskResponse extends AgentTask {}
 
 // Issue API
 export interface CreateIssueRequest {
@@ -82,7 +84,7 @@ export interface IssueTriggerPreviewParams {
 }
 
 /** One issue that WILL start a run under the prospective write. `agent_id` is
- *  the runnable agent (squad leader for squads). `handoff_supported` is the
+ *  the runnable agent. `handoff_supported` is the
  *  soft-gate signal: false when the target runtime is too old to render a
  *  handoff note (gray the note box; the assignment still works). */
 export interface IssueTriggerPreviewItem {
@@ -112,8 +114,8 @@ export interface ListIssuesParams {
   assignee_id?: string;
   assignee_ids?: string[];
   /**
-   * Narrow to issues assigned to the given actor kinds (member / agent /
-   * squad). Same semantics as `ListGroupedIssuesParams.assignee_types` —
+   * Narrow to issues assigned to the given actor kinds (member / agent).
+   * Same semantics as `ListGroupedIssuesParams.assignee_types` —
    * powers the workspace Members/Agents tabs server-side.
    */
   assignee_types?: IssueAssigneeType[];
@@ -136,19 +138,14 @@ export interface ListIssuesParams {
    */
   ids?: string[];
   /**
-   * Widen the assignee filter to issues where the user is the *indirect*
-   * assignee — assignee is one of the user's owned agents, or a squad that
-   * involves the user (human member / leader-via-owned-agent / agent member
-   * owned by the user). Direct member assignment is intentionally excluded:
+   * Widen the assignee filter to issues assigned to one of the user's owned
+   * agents. Direct member assignment is intentionally excluded:
    * `involves_user_id` and `assignee_id=<user>` (tab "Assigned to me") produce
    * disjoint result sets by construction.
    */
   involves_user_id?: string;
   /** JSONB containment filter on `issue.metadata`. AND across keys. */
   metadata?: IssueMetadata;
-  /** Custom-property filter: definition id → accepted values (option ids or
-   *  "true"/"false" for checkbox). OR within a definition, AND across. */
-  properties?: Record<string, string[]>;
   open_only?: boolean;
   /**
    * Restrict the result to issues with at least one of `start_date` /
@@ -168,8 +165,7 @@ export interface ListIssuesParams {
     | "created_at"
     | "updated_at"
     | "start_date"
-    | "due_date"
-    | `property:${string}`;
+    | "due_date";
   sort_direction?: "asc" | "desc";
 }
 
@@ -194,9 +190,6 @@ export interface ListGroupedIssuesParams {
   involves_user_id?: string;
   /** JSONB containment filter on `issue.metadata`. AND across keys. */
   metadata?: IssueMetadata;
-  /** Custom-property filter: definition id → accepted values (option ids or
-   *  "true"/"false" for checkbox). OR within a definition, AND across. */
-  properties?: Record<string, string[]>;
   assignee_filters?: IssueActorRef[];
   include_no_assignee?: boolean;
   creator_filters?: IssueActorRef[];
@@ -216,8 +209,7 @@ export interface ListGroupedIssuesParams {
     | "created_at"
     | "updated_at"
     | "start_date"
-    | "due_date"
-    | `property:${string}`;
+    | "due_date";
   sort_direction?: "asc" | "desc";
 }
 
@@ -259,7 +251,6 @@ export interface IssueTableFilters {
   project_ids?: string[];
   include_no_project?: boolean;
   label_ids?: string[];
-  properties?: Record<string, string[]>;
   date?: {
     field: "created_at" | "updated_at";
     start: string;
@@ -280,8 +271,7 @@ export type IssueTableSortField =
   | "created_at"
   | "updated_at"
   | "start_date"
-  | "due_date"
-  | `property:${string}`;
+  | "due_date";
 
 export interface IssueTableQuerySpec {
   scope: IssueTableScope;
@@ -307,8 +297,7 @@ export type IssueTableGroupSpec =
        * only primary groups that contain at least one matching card and
        * returns `total` for that complete visible result set. */
       secondary_values?: IssueStatus[];
-    }
-  | { kind: "property"; property_id: string; include_empty?: boolean };
+    };
 
 /** Response-side actor reference. Kept open for forward compatibility: an
  * installed desktop client may receive a new actor kind from a newer server. */
@@ -335,12 +324,7 @@ export type IssueTableGroupValue =
       parent: IssueTableParentRef | null;
       value_state: "value" | "unavailable" | "unset";
     }
-  | {
-      kind: "property";
-      property_id: string;
-      value?: string | boolean | null;
-      value_state: "value" | "unavailable" | "unset";
-    };
+  ;
 
 export interface IssueTableGroupDescriptor {
   key: string;
@@ -400,7 +384,6 @@ export type IssueTableFacetSpec =
   | { kind: "creator" }
   | { kind: "project" }
   | { kind: "label" }
-  | { kind: "property"; property_id: string }
   /** Agents running issue work inside this surface. `key` is the agent id,
    *  `count` its running-task count. Evaluated against the surface's own scope
    *  and filters, so the header chip counts the same rows the list shows. */
@@ -420,7 +403,6 @@ export interface IssueTableFacetValue {
 
 export interface IssueTableFacet {
   kind: IssueTableFacetSpec["kind"];
-  property_id?: string;
   values: IssueTableFacetValue[];
 }
 
@@ -484,15 +466,6 @@ export interface UpdateMeRequest {
   profile_description?: string;
   /** IANA tz to pin; "" clears back to browser-tz; undefined leaves untouched. */
   timezone?: string;
-}
-
-export interface CreateMemberRequest {
-  email: string;
-  role?: MemberRole;
-}
-
-export interface UpdateMemberRequest {
-  role: MemberRole;
 }
 
 // Personal Access Tokens

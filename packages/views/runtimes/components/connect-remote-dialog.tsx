@@ -4,11 +4,11 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { Check, ChevronRight, Copy, Terminal } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
-import { useWorkspaceId } from "@multica/core/hooks";
-import { runtimeKeys } from "@multica/core/runtimes/queries";
-import { useWSEvent } from "@multica/core/realtime";
-import { paths, useWorkspaceSlug } from "@multica/core/paths";
-import { useConfigStore } from "@multica/core/config";
+import { useWorkspaceId } from "@liexiu/core/hooks";
+import { runtimeKeys } from "@liexiu/core/runtimes/queries";
+import { useWSEvent } from "@liexiu/core/realtime";
+import { paths, useWorkspaceSlug } from "@liexiu/core/paths";
+import { useConfigStore } from "@liexiu/core/config";
 import {
   Dialog,
   DialogContent,
@@ -16,24 +16,24 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@multica/ui/components/ui/dialog";
-import { Button } from "@multica/ui/components/ui/button";
-import { CODE_LIGATURE_CLASS } from "@multica/ui/lib/code-style";
-import { copyText } from "@multica/ui/lib/clipboard";
+} from "@liexiu/ui/components/ui/dialog";
+import { Button } from "@liexiu/ui/components/ui/button";
+import { CODE_LIGATURE_CLASS } from "@liexiu/ui/lib/code-style";
+import { copyText } from "@liexiu/ui/lib/clipboard";
 import {
   UI_EASE_OUT,
   UI_MOTION_DURATION,
-} from "@multica/ui/lib/motion";
-import { cn } from "@multica/ui/lib/utils";
+} from "@liexiu/ui/lib/motion";
+import { cn } from "@liexiu/ui/lib/utils";
 import { useNavigation } from "../../navigation";
 import { useT } from "../../i18n";
 
 type Step = "instructions" | "success";
 
 const INSTALL_CMD =
-  "curl -fsSL https://raw.githubusercontent.com/multica-ai/multica/main/scripts/install.sh | bash";
-const CLOUD_SERVER_URL = "https://api.multica.ai";
-const CLOUD_APP_URL = "https://multica.ai";
+  "curl -fsSL https://raw.githubusercontent.com/kailonyang/liexiu/main/scripts/install.sh | bash";
+const CLOUD_SERVER_URL = "https://api.liexiu.ai";
+const CLOUD_APP_URL = "https://liexiu.ai";
 
 function normalizeCommandURL(url: string | undefined) {
   return url?.trim().replace(/\/+$/, "") ?? "";
@@ -44,20 +44,20 @@ function daemonCommands(serverUrl: string | undefined, appUrl: string | undefine
   const normalizedAppUrl = normalizeCommandURL(appUrl);
   if (normalizedServerUrl && normalizedAppUrl) {
     return {
-      setupCmd: `multica setup self-host --server-url ${normalizedServerUrl} --app-url ${normalizedAppUrl}`,
-      tokenCmd: `multica config set server_url ${normalizedServerUrl}
-multica config set app_url ${normalizedAppUrl}
-multica login --token <YOUR_TOKEN>
-multica daemon start`,
+      setupCmd: `liexiu setup self-host --server-url ${normalizedServerUrl} --app-url ${normalizedAppUrl}`,
+      tokenCmd: `liexiu config set server_url ${normalizedServerUrl}
+liexiu config set app_url ${normalizedAppUrl}
+liexiu login --token <YOUR_TOKEN>
+liexiu daemon start`,
     };
   }
 
   return {
-    setupCmd: "multica setup",
-    tokenCmd: `multica config set server_url ${CLOUD_SERVER_URL}
-multica config set app_url ${CLOUD_APP_URL}
-multica login --token <YOUR_TOKEN>
-multica daemon start`,
+    setupCmd: "liexiu setup",
+    tokenCmd: `liexiu config set server_url ${CLOUD_SERVER_URL}
+liexiu config set app_url ${CLOUD_APP_URL}
+liexiu login --token <YOUR_TOKEN>
+liexiu daemon start`,
   };
 }
 
@@ -70,7 +70,7 @@ export function ConnectRemoteDialog({ onClose }: { onClose: () => void }) {
   const shouldReduceMotion = useReducedMotion() ?? false;
   const newRuntimeIdRef = useRef<string | null>(null);
 
-  // `multica setup` is one blocking command that handles config + login
+  // `liexiu setup` is one blocking command that handles config + login
   // + daemon start; the dialog passively listens for the resulting
   // `daemon:register` WS event and auto-advances to success.
   const handleDaemonRegister = useCallback(
@@ -318,7 +318,7 @@ function TroubleshootingDetails({ tokenCmd }: { tokenCmd: string }) {
                 CODE_LIGATURE_CLASS,
               )}
             >
-              {"multica daemon status"}
+              {"liexiu daemon status"}
             </code>
           </li>
           <li className="flex items-center gap-1.5">
@@ -330,7 +330,7 @@ function TroubleshootingDetails({ tokenCmd }: { tokenCmd: string }) {
                 CODE_LIGATURE_CLASS,
               )}
             >
-              {"multica daemon logs -f"}
+              {"liexiu daemon logs -f"}
             </code>
           </li>
         </ul>

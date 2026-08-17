@@ -4,7 +4,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/multica-ai/multica/server/pkg/taskfailure"
+	"github.com/kailonyang/liexiu/server/pkg/taskfailure"
 )
 
 const (
@@ -21,9 +21,6 @@ const (
 	labelSignupSource = "signup_source"
 	labelPlatform     = "platform"
 	labelPath         = "path"
-	labelCadence      = "cadence"
-	labelTriggerKind  = "trigger_kind"
-	labelReason       = "reason"
 	labelRecoverable  = "recoverable"
 	labelKind         = "kind"
 	labelStatus       = "status"
@@ -31,61 +28,49 @@ const (
 	labelAction       = "action"
 	labelResult       = "result"
 	labelOp           = "op"
-	labelGate         = "gate"
 )
 
 var businessMetricLabels = map[string][]string{
-	"multica_agent_task_enqueued_total":     {labelSource, labelRuntimeMode},
-	"multica_agent_task_dispatched_total":   {labelSource, labelRuntimeMode},
-	"multica_agent_task_started_total":      {labelSource, labelRuntimeMode, labelProvider},
-	"multica_agent_task_terminal_total":     {labelSource, labelRuntimeMode, labelTerminalStatus},
-	"multica_agent_task_failed_total":       {labelSource, labelRuntimeMode, labelFailureReason},
-	"multica_agent_task_queue_wait_seconds": {labelSource, labelRuntimeMode},
-	"multica_agent_task_run_seconds":        {labelSource, labelRuntimeMode, labelTerminalStatus},
-	"multica_agent_task_total_seconds":      {labelSource, labelRuntimeMode, labelTerminalStatus},
-	"multica_agent_task_in_progress":        {labelSource, labelRuntimeMode},
-	"multica_agent_task_iteration_count":    {labelSource, labelTerminalStatus},
-	"multica_llm_tokens_total":              {labelProvider, labelModel, labelTokenType, labelRuntimeMode, labelSource},
-	"multica_llm_cost_usd_total":            {labelProvider, labelModel, labelTokenType, labelRuntimeMode, labelSource},
-	"multica_llm_unpriced_tokens_total":     {labelProvider, labelModelAlias, labelTokenType},
-	"multica_llm_request_total":             {labelProvider, labelModel, labelRuntimeMode},
-	"multica_task_queued_expired_total":     {labelSource, labelRuntimeMode},
-	"multica_task_lease_expired_total":      {labelSource},
+	"liexiu_agent_task_enqueued_total":     {labelSource, labelRuntimeMode},
+	"liexiu_agent_task_dispatched_total":   {labelSource, labelRuntimeMode},
+	"liexiu_agent_task_started_total":      {labelSource, labelRuntimeMode, labelProvider},
+	"liexiu_agent_task_terminal_total":     {labelSource, labelRuntimeMode, labelTerminalStatus},
+	"liexiu_agent_task_failed_total":       {labelSource, labelRuntimeMode, labelFailureReason},
+	"liexiu_agent_task_queue_wait_seconds": {labelSource, labelRuntimeMode},
+	"liexiu_agent_task_run_seconds":        {labelSource, labelRuntimeMode, labelTerminalStatus},
+	"liexiu_agent_task_total_seconds":      {labelSource, labelRuntimeMode, labelTerminalStatus},
+	"liexiu_agent_task_in_progress":        {labelSource, labelRuntimeMode},
+	"liexiu_agent_task_iteration_count":    {labelSource, labelTerminalStatus},
+	"liexiu_llm_tokens_total":              {labelProvider, labelModel, labelTokenType, labelRuntimeMode, labelSource},
+	"liexiu_llm_cost_usd_total":            {labelProvider, labelModel, labelTokenType, labelRuntimeMode, labelSource},
+	"liexiu_llm_unpriced_tokens_total":     {labelProvider, labelModelAlias, labelTokenType},
+	"liexiu_llm_request_total":             {labelProvider, labelModel, labelRuntimeMode},
+	"liexiu_task_queued_expired_total":     {labelSource, labelRuntimeMode},
+	"liexiu_task_lease_expired_total":      {labelSource},
 
 	// PR3 funnel / community / commercial.
-	"multica_signup_total":                             {labelSignupSource},
-	"multica_workspace_created_total":                  {labelSource},
-	"multica_team_invite_sent_total":                   {},
-	"multica_team_invite_accepted_total":               {},
-	"multica_onboarding_started_total":                 {labelPlatform},
-	"multica_onboarding_questionnaire_submitted_total": {},
-	"multica_onboarding_source_submitted_total":        {},
-	"multica_onboarding_completed_total":               {labelPath},
-	"multica_cloud_waitlist_joined_total":              {},
-	"multica_issue_created_total":                      {labelSource, labelPlatform},
-	"multica_chat_message_sent_total":                  {labelPlatform},
-	"multica_agent_created_total":                      {labelRuntimeMode, labelSource},
-	"multica_squad_created_total":                      {},
-	"multica_autopilot_created_total":                  {labelCadence},
-	"multica_issue_executed_total":                     {labelSource},
-	"multica_runtime_registered_total":                 {labelRuntimeMode, labelProvider},
-	"multica_runtime_ready_total":                      {labelRuntimeMode, labelProvider},
-	"multica_runtime_ready_seconds":                    {labelRuntimeMode, labelProvider},
-	"multica_runtime_failed_total":                     {labelRuntimeMode, labelProvider, labelFailureReason, labelRecoverable},
-	"multica_runtime_offline_total":                    {labelRuntimeMode, labelProvider},
-	"multica_daemon_ws_message_received_total":         {labelKind},
-	"multica_autopilot_run_started_total":              {labelCadence, labelTriggerKind},
-	"multica_autopilot_run_terminal_total":             {labelCadence, labelTriggerKind, labelTerminalStatus},
-	"multica_autopilot_run_skipped_total":              {labelCadence, labelReason},
-	"multica_webhook_delivery_total":                   {labelProvider, labelStatus},
-	"multica_webhook_rate_limited_total":               {labelGate},
-	"multica_github_event_received_total":              {labelEventKind, labelAction},
-	"multica_github_pr_review_total":                   {labelResult},
-	"multica_cloudruntime_request_total":               {labelOp, labelStatus},
-	"multica_cloudruntime_request_duration_seconds":    {labelOp},
-	"multica_feedback_submitted_total":                 {labelKind, labelPlatform},
-	"multica_contact_sales_submitted_total":            {labelSource},
-	"multica_chat_output_local_path_total":             {labelKind},
+	"liexiu_signup_total":                             {labelSignupSource},
+	"liexiu_workspace_created_total":                  {labelSource},
+	"liexiu_team_invite_sent_total":                   {},
+	"liexiu_team_invite_accepted_total":               {},
+	"liexiu_onboarding_started_total":                 {labelPlatform},
+	"liexiu_onboarding_questionnaire_submitted_total": {},
+	"liexiu_onboarding_source_submitted_total":        {},
+	"liexiu_onboarding_completed_total":               {labelPath},
+	"liexiu_cloud_waitlist_joined_total":              {},
+	"liexiu_issue_created_total":                      {labelSource, labelPlatform},
+	"liexiu_agent_created_total":                      {labelRuntimeMode, labelSource},
+	"liexiu_issue_executed_total":                     {labelSource},
+	"liexiu_runtime_registered_total":                 {labelRuntimeMode, labelProvider},
+	"liexiu_runtime_ready_total":                      {labelRuntimeMode, labelProvider},
+	"liexiu_runtime_ready_seconds":                    {labelRuntimeMode, labelProvider},
+	"liexiu_runtime_failed_total":                     {labelRuntimeMode, labelProvider, labelFailureReason, labelRecoverable},
+	"liexiu_runtime_offline_total":                    {labelRuntimeMode, labelProvider},
+	"liexiu_daemon_ws_message_received_total":         {labelKind},
+	"liexiu_github_event_received_total":              {labelEventKind, labelAction},
+	"liexiu_github_pr_review_total":                   {labelResult},
+	"liexiu_cloudruntime_request_total":               {labelOp, labelStatus},
+	"liexiu_cloudruntime_request_duration_seconds":    {labelOp},
 }
 
 var forbiddenMetricLabels = map[string]struct{}{
@@ -107,14 +92,11 @@ var forbiddenMetricLabels = map[string]struct{}{
 
 var (
 	knownSources = map[string]string{
-		"issue":           "issue",
-		"chat":            "chat",
-		"autopilot":       "autopilot",
-		"autopilot_issue": "autopilot_issue",
-		"quick_create":    "quick_create",
-		"manual":          "manual",
-		"api":             "api",
-		"other":           "other",
+		"issue":        "issue",
+		"quick_create": "quick_create",
+		"manual":       "manual",
+		"api":          "api",
+		"other":        "other",
 	}
 	knownRuntimeModes = map[string]string{
 		"local":   "local",
@@ -135,7 +117,7 @@ var (
 		"kiro":          "kiro",
 		"kimi":          "kimi",
 		"reasonix":      "reasonix",
-		"multica_agent": "multica_agent",
+		"liexiu_agent": "liexiu_agent",
 		"openclaw":      "openclaw",
 		"opencode":      "opencode",
 		"deveco":        "deveco",

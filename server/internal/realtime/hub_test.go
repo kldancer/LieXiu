@@ -16,7 +16,7 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/gorilla/websocket"
-	"github.com/multica-ai/multica/server/internal/auth"
+	"github.com/kailonyang/liexiu/server/internal/auth"
 )
 
 const testWorkspaceID = "test-workspace"
@@ -406,7 +406,7 @@ func TestCheckOrigin(t *testing.T) {
 	prev := allowedWSOrigins.Load().([]string)
 	SetAllowedOrigins([]string{
 		"http://localhost:3000",
-		"https://multica.ai",
+		"https://liexiu.ai",
 	})
 	t.Cleanup(func() { SetAllowedOrigins(prev) })
 
@@ -426,24 +426,24 @@ func TestCheckOrigin(t *testing.T) {
 		remoteAddr string
 		want       bool
 	}{
-		{"empty origin allowed", "api.multica.ai", "", "", "1.2.3.4:5678", true},
+		{"empty origin allowed", "api.liexiu.ai", "", "", "1.2.3.4:5678", true},
 		{"same-origin allowed (native client default)", "localhost:8080", "http://localhost:8080", "", "1.2.3.4:5678", true},
-		{"same-origin allowed (https)", "api.multica.ai", "https://api.multica.ai", "", "1.2.3.4:5678", true},
-		{"same-origin allowed (case-insensitive host, RFC 7230)", "API.Multica.AI", "https://api.multica.ai", "", "1.2.3.4:5678", true},
+		{"same-origin allowed (https)", "api.liexiu.ai", "https://api.liexiu.ai", "", "1.2.3.4:5678", true},
+		{"same-origin allowed (case-insensitive host, RFC 7230)", "API.LieXiu.AI", "https://api.liexiu.ai", "", "1.2.3.4:5678", true},
 		{"whitelisted origin allowed (web cross-origin)", "localhost:8080", "http://localhost:3000", "", "1.2.3.4:5678", true},
-		{"whitelisted origin allowed (prod web)", "api.multica.ai", "https://multica.ai", "", "1.2.3.4:5678", true},
-		{"unknown origin rejected (CSWSH defense)", "api.multica.ai", "https://evil.com", "", "1.2.3.4:5678", false},
+		{"whitelisted origin allowed (prod web)", "api.liexiu.ai", "https://liexiu.ai", "", "1.2.3.4:5678", true},
+		{"unknown origin rejected (CSWSH defense)", "api.liexiu.ai", "https://evil.com", "", "1.2.3.4:5678", false},
 		{"different port rejected", "localhost:8080", "http://localhost:9999", "", "1.2.3.4:5678", false},
-		{"X-Forwarded-Host from trusted proxy matches origin", "internal.proxy", "https://multica.ai", "multica.ai", "127.0.0.1:5678", true},
-		{"X-Forwarded-Host from trusted proxy case-insensitive", "internal.proxy", "https://Multica.AI", "multica.ai", "10.0.0.1:5678", true},
+		{"X-Forwarded-Host from trusted proxy matches origin", "internal.proxy", "https://liexiu.ai", "liexiu.ai", "127.0.0.1:5678", true},
+		{"X-Forwarded-Host from trusted proxy case-insensitive", "internal.proxy", "https://LieXiu.AI", "liexiu.ai", "10.0.0.1:5678", true},
 		{"X-Forwarded-Host from untrusted source rejected", "internal.proxy", "https://example.com", "example.com", "1.2.3.4:5678", false},
-		{"X-Forwarded-Host from trusted proxy but evil origin rejected", "internal.proxy", "https://evil.com", "multica.ai", "127.0.0.1:5678", false},
-		{"X-Forwarded-Host present but origin matches direct Host", "multica.ai", "https://multica.ai", "other.host", "1.2.3.4:5678", true},
+		{"X-Forwarded-Host from trusted proxy but evil origin rejected", "internal.proxy", "https://evil.com", "liexiu.ai", "127.0.0.1:5678", false},
+		{"X-Forwarded-Host present but origin matches direct Host", "liexiu.ai", "https://liexiu.ai", "other.host", "1.2.3.4:5678", true},
 		{"X-Forwarded-Host spoofed by attacker rejected", "internal.proxy", "https://evil.com", "evil.com", "1.2.3.4:5678", false},
-		{"X-Forwarded-Host from trusted CIDR range matches origin", "internal.proxy", "https://multica.ai", "multica.ai", "10.5.6.7:5678", true},
-		{"X-Forwarded-Host from trusted IPv6 proxy matches origin", "internal.proxy", "https://multica.ai", "multica.ai", "[::1]:5678", true},
-		{"X-Forwarded-Host comma list uses first (client-facing) value", "internal.proxy", "https://multica.ai", "multica.ai, proxy.internal", "127.0.0.1:5678", true},
-		{"X-Forwarded-Host comma list ignores trailing values", "internal.proxy", "https://staging.multica.ai", "proxy.internal, staging.multica.ai", "127.0.0.1:5678", false},
+		{"X-Forwarded-Host from trusted CIDR range matches origin", "internal.proxy", "https://liexiu.ai", "liexiu.ai", "10.5.6.7:5678", true},
+		{"X-Forwarded-Host from trusted IPv6 proxy matches origin", "internal.proxy", "https://liexiu.ai", "liexiu.ai", "[::1]:5678", true},
+		{"X-Forwarded-Host comma list uses first (client-facing) value", "internal.proxy", "https://liexiu.ai", "liexiu.ai, proxy.internal", "127.0.0.1:5678", true},
+		{"X-Forwarded-Host comma list ignores trailing values", "internal.proxy", "https://staging.liexiu.ai", "proxy.internal, staging.liexiu.ai", "127.0.0.1:5678", false},
 	}
 
 	for _, tc := range cases {

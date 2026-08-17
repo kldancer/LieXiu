@@ -26,7 +26,7 @@ import { MAX_FILE_SIZE } from "../constants/upload";
 //                    Source: `att.markdown_url` from the server, which
 //                    `buildMarkdownURL` picks per deployment policy
 //                    (public CDN durable URL, or
-//                    `<MULTICA_PUBLIC_URL>/api/attachments/<id>/download`).
+//                    `<LIEXIU_PUBLIC_URL>/api/attachments/<id>/download`).
 //                    The contract is "absolute, no TTL, loads natively
 //                    on every client" — that's what fixes the Desktop /
 //                    mobile-webview regression where a site-relative
@@ -57,7 +57,6 @@ export type UploadResult = Attachment & {
 export interface UploadContext {
   issueId?: string;
   commentId?: string;
-  chatSessionId?: string;
 }
 
 // pickMarkdownLink chooses the URL the editor will write into markdown.
@@ -66,7 +65,7 @@ export interface UploadContext {
 //   1. `att.markdown_url` — server-provided durable URL. This is the
 //      modern contract introduced in MUL-3192; the server (`buildMarkdownURL`)
 //      decides whether to emit a public CDN URL or an absolute API
-//      endpoint pinned to `MULTICA_PUBLIC_URL` based on the deployment.
+//      endpoint pinned to `LIEXIU_PUBLIC_URL` based on the deployment.
 //   2. `attachmentDownloadPath(att.id)` — site-relative legacy shape,
 //      retained for compatibility with backends old enough to predate
 //      MUL-3192. Web's Next rewrite makes this load; desktop / mobile
@@ -124,7 +123,6 @@ export function useFileUpload(
         const att: Attachment = await api.uploadFile(file, {
           issueId: ctx?.issueId,
           commentId: ctx?.commentId,
-          chatSessionId: ctx?.chatSessionId,
         });
         return toUploadResult(att);
       } finally {

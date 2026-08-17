@@ -1,15 +1,15 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Bot, Users } from "lucide-react";
-import { cn } from "@multica/ui/lib/utils";
+import { Bot } from "lucide-react";
+import { cn } from "@liexiu/ui/lib/utils";
 import {
   AVATAR_SIZE_PX,
   DEFAULT_AVATAR_SIZE,
   type AvatarSize,
-} from "@multica/ui/lib/avatar-size";
-import { parseAvatarEmoji } from "@multica/ui/lib/avatar-emoji";
-import { MulticaIcon } from "./multica-icon";
+} from "@liexiu/ui/lib/avatar-size";
+import { parseAvatarEmoji } from "@liexiu/ui/lib/avatar-emoji";
+import { LieXiuIcon } from "./liexiu-icon";
 
 interface ActorAvatarProps {
   name: string;
@@ -17,7 +17,6 @@ interface ActorAvatarProps {
   avatarUrl?: string | null;
   isAgent?: boolean;
   isSystem?: boolean;
-  isSquad?: boolean;
   size?: AvatarSize;
   className?: string;
 }
@@ -28,7 +27,6 @@ function ActorAvatar({
   avatarUrl,
   isAgent,
   isSystem,
-  isSquad,
   size = DEFAULT_AVATAR_SIZE,
   className,
 }: ActorAvatarProps) {
@@ -40,7 +38,7 @@ function ActorAvatar({
     setImgError(false);
   }, [avatarUrl]);
 
-  // Every actor — member, agent, squad, or system — renders as a circle. This
+  // Every actor — member, agent, or system — renders as a circle. This
   // is the single source of truth for avatar shape; the upload editors mirror
   // it (packages/views/common/avatar-upload-control.tsx).
   return (
@@ -73,11 +71,9 @@ function ActorAvatar({
           onError={() => setImgError(true)}
         />
       ) : isSystem ? (
-        <MulticaIcon noSpin style={{ width: px * 0.55, height: px * 0.55 }} />
+        <LieXiuIcon noSpin style={{ width: px * 0.55, height: px * 0.55 }} />
       ) : isAgent ? (
         <Bot style={{ width: px * 0.55, height: px * 0.55 }} />
-      ) : isSquad ? (
-        <Users style={{ width: px * 0.55, height: px * 0.55 }} />
       ) : (
         initials
       )}

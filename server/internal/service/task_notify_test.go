@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/multica-ai/multica/server/internal/util"
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
+	"github.com/kailonyang/liexiu/server/internal/util"
+	db "github.com/kailonyang/liexiu/server/pkg/db/generated"
 )
 
 // stubWakeup records every call so the test can assert that notify
@@ -26,7 +26,7 @@ func (s *stubWakeup) NotifyTaskAvailable(runtimeID, taskID string) {
 // the current version, (2) fires notifyTaskAvailable, then (3)
 // asserts the prior verdict is rejected AND the wakeup hook saw the
 // new task — proving every enqueue path (issue / mention /
-// quick-create / chat / autopilot / retry) gets the same
+// quick-create / retry) gets the same
 // bump-then-notify behaviour for free.
 func TestNotifyTaskAvailable_BumpsBeforeWakeup(t *testing.T) {
 	rdb := newRedisTestClient(t)
@@ -69,7 +69,7 @@ func TestNotifyTaskAvailable_BumpsBeforeWakeup(t *testing.T) {
 }
 
 // TestNotifyTaskAvailable_InvalidWithoutRuntimeIsNoOp guards the
-// no-RuntimeID early return — chat / quick-create / autopilot all set
+// no-RuntimeID early return — quick-create and other issue-bound tasks all set
 // it on insert, but a buggy caller that forgot must not silently bump
 // every workspace's version. The cache treats Bump("") as a no-op,
 // but this test pins that the RuntimeID guard sits above the Bump

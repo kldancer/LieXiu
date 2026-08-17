@@ -22,7 +22,7 @@ import (
 //	messages[43].content: content must not be empty
 //
 // Keying on a status code or a provider name means missing the next backend
-// that words it differently — Multica supports 17 of them and holds only an
+// that words it differently — LieXiu supports 17 of them and holds only an
 // opaque session id, so it cannot know which CLIs write a truncated
 // transcript. What all of these DO state is the two things that define the
 // defect: that some content is empty, and which message in the history it
@@ -58,8 +58,8 @@ func UnresumableHistory(errText string) bool {
 // is why the guard has to key on the text rather than the reason.
 //
 // This is the single source of truth for the phrase. Keep it in sync with the
-// GetLastTaskSession / GetLastChatTaskSession resume queries (pkg/db/queries),
-// which apply the same guard server-side so rows written by a daemon too old
+// GetLastTaskSession resume query (pkg/db/queries), which applies the same
+// guard server-side so rows written by a daemon too old
 // to carry the in-turn retry are still excluded from resume.
 func AuthMethodUnresolved(errText string) bool {
 	if errText == "" {
@@ -84,8 +84,8 @@ var emptyContentRe = regexp.MustCompile(`(?i)must not be empty|must be non-?empt
 // position. Without one of these an emptiness complaint is about some other
 // field entirely and says nothing about the transcript.
 //
-// Keep in sync with the equivalent regex in the GetLastTaskSession /
-// GetLastChatTaskSession resume queries (pkg/db/queries), which apply the same
+// Keep in sync with the equivalent regex in the GetLastTaskSession resume
+// query (pkg/db/queries), which applies the same
 // text guard server-side for rows an older daemon classified as
 // agent_error.unknown.
 var historyMessageLocatorRe = regexp.MustCompile(`(?i)role[^a-z0-9]{0,2}assistant|assistant message|message at position|messages\.[0-9]|messages\[[0-9]`)

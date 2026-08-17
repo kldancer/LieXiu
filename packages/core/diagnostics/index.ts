@@ -1,4 +1,3 @@
-export { installFreezeWatchdog } from "./freeze-watchdog";
 export {
   bucketDiagnosticPath,
   getDiagnosticRoute,

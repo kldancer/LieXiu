@@ -26,8 +26,8 @@ WHERE id = ANY(@ids::uuid[]);
 --      our transaction finishes; and
 --   2. concurrent UPDATE/DELETE of the runtime row itself (e.g. another
 --      delete attempt) waits for us to commit.
--- Combined with ListUserAgentsByRuntimeForUpdate (which row-locks active and
--- archived user agents) this closes both plan drift and archived-agent restore
+-- Combined with ListAgentsByRuntimeForUpdate (which row-locks active and
+-- archived agents) this closes both plan drift and archived-agent restore
 -- races under read-committed isolation.
 SELECT * FROM agent_runtime
 WHERE id = $1
@@ -311,30 +311,21 @@ UPDATE agent_task_queue
 SET runtime_id = NULL
 WHERE runtime_id = $1 AND completed_at IS NOT NULL;
 
--- name: UnbindUserAgentsFromRuntime :many
+-- name: UnbindAgentsFromRuntime :many
 -- MUL-5559: the runtime-delete replacement for archive-then-hard-delete. Every
 -- user agent bound to this runtime becomes unbound (runtime_id IS NULL) and
--- keeps its row, chats, labels, channel installations and autopilot config.
+-- keeps its row, labels, and execution history.
 --
 -- Deliberately NOT filtered on archived_at: an agent archived earlier is just
 -- as much the user's data as an active one, and hard-deleting it was the same
--- bug. Deliberately restricted to kind = 'user': system agents are invisible
--- execution infrastructure with no UI to rebind them (see
--- DeleteSystemAgentsByRuntime), so leaving them unbound would strand rows no
--- one can repair.
+-- bug.
 UPDATE agent
 SET runtime_id = NULL, updated_at = now()
-WHERE runtime_id = $1 AND kind = 'user'
+WHERE runtime_id = $1
 RETURNING *;
 
 -- name: DeleteAgentRuntime :exec
 DELETE FROM agent_runtime WHERE id = $1;
-
--- name: DeleteSystemAgentsByRuntime :exec
--- System agents are invisible execution infrastructure (for example the Agent
--- Builder). Remove them before deleting their runtime so the RESTRICT runtime
--- FK cannot block an otherwise dependency-free delete.
-DELETE FROM agent WHERE runtime_id = $1 AND kind = 'system';
 
 -- name: CountActiveAgentsByRuntime :one
 SELECT count(*) FROM agent WHERE runtime_id = $1 AND archived_at IS NULL;

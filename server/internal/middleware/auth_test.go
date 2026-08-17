@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
-	"github.com/multica-ai/multica/server/internal/auth"
+	"github.com/kailonyang/liexiu/server/internal/auth"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -54,7 +54,7 @@ func generateToken(claims jwt.MapClaims, secret []byte) string {
 func validClaims() jwt.MapClaims {
 	return jwt.MapClaims{
 		"sub":   "test-user-id",
-		"email": "test@multica.ai",
+		"email": "test@liexiu.ai",
 		"exp":   time.Now().Add(time.Hour).Unix(),
 	}
 }
@@ -191,8 +191,8 @@ func TestAuth_ValidToken(t *testing.T) {
 	if gotUserID != "test-user-id" {
 		t.Fatalf("expected X-User-ID 'test-user-id', got '%s'", gotUserID)
 	}
-	if gotEmail != "test@multica.ai" {
-		t.Fatalf("expected X-User-Email 'test@multica.ai', got '%s'", gotEmail)
+	if gotEmail != "test@liexiu.ai" {
+		t.Fatalf("expected X-User-Email 'test@liexiu.ai', got '%s'", gotEmail)
 	}
 }
 
@@ -304,7 +304,7 @@ func TestAuth_PATCacheHit(t *testing.T) {
 }
 
 // TestAuth_MCN_NoVerifierConfigured pins the same fail-closed branch
-// as the daemon side: with no MULTICA_CLOUD_FLEET_URL configured, an
+// as the daemon side: with no LIEXIU_CLOUD_FLEET_URL configured, an
 // mcn_ bearer token must be rejected with 401 at the prefix branch.
 // We don't fall through — an mcn_ string can't be a valid mul_ PAT or
 // JWT, so any fall-through would be wasted work.
@@ -356,11 +356,10 @@ func TestAuth_MCN_ValidTokenSetsUserID(t *testing.T) {
 	if gotUser != "01972f7e-7e8d-77ef-a13d-1b0ce3e9c001" {
 		t.Errorf("expected owner_id propagated as X-User-ID, got %q", gotUser)
 	}
-	// Pinned per the cloud-billing review: a successful mcn_ verify
-	// MUST stamp X-Actor-Source so account-level guards (e.g.
-	// handler.RequireHumanActor on /api/cloud-billing/*) can tell a
-	// machine credential apart from a human PAT/JWT. Dropping this
-	// stamp would silently let an mcn_ holder reach billing.
+	// A successful mcn_ verify MUST stamp X-Actor-Source so
+	// account-level guards can tell a machine credential apart from
+	// a human PAT/JWT. Dropping this stamp would silently grant a
+	// machine credential human-equivalent access.
 	if gotActorSource != "cloud_pat" {
 		t.Errorf("expected X-Actor-Source=cloud_pat, got %q", gotActorSource)
 	}

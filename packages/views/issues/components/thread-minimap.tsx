@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CheckCircle2 } from "lucide-react";
-import type { TimelineEntry } from "@multica/core/types";
-import { useActorName } from "@multica/core/workspace/hooks";
-import { cn } from "@multica/ui/lib/utils";
+import type { TimelineEntry } from "@liexiu/core/types";
+import { useActorName } from "@liexiu/core/workspace/hooks";
+import { cn } from "@liexiu/ui/lib/utils";
 import { useT } from "../../i18n";
 
 // ---------------------------------------------------------------------------
@@ -275,7 +275,7 @@ export function ThreadMinimap({
   const visibleIds = useVisibleThreadIds(threadIds, scrollContainerEl);
 
   // Flattened previews, cached per thread by content so an unrelated timeline
-  // update (reaction, new reply elsewhere) doesn't re-flatten every comment.
+  // update (new reply elsewhere) doesn't re-flatten every comment.
   const prevPreviewsRef = useRef<Map<string, { content: string | undefined; preview: { title: string; body: string } }>>(new Map());
   const previews = useMemo(() => {
     const next = new Map<string, { content: string | undefined; preview: { title: string; body: string } }>();

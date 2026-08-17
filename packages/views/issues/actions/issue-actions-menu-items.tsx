@@ -12,22 +12,20 @@ import {
   FolderOpen,
   Link2,
   Network,
-  Pin,
-  PinOff,
   Plus,
   Trash2,
   Unlink,
   UserMinus,
 } from "lucide-react";
-import type { AgentTask, Issue } from "@multica/core/types";
-import { todayDateOnly, addDaysDateOnly } from "@multica/core/issues/date";
-import { api } from "@multica/core/api";
+import type { AgentTask, Issue } from "@liexiu/core/types";
+import { todayDateOnly, addDaysDateOnly } from "@liexiu/core/issues/date";
+import { api } from "@liexiu/core/api";
 import {
   ALL_STATUSES,
   PRIORITY_DISPLAY_ORDER,
   PRIORITY_CONFIG,
-} from "@multica/core/issues/config";
-import { issueKeys } from "@multica/core/issues/queries";
+} from "@liexiu/core/issues/config";
+import { issueKeys } from "@liexiu/core/issues/queries";
 import { StatusIcon } from "../components/status-icon";
 import { PriorityIcon } from "../components/priority-icon";
 import {
@@ -36,15 +34,15 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuSubContent,
   DropdownMenuSeparator,
-} from "@multica/ui/components/ui/dropdown-menu";
+} from "@liexiu/ui/components/ui/dropdown-menu";
 import {
   ContextMenuItem,
   ContextMenuSub,
   ContextMenuSubTrigger,
   ContextMenuSubContent,
   ContextMenuSeparator,
-} from "@multica/ui/components/ui/context-menu";
-import { copyText } from "@multica/ui/lib/clipboard";
+} from "@liexiu/ui/components/ui/context-menu";
+import { copyText } from "@liexiu/ui/lib/clipboard";
 import type { UseIssueActionsResult } from "./use-issue-actions";
 import { useT } from "../../i18n";
 
@@ -103,10 +101,8 @@ export function IssueActionsMenuItems({
 }: IssueActionsMenuItemsProps) {
   const { t } = useT("issues");
   const {
-    isPinned,
     updateField,
     openInNewTab,
-    togglePin,
     copyLink,
     openCreateSubIssue,
     openSetParent,
@@ -191,7 +187,7 @@ export function IssueActionsMenuItems({
       </P.Sub>
 
       {/* Assignee — closes this menu and hands off to the shared
-          AssigneePicker (members + agents + squads, with search and
+          AssigneePicker (members + agents, with search and
           permission checks). Keeps a single source of truth for the
           assignee UX across detail sidebar, board cards, and right-click /
           3-dot menus. */}
@@ -262,14 +258,6 @@ export function IssueActionsMenuItems({
       <P.Item onClick={openInNewTab}>
         <ExternalLink className="h-3.5 w-3.5" />
         {t(($) => $.actions.open_in_new_tab)}
-      </P.Item>
-      <P.Item onClick={togglePin}>
-        {isPinned ? (
-          <PinOff className="h-3.5 w-3.5" />
-        ) : (
-          <Pin className="h-3.5 w-3.5" />
-        )}
-        {isPinned ? t(($) => $.actions.unpin_from_sidebar) : t(($) => $.actions.pin_to_sidebar)}
       </P.Item>
       <P.Item onClick={copyLink}>
         <Link2 className="h-3.5 w-3.5" />

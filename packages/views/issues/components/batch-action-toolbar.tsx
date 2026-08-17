@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { X, Trash2 } from "lucide-react";
 import { toast } from "sonner";
-import { Button } from "@multica/ui/components/ui/button";
+import { Button } from "@liexiu/ui/components/ui/button";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -14,18 +14,18 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "@multica/ui/components/ui/alert-dialog";
-import type { Issue, UpdateIssueRequest } from "@multica/core/types";
-import { commonIssueFields } from "@multica/core/issues/batch";
-import { useBatchUpdateIssues, useBatchDeleteIssues } from "@multica/core/issues/mutations";
-import { useModalStore } from "@multica/core/modals";
+} from "@liexiu/ui/components/ui/alert-dialog";
+import type { Issue, UpdateIssueRequest } from "@liexiu/core/types";
+import { commonIssueFields } from "@liexiu/core/issues/batch";
+import { useBatchUpdateIssues, useBatchDeleteIssues } from "@liexiu/core/issues/mutations";
+import { useModalStore } from "@liexiu/core/modals";
 import { StatusPicker, PriorityPicker, AssigneePicker } from "./pickers";
 import { useT } from "../../i18n";
-import { cn } from "@multica/ui/lib/utils";
+import { cn } from "@liexiu/ui/lib/utils";
 import {
   UI_EASE_OUT,
   UI_MOTION_DURATION,
-} from "@multica/ui/lib/motion";
+} from "@liexiu/ui/lib/motion";
 import { useIssueSurfaceActionsOptional } from "../surface/actions-context";
 import { useIssueSurfaceSelection } from "../surface/selection-context";
 
@@ -116,7 +116,7 @@ export function BatchActionToolbar({
   // without an extra confirmation step (product decision on MUL-4155). The
   // status change was previously routed through the pre-trigger modal, which for
   // the common done/cancelled case only rendered a misleading "现在开始处理？ →
-  // 不会开始处理" box. Agent/squad assignment still confirms via
+  // 不会开始处理" box. Agent assignment still confirms via
   // handleBatchAssignee — that is the only batch action that should preview a
   // run fan-out.
   const handleBatchStatus = (updates: Partial<UpdateIssueRequest>) => {
@@ -125,7 +125,7 @@ export function BatchActionToolbar({
   };
 
   const handleBatchAssignee = (updates: Partial<UpdateIssueRequest>) => {
-    if ((updates.assignee_type === "agent" || updates.assignee_type === "squad") && updates.assignee_id) {
+    if (updates.assignee_type === "agent" && updates.assignee_id) {
       // Backlog never starts a run on assign (parking lot), so if every selected
       // issue is in backlog the confirm modal would only render an empty "won't
       // start" box — apply directly, matching handleBatchStatus's backlog short-

@@ -10,7 +10,6 @@ describe("MainRendererMessageQueue", () => {
     const send = vi.fn();
 
     queue.enqueue("auth:token", "token-a", send);
-    queue.setReady("invite:open", true, send);
     expect(send).not.toHaveBeenCalled();
 
     queue.setReady("auth:token", true, send);
@@ -21,8 +20,8 @@ describe("MainRendererMessageQueue", () => {
     const queue = new MainRendererMessageQueue();
     const send = vi.fn();
 
-    queue.setReady("inbox:open", true, send);
-    queue.enqueue("inbox:open", { itemId: "item-1" }, send);
+    queue.setReady("auth:token", true, send);
+    queue.enqueue("auth:token", "token-a", send);
 
     expect(send).toHaveBeenCalledOnce();
   });
@@ -31,22 +30,22 @@ describe("MainRendererMessageQueue", () => {
     const queue = new MainRendererMessageQueue();
     const send = vi.fn();
 
-    queue.setReady("invite:open", true, send);
+    queue.setReady("auth:token", true, send);
     queue.resetReady();
-    queue.enqueue("invite:open", "invite-1", send);
+    queue.enqueue("auth:token", "token-b", send);
     expect(send).not.toHaveBeenCalled();
 
-    queue.setReady("invite:open", true, send);
-    expect(send).toHaveBeenCalledWith("invite:open", "invite-1");
+    queue.setReady("auth:token", true, send);
+    expect(send).toHaveBeenCalledWith("auth:token", "token-b");
   });
 
   it("can discard account-scoped pending messages", () => {
     const queue = new MainRendererMessageQueue();
     const send = vi.fn();
 
-    queue.enqueue("inbox:open", { itemId: "old-account-item" }, send);
-    queue.clear("inbox:open");
-    queue.setReady("inbox:open", true, send);
+    queue.enqueue("auth:token", "old-account-token", send);
+    queue.clear("auth:token");
+    queue.setReady("auth:token", true, send);
 
     expect(send).not.toHaveBeenCalled();
   });

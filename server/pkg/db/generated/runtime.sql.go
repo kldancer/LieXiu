@@ -16,7 +16,7 @@ UPDATE agent_task_queue
 SET status = 'cancelled', completed_at = now()
 WHERE (runtime_id = ANY($1::uuid[]) OR agent_id = ANY($2::uuid[]))
   AND status IN ('queued', 'dispatched', 'running', 'waiting_local_directory', 'deferred')
-RETURNING id, agent_id, issue_id, status, priority, dispatched_at, started_at, completed_at, result, error, created_at, context, runtime_id, session_id, work_dir, trigger_comment_id, chat_session_id, autopilot_run_id, attempt, max_attempts, parent_task_id, failure_reason, trigger_summary, force_fresh_session, is_leader_task, wait_reason, initiator_user_id, handoff_note, prepare_lease_expires_at, squad_id, runtime_mcp_overlay, escalation_for_task_id, fire_at, originator_user_id, runtime_connected_apps, coalesced_comment_ids, delivered_comment_ids, chat_input_task_id, chat_finalize_deferred_at, originator_source, delegated_from_task_id, retry_of_task_id, rerun_of_task_id, rule_version_id, trigger_evidence_kind, trigger_evidence_ref_id, accountable_user_id, session_rollout_missing, retired_session_id, quick_actions_disabled, regenerate_quick_actions_for, plugin_execution_manifest_id, branch_name
+RETURNING id, agent_id, issue_id, status, priority, dispatched_at, started_at, completed_at, result, error, created_at, context, runtime_id, session_id, work_dir, trigger_comment_id, attempt, max_attempts, parent_task_id, failure_reason, trigger_summary, force_fresh_session, wait_reason, initiator_user_id, handoff_note, prepare_lease_expires_at, runtime_mcp_overlay, escalation_for_task_id, fire_at, originator_user_id, runtime_connected_apps, coalesced_comment_ids, delivered_comment_ids, originator_source, delegated_from_task_id, retry_of_task_id, rerun_of_task_id, trigger_evidence_kind, trigger_evidence_ref_id, accountable_user_id, session_rollout_missing, retired_session_id, quick_actions_disabled, regenerate_quick_actions_for, branch_name, orchestration_run_id
 `
 
 type CancelAgentTasksByRuntimeOrAgentParams struct {
@@ -72,20 +72,16 @@ func (q *Queries) CancelAgentTasksByRuntimeOrAgent(ctx context.Context, arg Canc
 			&i.SessionID,
 			&i.WorkDir,
 			&i.TriggerCommentID,
-			&i.ChatSessionID,
-			&i.AutopilotRunID,
 			&i.Attempt,
 			&i.MaxAttempts,
 			&i.ParentTaskID,
 			&i.FailureReason,
 			&i.TriggerSummary,
 			&i.ForceFreshSession,
-			&i.IsLeaderTask,
 			&i.WaitReason,
 			&i.InitiatorUserID,
 			&i.HandoffNote,
 			&i.PrepareLeaseExpiresAt,
-			&i.SquadID,
 			&i.RuntimeMcpOverlay,
 			&i.EscalationForTaskID,
 			&i.FireAt,
@@ -93,13 +89,10 @@ func (q *Queries) CancelAgentTasksByRuntimeOrAgent(ctx context.Context, arg Canc
 			&i.RuntimeConnectedApps,
 			&i.CoalescedCommentIds,
 			&i.DeliveredCommentIds,
-			&i.ChatInputTaskID,
-			&i.ChatFinalizeDeferredAt,
 			&i.OriginatorSource,
 			&i.DelegatedFromTaskID,
 			&i.RetryOfTaskID,
 			&i.RerunOfTaskID,
-			&i.RuleVersionID,
 			&i.TriggerEvidenceKind,
 			&i.TriggerEvidenceRefID,
 			&i.AccountableUserID,
@@ -107,8 +100,8 @@ func (q *Queries) CancelAgentTasksByRuntimeOrAgent(ctx context.Context, arg Canc
 			&i.RetiredSessionID,
 			&i.QuickActionsDisabled,
 			&i.RegenerateQuickActionsFor,
-			&i.PluginExecutionManifestID,
 			&i.BranchName,
+			&i.OrchestrationRunID,
 		); err != nil {
 			return nil, err
 		}
@@ -216,18 +209,6 @@ func (q *Queries) DeleteAgentRuntime(ctx context.Context, id pgtype.UUID) error 
 	return err
 }
 
-const deleteSystemAgentsByRuntime = `-- name: DeleteSystemAgentsByRuntime :exec
-DELETE FROM agent WHERE runtime_id = $1 AND kind = 'system'
-`
-
-// System agents are invisible execution infrastructure (for example the Agent
-// Builder). Remove them before deleting their runtime so the RESTRICT runtime
-// FK cannot block an otherwise dependency-free delete.
-func (q *Queries) DeleteSystemAgentsByRuntime(ctx context.Context, runtimeID pgtype.UUID) error {
-	_, err := q.db.Exec(ctx, deleteSystemAgentsByRuntime, runtimeID)
-	return err
-}
-
 const failTasksForOfflineRuntimes = `-- name: FailTasksForOfflineRuntimes :many
 UPDATE agent_task_queue
 SET status = 'failed', completed_at = now(), error = 'runtime went offline',
@@ -237,7 +218,7 @@ WHERE status IN ('dispatched', 'running', 'waiting_local_directory')
   AND runtime_id IN (
     SELECT id FROM agent_runtime WHERE status = 'offline'
   )
-RETURNING id, agent_id, issue_id, status, priority, dispatched_at, started_at, completed_at, result, error, created_at, context, runtime_id, session_id, work_dir, trigger_comment_id, chat_session_id, autopilot_run_id, attempt, max_attempts, parent_task_id, failure_reason, trigger_summary, force_fresh_session, is_leader_task, wait_reason, initiator_user_id, handoff_note, prepare_lease_expires_at, squad_id, runtime_mcp_overlay, escalation_for_task_id, fire_at, originator_user_id, runtime_connected_apps, coalesced_comment_ids, delivered_comment_ids, chat_input_task_id, chat_finalize_deferred_at, originator_source, delegated_from_task_id, retry_of_task_id, rerun_of_task_id, rule_version_id, trigger_evidence_kind, trigger_evidence_ref_id, accountable_user_id, session_rollout_missing, retired_session_id, quick_actions_disabled, regenerate_quick_actions_for, plugin_execution_manifest_id, branch_name
+RETURNING id, agent_id, issue_id, status, priority, dispatched_at, started_at, completed_at, result, error, created_at, context, runtime_id, session_id, work_dir, trigger_comment_id, attempt, max_attempts, parent_task_id, failure_reason, trigger_summary, force_fresh_session, wait_reason, initiator_user_id, handoff_note, prepare_lease_expires_at, runtime_mcp_overlay, escalation_for_task_id, fire_at, originator_user_id, runtime_connected_apps, coalesced_comment_ids, delivered_comment_ids, originator_source, delegated_from_task_id, retry_of_task_id, rerun_of_task_id, trigger_evidence_kind, trigger_evidence_ref_id, accountable_user_id, session_rollout_missing, retired_session_id, quick_actions_disabled, regenerate_quick_actions_for, branch_name, orchestration_run_id
 `
 
 // Marks dispatched/running/waiting_local_directory tasks as failed when
@@ -269,20 +250,16 @@ func (q *Queries) FailTasksForOfflineRuntimes(ctx context.Context) ([]AgentTaskQ
 			&i.SessionID,
 			&i.WorkDir,
 			&i.TriggerCommentID,
-			&i.ChatSessionID,
-			&i.AutopilotRunID,
 			&i.Attempt,
 			&i.MaxAttempts,
 			&i.ParentTaskID,
 			&i.FailureReason,
 			&i.TriggerSummary,
 			&i.ForceFreshSession,
-			&i.IsLeaderTask,
 			&i.WaitReason,
 			&i.InitiatorUserID,
 			&i.HandoffNote,
 			&i.PrepareLeaseExpiresAt,
-			&i.SquadID,
 			&i.RuntimeMcpOverlay,
 			&i.EscalationForTaskID,
 			&i.FireAt,
@@ -290,13 +267,10 @@ func (q *Queries) FailTasksForOfflineRuntimes(ctx context.Context) ([]AgentTaskQ
 			&i.RuntimeConnectedApps,
 			&i.CoalescedCommentIds,
 			&i.DeliveredCommentIds,
-			&i.ChatInputTaskID,
-			&i.ChatFinalizeDeferredAt,
 			&i.OriginatorSource,
 			&i.DelegatedFromTaskID,
 			&i.RetryOfTaskID,
 			&i.RerunOfTaskID,
-			&i.RuleVersionID,
 			&i.TriggerEvidenceKind,
 			&i.TriggerEvidenceRefID,
 			&i.AccountableUserID,
@@ -304,8 +278,8 @@ func (q *Queries) FailTasksForOfflineRuntimes(ctx context.Context) ([]AgentTaskQ
 			&i.RetiredSessionID,
 			&i.QuickActionsDisabled,
 			&i.RegenerateQuickActionsFor,
-			&i.PluginExecutionManifestID,
 			&i.BranchName,
+			&i.OrchestrationRunID,
 		); err != nil {
 			return nil, err
 		}
@@ -771,8 +745,8 @@ FOR UPDATE
 //  2. concurrent UPDATE/DELETE of the runtime row itself (e.g. another
 //     delete attempt) waits for us to commit.
 //
-// Combined with ListUserAgentsByRuntimeForUpdate (which row-locks active and
-// archived user agents) this closes both plan drift and archived-agent restore
+// Combined with ListAgentsByRuntimeForUpdate (which row-locks active and
+// archived agents) this closes both plan drift and archived-agent restore
 // races under read-committed isolation.
 func (q *Queries) LockAgentRuntime(ctx context.Context, id pgtype.UUID) (AgentRuntime, error) {
 	row := q.db.QueryRow(ctx, lockAgentRuntime, id)
@@ -1148,47 +1122,22 @@ func (q *Queries) TouchAgentRuntimesLastSeenBatch(ctx context.Context, ids []pgt
 	return result.RowsAffected(), nil
 }
 
-const unbindTasksFromRuntime = `-- name: UnbindTasksFromRuntime :execrows
-UPDATE agent_task_queue
-SET runtime_id = NULL
-WHERE runtime_id = $1 AND completed_at IS NOT NULL
-`
-
-// Detaches this runtime's task history so deleting the runtime row cannot
-// cascade it away (agent_task_queue.runtime_id is ON DELETE CASCADE, and
-// task_message / task_usage / task_token cascade from the task in turn).
-// Restricted to terminal rows: an active task must keep its runtime, per
-// agent_task_queue_active_requires_runtime. The caller runs
-// CancelAgentTasksByRuntimeOrAgent +
-// CountUndrainedTasksByRuntimeOrAgent first, so at this point "terminal" is
-// every row on the runtime.
-func (q *Queries) UnbindTasksFromRuntime(ctx context.Context, runtimeID pgtype.UUID) (int64, error) {
-	result, err := q.db.Exec(ctx, unbindTasksFromRuntime, runtimeID)
-	if err != nil {
-		return 0, err
-	}
-	return result.RowsAffected(), nil
-}
-
-const unbindUserAgentsFromRuntime = `-- name: UnbindUserAgentsFromRuntime :many
+const unbindAgentsFromRuntime = `-- name: UnbindAgentsFromRuntime :many
 UPDATE agent
 SET runtime_id = NULL, updated_at = now()
-WHERE runtime_id = $1 AND kind = 'user'
-RETURNING id, workspace_id, name, avatar_url, runtime_mode, runtime_config, visibility, status, max_concurrent_tasks, owner_id, created_at, updated_at, description, runtime_id, instructions, archived_at, archived_by, custom_env, custom_args, mcp_config, model, thinking_level, composio_toolkit_allowlist, permission_mode, kind, system_key, disabled_runtime_skills, service_tier
+WHERE runtime_id = $1
+RETURNING id, workspace_id, name, avatar_url, runtime_mode, runtime_config, visibility, status, max_concurrent_tasks, owner_id, created_at, updated_at, description, runtime_id, instructions, archived_at, archived_by, custom_env, custom_args, mcp_config, model, thinking_level, permission_mode, disabled_runtime_skills, service_tier
 `
 
 // MUL-5559: the runtime-delete replacement for archive-then-hard-delete. Every
 // user agent bound to this runtime becomes unbound (runtime_id IS NULL) and
-// keeps its row, chats, labels, channel installations and autopilot config.
+// keeps its row, labels, and execution history.
 //
 // Deliberately NOT filtered on archived_at: an agent archived earlier is just
 // as much the user's data as an active one, and hard-deleting it was the same
-// bug. Deliberately restricted to kind = 'user': system agents are invisible
-// execution infrastructure with no UI to rebind them (see
-// DeleteSystemAgentsByRuntime), so leaving them unbound would strand rows no
-// one can repair.
-func (q *Queries) UnbindUserAgentsFromRuntime(ctx context.Context, runtimeID pgtype.UUID) ([]Agent, error) {
-	rows, err := q.db.Query(ctx, unbindUserAgentsFromRuntime, runtimeID)
+// bug.
+func (q *Queries) UnbindAgentsFromRuntime(ctx context.Context, runtimeID pgtype.UUID) ([]Agent, error) {
+	rows, err := q.db.Query(ctx, unbindAgentsFromRuntime, runtimeID)
 	if err != nil {
 		return nil, err
 	}
@@ -1219,10 +1168,7 @@ func (q *Queries) UnbindUserAgentsFromRuntime(ctx context.Context, runtimeID pgt
 			&i.McpConfig,
 			&i.Model,
 			&i.ThinkingLevel,
-			&i.ComposioToolkitAllowlist,
 			&i.PermissionMode,
-			&i.Kind,
-			&i.SystemKey,
 			&i.DisabledRuntimeSkills,
 			&i.ServiceTier,
 		); err != nil {
@@ -1234,6 +1180,28 @@ func (q *Queries) UnbindUserAgentsFromRuntime(ctx context.Context, runtimeID pgt
 		return nil, err
 	}
 	return items, nil
+}
+
+const unbindTasksFromRuntime = `-- name: UnbindTasksFromRuntime :execrows
+UPDATE agent_task_queue
+SET runtime_id = NULL
+WHERE runtime_id = $1 AND completed_at IS NOT NULL
+`
+
+// Detaches this runtime's task history so deleting the runtime row cannot
+// cascade it away (agent_task_queue.runtime_id is ON DELETE CASCADE, and
+// task_message / task_usage / task_token cascade from the task in turn).
+// Restricted to terminal rows: an active task must keep its runtime, per
+// agent_task_queue_active_requires_runtime. The caller runs
+// CancelAgentTasksByRuntimeOrAgent +
+// CountUndrainedTasksByRuntimeOrAgent first, so at this point "terminal" is
+// every row on the runtime.
+func (q *Queries) UnbindTasksFromRuntime(ctx context.Context, runtimeID pgtype.UUID) (int64, error) {
+	result, err := q.db.Exec(ctx, unbindTasksFromRuntime, runtimeID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const updateAgentRuntimeCustomName = `-- name: UpdateAgentRuntimeCustomName :one

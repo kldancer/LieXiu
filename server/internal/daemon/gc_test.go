@@ -14,8 +14,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/multica-ai/multica/server/internal/daemon/execenv"
-	"github.com/multica-ai/multica/server/internal/daemon/repocache"
+	"github.com/kailonyang/liexiu/server/internal/daemon/execenv"
+	"github.com/kailonyang/liexiu/server/internal/daemon/repocache"
 )
 
 // newGCTestDaemon creates a minimal Daemon for GC testing with a mock HTTP server.
@@ -1333,17 +1333,17 @@ func TestPruneWorktreePreemptionCleansLocksBeforeTaskStarts(t *testing.T) {
 	script := `#!/bin/sh
 if [ "$3" = "reflog" ] && [ "$4" = "expire" ]; then
   : > "$2/refs/remotes/origin/main.lock"
-  : > "$MULTICA_TEST_MAINTENANCE_STARTED"
+  : > "$LIEXIU_TEST_MAINTENANCE_STARTED"
   trap 'exit 143' TERM INT
   while :; do sleep 1; done
 fi
-exec "$MULTICA_TEST_REAL_GIT" "$@"
+exec "$LIEXIU_TEST_REAL_GIT" "$@"
 `
 	if err := os.WriteFile(fakeGit, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("MULTICA_TEST_REAL_GIT", realGit)
-	t.Setenv("MULTICA_TEST_MAINTENANCE_STARTED", startedPath)
+	t.Setenv("LIEXIU_TEST_REAL_GIT", realGit)
+	t.Setenv("LIEXIU_TEST_MAINTENANCE_STARTED", startedPath)
 	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 
 	pruneDone := make(chan struct{})
@@ -1410,182 +1410,54 @@ func (c *blockingRepoCache) CreateWorktree(params repocache.WorktreeParams) (*re
 	return c.inner.CreateWorktree(params)
 }
 
-// TestShouldCleanTaskDir_KindDispatch covers the four GCMeta kinds across
-// active / terminal / 404 / non-terminal axes. Each entry stands up a mock
-// server returning the expected payload (or 404) and asserts the action.
+// TestShouldCleanTaskDir_KindDispatch covers the supported GCMeta kinds and
+// confirms that legacy no-kind metadata still follows the issue path.
 func TestShouldCleanTaskDir_KindDispatch(t *testing.T) {
 	t.Parallel()
 
 	const (
-		issueID    = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaa01"
-		chatID     = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbb01"
-		runID      = "cccccccc-cccc-cccc-cccc-cccccccccc01"
-		quickTask  = "dddddddd-dddd-dddd-dddd-dddddddddd01"
-		legacyMeta = "eeeeeeee-eeee-eeee-eeee-eeeeeeeeee01"
+		issueID   = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaa01"
+		quickTask = "dddddddd-dddd-dddd-dddd-dddddddddd01"
+		legacyID  = "eeeeeeee-eeee-eeee-eeee-eeeeeeeeee01"
 	)
 
 	now := time.Now()
 	overTTL := now.Add(-10 * 24 * time.Hour)
 	withinTTL := now.Add(-1 * time.Hour)
 
-	type serverResp struct {
-		// Path to register on the mux. Empty entries are skipped (used for
-		// 404 cases where the mux returns the default not-found handler).
-		path   string
-		status int
-		body   map[string]any
-	}
-
 	cases := []struct {
-		name    string
-		meta    *execenv.GCMeta
-		servers []serverResp
-		want    gcAction
+		name string
+		meta *execenv.GCMeta
+		path string
+		body map[string]any
+		want gcAction
 	}{
-		// ---- chat ---------------------------------------------------------
 		{
-			name: "chat active session — never reclaimed",
-			meta: &execenv.GCMeta{Kind: execenv.GCKindChat, ChatSessionID: chatID, WorkspaceID: "ws"},
-			servers: []serverResp{{
-				path: "/api/daemon/chat-sessions/" + chatID + "/gc-check",
-				body: map[string]any{"status": "active", "updated_at": overTTL},
-			}},
-			want: gcActionSkip,
-		},
-		{
-			name: "chat archived over TTL — clean",
-			meta: &execenv.GCMeta{Kind: execenv.GCKindChat, ChatSessionID: chatID, WorkspaceID: "ws"},
-			servers: []serverResp{{
-				path: "/api/daemon/chat-sessions/" + chatID + "/gc-check",
-				body: map[string]any{"status": "archived", "updated_at": overTTL},
-			}},
+			name: "issue done over TTL",
+			meta: &execenv.GCMeta{Kind: execenv.GCKindIssue, IssueID: issueID, WorkspaceID: "ws"},
+			path: "/api/daemon/issues/" + issueID + "/gc-check",
+			body: map[string]any{"status": "done", "updated_at": overTTL},
 			want: gcActionClean,
 		},
 		{
-			name: "chat archived within TTL — skip",
-			meta: &execenv.GCMeta{Kind: execenv.GCKindChat, ChatSessionID: chatID, WorkspaceID: "ws"},
-			servers: []serverResp{{
-				path: "/api/daemon/chat-sessions/" + chatID + "/gc-check",
-				body: map[string]any{"status": "archived", "updated_at": withinTTL},
-			}},
-			want: gcActionSkip,
-		},
-		{
-			name: "chat 404 — hard-deleted, clean immediately (no mtime gate)",
-			meta: &execenv.GCMeta{Kind: execenv.GCKindChat, ChatSessionID: chatID, WorkspaceID: "ws"},
-			servers: []serverResp{{
-				path:   "/api/daemon/chat-sessions/" + chatID + "/gc-check",
-				status: http.StatusNotFound,
-			}},
-			want: gcActionClean,
-		},
-
-		// ---- autopilot run -----------------------------------------------
-		{
-			name: "autopilot completed over TTL — clean",
-			meta: &execenv.GCMeta{Kind: execenv.GCKindAutopilotRun, AutopilotRunID: runID, WorkspaceID: "ws"},
-			servers: []serverResp{{
-				path: "/api/daemon/autopilot-runs/" + runID + "/gc-check",
-				body: map[string]any{"status": "completed", "completed_at": overTTL},
-			}},
-			want: gcActionClean,
-		},
-		{
-			name: "autopilot issue_created counts as terminal",
-			meta: &execenv.GCMeta{Kind: execenv.GCKindAutopilotRun, AutopilotRunID: runID, WorkspaceID: "ws"},
-			servers: []serverResp{{
-				path: "/api/daemon/autopilot-runs/" + runID + "/gc-check",
-				body: map[string]any{"status": "issue_created", "completed_at": overTTL},
-			}},
-			want: gcActionClean,
-		},
-		{
-			name: "autopilot running — skip",
-			meta: &execenv.GCMeta{Kind: execenv.GCKindAutopilotRun, AutopilotRunID: runID, WorkspaceID: "ws"},
-			servers: []serverResp{{
-				path: "/api/daemon/autopilot-runs/" + runID + "/gc-check",
-				body: map[string]any{"status": "running"},
-			}},
-			want: gcActionSkip,
-		},
-		{
-			name: "autopilot pending — skip",
-			meta: &execenv.GCMeta{Kind: execenv.GCKindAutopilotRun, AutopilotRunID: runID, WorkspaceID: "ws"},
-			servers: []serverResp{{
-				path: "/api/daemon/autopilot-runs/" + runID + "/gc-check",
-				body: map[string]any{"status": "pending"},
-			}},
-			want: gcActionSkip,
-		},
-		{
-			// The directory is never reused, so a terminal run is reclaimed on
-			// sight — the recent completed_at no longer buys it a 24h reprieve.
-			name: "autopilot completed within TTL — clean immediately (no 24h gate)",
-			meta: &execenv.GCMeta{Kind: execenv.GCKindAutopilotRun, AutopilotRunID: runID, WorkspaceID: "ws"},
-			servers: []serverResp{{
-				path: "/api/daemon/autopilot-runs/" + runID + "/gc-check",
-				body: map[string]any{"status": "completed", "completed_at": withinTTL},
-			}},
-			want: gcActionClean,
-		},
-		{
-			// Terminal status with no completed_at stamp at all still cleans —
-			// GC keys purely on the terminal status, not on any timestamp.
-			name: "autopilot skipped with no completed_at — clean",
-			meta: &execenv.GCMeta{Kind: execenv.GCKindAutopilotRun, AutopilotRunID: runID, WorkspaceID: "ws"},
-			servers: []serverResp{{
-				path: "/api/daemon/autopilot-runs/" + runID + "/gc-check",
-				body: map[string]any{"status": "skipped"},
-			}},
-			want: gcActionClean,
-		},
-		{
-			name: "autopilot failed — clean",
-			meta: &execenv.GCMeta{Kind: execenv.GCKindAutopilotRun, AutopilotRunID: runID, WorkspaceID: "ws"},
-			servers: []serverResp{{
-				path: "/api/daemon/autopilot-runs/" + runID + "/gc-check",
-				body: map[string]any{"status": "failed"},
-			}},
-			want: gcActionClean,
-		},
-
-		// ---- quick-create -------------------------------------------------
-		{
-			name: "quick_create completed task — clean immediately",
+			name: "quick create completed",
 			meta: &execenv.GCMeta{Kind: execenv.GCKindQuickCreate, TaskID: quickTask, WorkspaceID: "ws"},
-			servers: []serverResp{{
-				path: "/api/daemon/tasks/" + quickTask + "/gc-check",
-				body: map[string]any{"status": "completed", "completed_at": withinTTL},
-			}},
+			path: "/api/daemon/tasks/" + quickTask + "/gc-check",
+			body: map[string]any{"status": "completed", "completed_at": withinTTL},
 			want: gcActionClean,
 		},
 		{
-			name: "quick_create cancelled — clean",
+			name: "quick create running",
 			meta: &execenv.GCMeta{Kind: execenv.GCKindQuickCreate, TaskID: quickTask, WorkspaceID: "ws"},
-			servers: []serverResp{{
-				path: "/api/daemon/tasks/" + quickTask + "/gc-check",
-				body: map[string]any{"status": "cancelled"},
-			}},
-			want: gcActionClean,
-		},
-		{
-			name: "quick_create still running — skip",
-			meta: &execenv.GCMeta{Kind: execenv.GCKindQuickCreate, TaskID: quickTask, WorkspaceID: "ws"},
-			servers: []serverResp{{
-				path: "/api/daemon/tasks/" + quickTask + "/gc-check",
-				body: map[string]any{"status": "running"},
-			}},
+			path: "/api/daemon/tasks/" + quickTask + "/gc-check",
+			body: map[string]any{"status": "running"},
 			want: gcActionSkip,
 		},
-
-		// ---- legacy meta (no kind) → issue path ---------------------------
 		{
-			name: "legacy meta with no kind defaults to issue path — done over TTL = clean",
-			meta: &execenv.GCMeta{IssueID: legacyMeta, WorkspaceID: "ws"},
-			servers: []serverResp{{
-				path: "/api/daemon/issues/" + legacyMeta + "/gc-check",
-				body: map[string]any{"status": "done", "updated_at": overTTL},
-			}},
+			name: "legacy meta defaults to issue",
+			meta: &execenv.GCMeta{IssueID: legacyID, WorkspaceID: "ws"},
+			path: "/api/daemon/issues/" + legacyID + "/gc-check",
+			body: map[string]any{"status": "done", "updated_at": overTTL},
 			want: gcActionClean,
 		},
 	}
@@ -1595,30 +1467,18 @@ func TestShouldCleanTaskDir_KindDispatch(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			mux := http.NewServeMux()
-			for _, s := range tc.servers {
-				if s.path == "" {
-					continue
-				}
-				resp := s
-				mux.HandleFunc(resp.path, func(w http.ResponseWriter, r *http.Request) {
-					if resp.status != 0 {
-						w.WriteHeader(resp.status)
-						return
-					}
-					w.Header().Set("Content-Type", "application/json")
-					_ = json.NewEncoder(w).Encode(resp.body)
-				})
-			}
+			mux.HandleFunc(tc.path, func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				_ = json.NewEncoder(w).Encode(tc.body)
+			})
 			d := newGCTestDaemon(t, mux)
 			taskDir := createTaskDir(t, d.cfg.WorkspacesRoot, "ws", tc.name, tc.meta)
-			got := d.shouldCleanTaskDir(context.Background(), taskDir)
-			if got != tc.want {
-				t.Fatalf("kind dispatch %q: want %d, got %d", tc.name, tc.want, got)
+			if got := d.shouldCleanTaskDir(context.Background(), taskDir); got != tc.want {
+				t.Fatalf("want %d, got %d", tc.want, got)
 			}
 		})
 	}
 }
-
 func TestShouldCleanTaskDir_EmptyParentIDFallsBackToOrphanMTime(t *testing.T) {
 	t.Parallel()
 
@@ -1635,12 +1495,8 @@ func TestShouldCleanTaskDir_EmptyParentIDFallsBackToOrphanMTime(t *testing.T) {
 			meta: &execenv.GCMeta{Kind: execenv.GCKindIssue, WorkspaceID: "ws"},
 		},
 		{
-			name: "chat meta",
-			meta: &execenv.GCMeta{Kind: execenv.GCKindChat, WorkspaceID: "ws"},
-		},
-		{
-			name: "autopilot run meta",
-			meta: &execenv.GCMeta{Kind: execenv.GCKindAutopilotRun, WorkspaceID: "ws"},
+			name: "historical unsupported meta",
+			meta: &execenv.GCMeta{Kind: execenv.GCMetaKind("legacy"), WorkspaceID: "ws"},
 		},
 		{
 			name: "quick create meta",
@@ -1729,130 +1585,25 @@ func gitRefExists(t *testing.T, repoPath, ref string) bool {
 	return true
 }
 
-// TestShouldCleanTaskDir_ChatHardDeletedFreshMtime locks acceptance #3:
-// when a user hard-deletes a chat session, the workdir must be reclaimed
-// on the next GC cycle (≤ GCInterval), not deferred to GCOrphanTTL. A
-// directory that was just created (mtime well within GCOrphanTTL) but
-// whose chat session now 404s must therefore return gcActionClean.
-func TestShouldCleanTaskDir_ChatHardDeletedFreshMtime(t *testing.T) {
-	t.Parallel()
-	chatID := "ffffffff-ffff-ffff-ffff-ffffffffff02"
-
-	mux := http.NewServeMux()
-	mux.HandleFunc(fmt.Sprintf("/api/daemon/chat-sessions/%s/gc-check", chatID), func(w http.ResponseWriter, r *http.Request) {
-		// Simulate hard-deleted session (DeleteChatSession ran).
-		w.WriteHeader(http.StatusNotFound)
-	})
-
-	d := newGCTestDaemon(t, mux)
-	// Crank GCOrphanTTL up so the mtime path is unmistakably not in play —
-	// the only way the directory gets reclaimed is the chat-404 fast path.
-	d.cfg.GCOrphanTTL = 365 * 24 * time.Hour
-	meta := &execenv.GCMeta{
-		Kind:          execenv.GCKindChat,
-		ChatSessionID: chatID,
-		WorkspaceID:   "ws",
-		CompletedAt:   time.Now(),
-	}
-	taskDir := createTaskDir(t, d.cfg.WorkspacesRoot, "ws", "hard-deleted-chat", meta)
-	// taskDir mtime is now-ish — well within any sane GCOrphanTTL.
-
-	if got := d.shouldCleanTaskDir(context.Background(), taskDir); got != gcActionClean {
-		t.Fatalf("hard-deleted chat with fresh mtime must clean immediately, got %d", got)
-	}
-}
-
-// TestShouldCleanTaskDir_ChatActiveResistsOldMtime is the explicit acceptance
-// criterion #2: an active chat session whose workdir is older than
-// GCOrphanTTL must NOT be reclaimed. The only path to clean an active
-// session's workdir is for the user to archive or hard-delete the session.
-//
-// #6782 narrowed this from "the GC does nothing" to "the GC never removes the
-// directory": a session idle past GCArtifactTTL now gives back the regenerable
-// codex-home/.sandbox-bin cache, which the next message re-provisions. The
-// acceptance criterion is unchanged — the session's own data survives — so
-// this asserts the surviving contents rather than the bare action value.
-// TestManagedArtifact_IdleActiveChatReclaimsSandboxBin covers the carve-out.
-func TestShouldCleanTaskDir_ChatActiveResistsOldMtime(t *testing.T) {
-	t.Parallel()
-	chatID := "ffffffff-ffff-ffff-ffff-ffffffffff01"
-
-	mux := http.NewServeMux()
-	mux.HandleFunc(fmt.Sprintf("/api/daemon/chat-sessions/%s/gc-check", chatID), func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]any{
-			"status":     "active",
-			"updated_at": time.Now().Add(-100 * 24 * time.Hour),
-		})
-	})
-
-	d := newGCTestDaemon(t, mux)
-	d.cfg.GCOrphanTTL = 0 // every directory is "older than orphan TTL"
-	meta := &execenv.GCMeta{
-		Kind:          execenv.GCKindChat,
-		ChatSessionID: chatID,
-		WorkspaceID:   "ws",
-		CompletedAt:   time.Now().Add(-200 * 24 * time.Hour),
-	}
-	taskDir := createTaskDir(t, d.cfg.WorkspacesRoot, "ws", "active-chat", meta)
-	writeFile(t, filepath.Join(taskDir, "logs/run.log"), 32)
-	writeFile(t, filepath.Join(taskDir, "output/result.md"), 32)
-	if err := os.Chtimes(taskDir, time.Now().Add(-200*24*time.Hour), time.Now().Add(-200*24*time.Hour)); err != nil {
-		t.Fatalf("chtimes: %v", err)
-	}
-
-	action := d.shouldCleanTaskDir(context.Background(), taskDir)
-	if action == gcActionClean || action == gcActionOrphan {
-		t.Fatalf("active chat session's directory must never be removed, got action %d", action)
-	}
-	d.applyGCAction(taskDir, action, &gcStats{byPattern: map[string]int{}})
-
-	for _, rel := range []string{".", "logs/run.log", "output/result.md", ".gc_meta.json"} {
-		if _, err := os.Stat(filepath.Join(taskDir, rel)); err != nil {
-			t.Fatalf("active chat session must keep %s: %v", rel, err)
-		}
-	}
-}
-
-// TestGCMetaForTask covers the discriminator priority used by the daemon
-// when selecting which GCMetaKind to write at task completion.
 func TestGCMetaForTask(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
 		name string
 		task Task
 		want execenv.GCMetaKind
-		idOK func(m execenv.GCMeta) bool
+		idOK func(execenv.GCMeta) bool
 	}{
 		{
-			name: "chat task",
-			task: Task{ID: "t1", WorkspaceID: "ws", ChatSessionID: "c1"},
-			want: execenv.GCKindChat,
-			idOK: func(m execenv.GCMeta) bool { return m.ChatSessionID == "c1" },
-		},
-		{
-			name: "autopilot run task",
-			task: Task{ID: "t2", WorkspaceID: "ws", AutopilotRunID: "r1"},
-			want: execenv.GCKindAutopilotRun,
-			idOK: func(m execenv.GCMeta) bool { return m.AutopilotRunID == "r1" },
-		},
-		{
 			name: "issue task",
-			task: Task{ID: "t3", WorkspaceID: "ws", IssueID: "i1"},
+			task: Task{ID: "t1", WorkspaceID: "ws", IssueID: "i1"},
 			want: execenv.GCKindIssue,
 			idOK: func(m execenv.GCMeta) bool { return m.IssueID == "i1" },
 		},
 		{
-			name: "quick-create task — issue_id always empty at WriteGCMeta time",
-			task: Task{ID: "t4", WorkspaceID: "ws", QuickCreatePrompt: "do the thing"},
+			name: "quick-create task",
+			task: Task{ID: "t2", WorkspaceID: "ws", QuickCreatePrompt: "do the thing"},
 			want: execenv.GCKindQuickCreate,
-			idOK: func(m execenv.GCMeta) bool { return m.TaskID == "t4" },
-		},
-		{
-			name: "chat wins over issue when both set (defensive ordering)",
-			task: Task{ID: "t5", WorkspaceID: "ws", IssueID: "i1", ChatSessionID: "c1"},
-			want: execenv.GCKindChat,
-			idOK: func(m execenv.GCMeta) bool { return m.ChatSessionID == "c1" && m.IssueID == "" },
+			idOK: func(m execenv.GCMeta) bool { return m.TaskID == "t2" },
 		},
 	}
 	for _, tc := range cases {
@@ -1861,33 +1612,29 @@ func TestGCMetaForTask(t *testing.T) {
 			t.Parallel()
 			meta, ok := gcMetaForTask(tc.task)
 			if !ok {
-				t.Fatalf("expected gcMetaForTask to recognize task, got ok=false")
+				t.Fatal("expected task to produce supported GC metadata")
 			}
-			if meta.Kind != tc.want {
-				t.Fatalf("kind: want %q, got %q", tc.want, meta.Kind)
-			}
-			if !tc.idOK(meta) {
-				t.Fatalf("ID field mismatch: %+v", meta)
+			if meta.Kind != tc.want || !tc.idOK(meta) {
+				t.Fatalf("metadata = %+v, want kind %q", meta, tc.want)
 			}
 			if meta.WorkspaceID != "ws" {
-				t.Fatalf("workspace_id: want %q, got %q", "ws", meta.WorkspaceID)
+				t.Fatalf("workspace_id = %q, want ws", meta.WorkspaceID)
 			}
 		})
 	}
-
-	t.Run("unrecognized task — ok=false", func(t *testing.T) {
-		t.Parallel()
-		_, ok := gcMetaForTask(Task{ID: "tX", WorkspaceID: "ws"})
-		if ok {
-			t.Fatal("expected gcMetaForTask to return ok=false for task with no IDs")
-		}
-	})
+	for _, tc := range []struct {
+		name string
+		task Task
+	}{{name: "unrecognized task", task: Task{ID: "t6", WorkspaceID: "ws"}}} {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if _, ok := gcMetaForTask(tc.task); ok {
+				t.Fatal("unsupported task kind must fall back to orphan handling")
+			}
+		})
+	}
 }
-
-// TestShouldCleanTaskDir_LocalDirectoryNeverClean confirms the GC loop
-// never removes the envRoot of a local_directory task even when the parent
-// issue is long-since done. Artifact-pattern cleanup is the most that
-// should ever happen, so output/ and logs/ stay around for the user.
 func TestShouldCleanTaskDir_LocalDirectoryNeverClean(t *testing.T) {
 	t.Parallel()
 	issueID := "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1"

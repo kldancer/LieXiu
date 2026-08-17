@@ -24,8 +24,8 @@ func TestRedisClientName(t *testing.T) {
 		suffix   string
 		want     string
 	}{
-		{"empty_suffix_returns_existing", "multica-api:store", "", "multica-api:store"},
-		{"empty_existing_uses_default_prefix", "", "store", "multica-api:store"},
+		{"empty_suffix_returns_existing", "liexiu-api:store", "", "liexiu-api:store"},
+		{"empty_existing_uses_default_prefix", "", "store", "liexiu-api:store"},
 		{"both_set_joins_with_colon", "custom", "store", "custom:store"},
 		{"empty_both_returns_empty", "", "", ""},
 	}
@@ -46,8 +46,8 @@ func TestNewNamedRedisClient_SetsClientName(t *testing.T) {
 	defer client.Close()
 
 	opts := client.Options()
-	if opts.ClientName != "multica-api:store" {
-		t.Errorf("ClientName = %q, want %q", opts.ClientName, "multica-api:store")
+	if opts.ClientName != "liexiu-api:store" {
+		t.Errorf("ClientName = %q, want %q", opts.ClientName, "liexiu-api:store")
 	}
 }
 
@@ -84,8 +84,8 @@ func TestNewNamedRedisClient_DisableClientName_InvalidValue(t *testing.T) {
 
 	opts := client.Options()
 	// Invalid value falls back to default (false), so ClientName IS set
-	if opts.ClientName != "multica-api:store" {
-		t.Errorf("ClientName = %q, want %q (invalid env should fall back to naming enabled)", opts.ClientName, "multica-api:store")
+	if opts.ClientName != "liexiu-api:store" {
+		t.Errorf("ClientName = %q, want %q (invalid env should fall back to naming enabled)", opts.ClientName, "liexiu-api:store")
 	}
 }
 
@@ -96,16 +96,14 @@ func TestNewNamedRedisClient_DisableClientName_InvalidValue(t *testing.T) {
 const mainSourceFile = "main.go"
 
 // backgroundServiceConstructors must never be called from main(): they build a
-// TaskService / AutopilotService that the router has not finished wiring.
+// TaskService that the router has not finished wiring.
 var backgroundServiceConstructors = []string{
 	"service.NewTaskService",
-	"service.NewAutopilotService",
 }
 
 // TestMainUsesRouterOwnedBackgroundServices guards the process wiring behind
-// scheduled Autopilot dispatch and the runtime sweeper: both must take the
-// router's fully wired services off *handler.Handler instead of constructing
-// their own.
+// the runtime sweeper: background work must take the router's fully wired
+// services off *handler.Handler instead of constructing its own.
 //
 // The router — not NewTaskService — assigns h.TaskService.EmptyClaim. A second
 // TaskService built inside main() therefore has EmptyClaim == nil, and because
@@ -114,7 +112,7 @@ var backgroundServiceConstructors = []string{
 // cached "no queued task" verdict survives, so an idle runtime keeps returning
 // empty claims until EmptyClaimCacheTTL expires.
 //
-// This parses main.go instead of asserting on backgroundServices' return
+// This parses main.go instead of asserting on backgroundTaskService's return
 // values. A value-level assertion only proves the helper hands back h's fields,
 // which stays true even when main() stops calling it and constructs its own
 // services again — i.e. it cannot fail on the exact regression it names.
@@ -152,10 +150,9 @@ func TestMainUsesRouterOwnedBackgroundServices(t *testing.T) {
 	}
 
 	var (
-		offenders          []string
-		badReuse           []string
-		reusesRouter       bool
-		registersScheduler bool
+		offenders    []string
+		badReuse     []string
+		reusesRouter bool
 	)
 	ast.Inspect(mainFunc.Body, func(n ast.Node) bool {
 		call, ok := n.(*ast.CallExpr)
@@ -165,9 +162,9 @@ func TestMainUsesRouterOwnedBackgroundServices(t *testing.T) {
 		switch callee := calleeName(call); {
 		case forbidden[callee]:
 			offenders = append(offenders, fmt.Sprintf("%s at %s", callee, fset.Position(call.Pos())))
-		case callee == "backgroundServices":
+		case callee == "backgroundTaskService":
 			// Matching the callee name alone would accept
-			// backgroundServices(nil) — which compiles, reuses nothing, and
+			// backgroundTaskService(nil) — which compiles, reuses nothing, and
 			// panics at startup. The argument must be the router's handler.
 			if len(call.Args) == 1 {
 				if arg, ok := call.Args[0].(*ast.Ident); ok && arg.Name == routerHandlerVar {
@@ -176,26 +173,69 @@ func TestMainUsesRouterOwnedBackgroundServices(t *testing.T) {
 				}
 			}
 			badReuse = append(badReuse, fmt.Sprintf("%s at %s", exprText(fset, call), fset.Position(call.Pos())))
-		case callee == "scheduler.AutopilotScheduleDispatchJob":
-			registersScheduler = true
 		}
 		return true
 	})
 
-	// Anti-vacuity: the scheduled-dispatch registration is what makes the
-	// unwired-service hazard reachable. If it moves out of main(), this test
-	// no longer covers the path it claims to and must fail rather than pass.
-	if !registersScheduler {
-		t.Fatalf("scheduler.AutopilotScheduleDispatchJob is no longer registered in main() — re-point this guard at wherever the schedule job is now wired")
-	}
 	if len(offenders) > 0 {
-		t.Errorf("main() constructs its own background services (%s); take them from the router via backgroundServices(%s) so EmptyClaim and the rest of the router wiring come along", strings.Join(offenders, ", "), routerHandlerVar)
+		t.Errorf("main() constructs its own background services (%s); take them from the router via backgroundTaskService(%s) so EmptyClaim and the rest of the router wiring come along", strings.Join(offenders, ", "), routerHandlerVar)
 	}
 	if len(badReuse) > 0 {
-		t.Errorf("main() calls backgroundServices with something other than the router handler %q (%s); background workers must reuse the services the router finished wiring", routerHandlerVar, strings.Join(badReuse, ", "))
+		t.Errorf("main() calls backgroundTaskService with something other than the router handler %q (%s); background workers must reuse the services the router finished wiring", routerHandlerVar, strings.Join(badReuse, ", "))
 	}
 	if !reusesRouter {
-		t.Errorf("main() no longer calls backgroundServices(%s); background workers must reuse the router-owned TaskService/AutopilotService", routerHandlerVar)
+		t.Errorf("main() no longer calls backgroundTaskService(%s); background workers must reuse the router-owned TaskService", routerHandlerVar)
+	}
+}
+
+func TestMainStartsRunReconcilerWithBackgroundLifecycle(t *testing.T) {
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, mainSourceFile, nil, 0)
+	if err != nil {
+		t.Fatalf("parse %s: %v", mainSourceFile, err)
+	}
+	var mainFunc *ast.FuncDecl
+	for _, decl := range file.Decls {
+		if fn, ok := decl.(*ast.FuncDecl); ok && fn.Recv == nil && fn.Name.Name == "main" {
+			mainFunc = fn
+			break
+		}
+	}
+	if mainFunc == nil || mainFunc.Body == nil {
+		t.Fatalf("no func main() with a body found in %s", mainSourceFile)
+	}
+
+	var reconcilerVar string
+	ast.Inspect(mainFunc.Body, func(n ast.Node) bool {
+		assign, ok := n.(*ast.AssignStmt)
+		if !ok || len(assign.Lhs) != 1 || len(assign.Rhs) != 1 {
+			return true
+		}
+		call, ok := assign.Rhs[0].(*ast.CallExpr)
+		if !ok || calleeName(call) != "h.Orchestration.NewRunReconciler" {
+			return true
+		}
+		if ident, ok := assign.Lhs[0].(*ast.Ident); ok {
+			reconcilerVar = ident.Name
+		}
+		return true
+	})
+	if reconcilerVar == "" {
+		t.Fatal("main() no longer constructs the router-owned orchestration RunReconciler")
+	}
+
+	started := false
+	ast.Inspect(mainFunc.Body, func(n ast.Node) bool {
+		goStmt, ok := n.(*ast.GoStmt)
+		if !ok || calleeName(goStmt.Call) != reconcilerVar+".Run" || len(goStmt.Call.Args) != 1 {
+			return true
+		}
+		ctx, ok := goStmt.Call.Args[0].(*ast.Ident)
+		started = ok && ctx.Name == "sweepCtx"
+		return true
+	})
+	if !started {
+		t.Fatalf("main() does not run %s.Run(sweepCtx); startup recovery must share the server background lifecycle", reconcilerVar)
 	}
 }
 
@@ -233,12 +273,17 @@ func exprText(fset *token.FileSet, expr ast.Expr) string {
 
 // calleeName renders a call's target as "pkg.Func" or "Func" for matching.
 func calleeName(call *ast.CallExpr) string {
-	switch fn := call.Fun.(type) {
+	return expressionName(call.Fun)
+}
+
+func expressionName(expression ast.Expr) string {
+	switch fn := expression.(type) {
 	case *ast.Ident:
 		return fn.Name
 	case *ast.SelectorExpr:
-		if pkg, ok := fn.X.(*ast.Ident); ok {
-			return pkg.Name + "." + fn.Sel.Name
+		prefix := expressionName(fn.X)
+		if prefix != "" {
+			return prefix + "." + fn.Sel.Name
 		}
 		return fn.Sel.Name
 	}
@@ -326,6 +371,29 @@ func TestEnvNonNegativeDuration(t *testing.T) {
 			}
 			if got := envNonNegativeDuration(key, tt.def); got != tt.want {
 				t.Fatalf("envNonNegativeDuration(%q, %s) = %s, want %s", key, tt.def, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestValidateStartupSecurity(t *testing.T) {
+	tests := []struct {
+		name    string
+		appEnv  string
+		secret  string
+		wantErr bool
+	}{
+		{name: "production rejects empty secret", appEnv: "production", wantErr: true},
+		{name: "production rejects whitespace secret", appEnv: " production ", secret: "  \t", wantErr: true},
+		{name: "production accepts configured secret", appEnv: "PRODUCTION", secret: "a-secret", wantErr: false},
+		{name: "development preserves empty secret compatibility", appEnv: "development", wantErr: false},
+		{name: "unset environment preserves empty secret compatibility", wantErr: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validateStartupSecurity(tt.appEnv, tt.secret)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("validateStartupSecurity(%q, %q) error = %v, wantErr %v", tt.appEnv, tt.secret, err, tt.wantErr)
 			}
 		})
 	}

@@ -2,14 +2,13 @@
 
 import type { ReactNode } from "react";
 import { ArrowLeft } from "lucide-react";
-import { Button } from "@multica/ui/components/ui/button";
+import { Button } from "@liexiu/ui/components/ui/button";
 import { useT } from "../../i18n";
 
 /**
- * Chrome shared by every agent-creation route: the back control, the flow
- * title, and the current step. Each route owns what "back" means — the chooser
- * leaves the flow, the two method routes return to the chooser — so the shell
- * takes a handler rather than deriving it.
+ * Chrome shared by the manual agent-creation route: the back control, the
+ * flow title, and the current step. The route owns what "back" means, so the
+ * shell takes a handler rather than deriving it.
  */
 export function AgentCreateShell({
   title,

@@ -2,7 +2,7 @@
 
 import { cleanup, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { AgentTask, Issue } from "@multica/core/types";
+import type { AgentTask, Issue } from "@liexiu/core/types";
 import { renderWithI18n } from "../../test/i18n";
 
 // The hover card renders one row per task and counts tasks, so its header
@@ -11,11 +11,11 @@ import { renderWithI18n } from "../../test/i18n";
 // the card lists three task rows). An agent-worded header here would print
 // "3 agents working" for those two agents, contradicting the chip. MUL-3872.
 
-vi.mock("@multica/core/hooks", () => ({
+vi.mock("@liexiu/core/hooks", () => ({
   useWorkspaceId: () => "ws-1",
 }));
 
-vi.mock("@multica/core/workspace/hooks", () => ({
+vi.mock("@liexiu/core/workspace/hooks", () => ({
   useActorName: () => ({
     getActorName: (_type: string, id: string) =>
       ({ "agent-1": "Niko", "agent-2": "J" })[id] ?? "Unknown Agent",
@@ -28,19 +28,19 @@ vi.mock("@multica/core/workspace/hooks", () => ({
 // The card only reads these query results for avatars / availability, never
 // for the header count, so empty lists keep the row chrome inert while the
 // header still derives from the task array.
-vi.mock("@multica/core/runtimes/queries", () => ({
+vi.mock("@liexiu/core/runtimes/queries", () => ({
   runtimeListOptions: () => ({ queryKey: ["runtimes"] }),
 }));
 
-vi.mock("@multica/core/workspace/queries", () => ({
+vi.mock("@liexiu/core/workspace/queries", () => ({
   agentListOptions: () => ({ queryKey: ["agents"] }),
 }));
 
-vi.mock("@multica/core/agents", () => ({
+vi.mock("@liexiu/core/agents", () => ({
   deriveAgentAvailability: () => "online",
 }));
 
-vi.mock("@multica/ui/components/common/actor-avatar", () => ({
+vi.mock("@liexiu/ui/components/common/actor-avatar", () => ({
   ActorAvatar: ({ name }: { name: string }) => (
     <span data-testid="actor-avatar">{name}</span>
   ),
@@ -80,7 +80,6 @@ function makeIssue(id: string, identifier: string, title: string): Issue {
     start_date: null,
     due_date: null,
     metadata: {},
-    properties: {},
     created_at: "2026-06-08T08:00:00Z",
     updated_at: "2026-06-08T08:00:00Z",
   };
@@ -179,7 +178,7 @@ describe("WorkspaceAgentActivityHoverContent", () => {
   });
 
   it("says nothing about work it excludes", () => {
-    // Chat/autopilot runs and out-of-scope tasks leave no trace on this page,
+    // Out-of-scope tasks leave no trace on this page,
     // so a "not counted" footnote would explain an absence the user never
     // perceived. The card only ever describes what IS counted.
     renderWithI18n(

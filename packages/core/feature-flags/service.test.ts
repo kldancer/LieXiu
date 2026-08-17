@@ -19,9 +19,9 @@ describe("FeatureFlagService", () => {
   });
 
   it("uses the provider decision when found", () => {
-    const sp = new StaticProvider({ billing: { default: true } });
+    const sp = new StaticProvider({ feature_a: { default: true } });
     const s = new FeatureFlagService(sp);
-    const d = s.decision("billing", {}, false);
+    const d = s.decision("feature_a", {}, false);
     expect(d.enabled).toBe(true);
     expect(d.reason).toBe("static");
     expect(d.source).toBe("static");

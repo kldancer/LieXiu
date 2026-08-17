@@ -125,12 +125,10 @@ func queuedTaskCountFor(t *testing.T, issueID, agentID string) int {
 	return n
 }
 
-// TestUpdateIssueReassignToAgentKeepsOldTaskAndEnqueuesNew covers the core
-// handoff path the member-target tests above do not: reassigning from one agent
-// to ANOTHER agent. The previous assignee's in-flight run must survive (the
-// #4963 / MUL-4113 no-cancel guarantee), and the new assignee must still get
-// its run enqueued by WillEnqueueRun — the two effects are independent.
-func TestUpdateIssueReassignToAgentKeepsOldTaskAndEnqueuesNew(t *testing.T) {
+// TestUpdateIssueReassignToAgentKeepsOldTaskWithoutStartingNewRun covers the
+// Wave 1B.2 ownership boundary. Reassignment does not cancel old work and does
+// not create new executable work outside a Mission Command.
+func TestUpdateIssueReassignToAgentKeepsOldTaskWithoutStartingNewRun(t *testing.T) {
 	if testHandler == nil {
 		t.Skip("database not available")
 	}
@@ -156,7 +154,7 @@ func TestUpdateIssueReassignToAgentKeepsOldTaskAndEnqueuesNew(t *testing.T) {
 	if got := taskStatus(t, ownerTask); got != "running" {
 		t.Fatalf("previous agent's own task must survive agent→agent reassignment, got status %q", got)
 	}
-	if got := queuedTaskCountFor(t, issueID, newAgent); got != 1 {
-		t.Fatalf("new assignee must get exactly one run enqueued, got %d queued tasks", got)
+	if got := queuedTaskCountFor(t, issueID, newAgent); got != 0 {
+		t.Fatalf("generic reassignment must not enqueue a run, got %d queued tasks", got)
 	}
 }

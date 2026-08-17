@@ -1,11 +1,10 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { LOCALE_COOKIE } from "@multica/core/i18n";
+import { LOCALE_COOKIE } from "@liexiu/core/i18n";
 import {
-  MULTICA_LOCALE_HEADER,
+  LIEXIU_LOCALE_HEADER,
   resolveLocaleFromSignals,
 } from "./lib/locale-routing";
 import { runtimeRewriteDestination } from "./config/runtime-urls";
-import { isOfficialMarketingHost } from "./lib/public-host";
 
 // Old workspace-scoped route segments that existed before the URL refactor
 // (pre-#1131). Any URL with these as the FIRST segment is a legacy URL that
@@ -15,10 +14,7 @@ const LEGACY_ROUTE_SEGMENTS = new Set([
   "issues",
   "projects",
   "agents",
-  "squads",
-  "inbox",
   "my-issues",
-  "autopilots",
   "runtimes",
   "skills",
   "settings",
@@ -32,13 +28,13 @@ function resolveLocale(req: NextRequest): string {
   });
 }
 
-// Forward the resolved locale to RSC layouts via the `x-multica-locale`
+// Forward the resolved locale to RSC layouts via the `x-liexiu-locale`
 // request header. layout.tsx reads it through `await headers()`. The
 // `request: { headers }` form is what makes the header land on the upstream
 // request — without it the value would only sit on the response.
 function nextWithLocale(req: NextRequest): NextResponse {
   const headers = new Headers(req.headers);
-  headers.set(MULTICA_LOCALE_HEADER, resolveLocale(req));
+  headers.set(LIEXIU_LOCALE_HEADER, resolveLocale(req));
   return NextResponse.next({ request: { headers } });
 }
 
@@ -55,7 +51,7 @@ export function proxy(req: NextRequest) {
     return NextResponse.rewrite(url);
   }
 
-  const hasSession = req.cookies.has("multica_logged_in");
+  const hasSession = req.cookies.has("liexiu_logged_in");
   const lastSlug = req.cookies.get("last_workspace_slug")?.value;
 
   // --- Legacy URL redirect: /issues/... → /{slug}/issues/... ---
@@ -84,16 +80,7 @@ export function proxy(req: NextRequest) {
   }
 
   // --- Root path: redirect logged-in users to their last workspace ---
-  // The official cloud host also serves the public marketing site. Visiting
-  // https://multica.ai/ must remain a public-site navigation even when a local
-  // desktop/runtime session has fresh auth cookies; explicit app routes such
-  // as /acme/issues and legacy /issues still route to the workspace app.
-  if (
-    pathname === "/" &&
-    hasSession &&
-    lastSlug &&
-    !isOfficialMarketingHost(req.nextUrl.hostname)
-  ) {
+  if (pathname === "/" && hasSession && lastSlug) {
     const url = req.nextUrl.clone();
     url.pathname = `/${lastSlug}/issues`;
     return NextResponse.redirect(url);
@@ -113,7 +100,6 @@ export const config = {
     "/api/:path*",
     "/auth/:path*",
     "/uploads/:path*",
-    "/docs/:path*",
     "/ws",
     "/((?!api|_next/static|_next/image|favicon.ico|.*\\.).*)",
   ],

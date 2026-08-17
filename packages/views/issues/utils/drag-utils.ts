@@ -3,9 +3,8 @@ import {
   closestCenter,
   type CollisionDetection,
 } from "@dnd-kit/core";
-import type { Issue, IssueAssigneeType, IssueStatus, UpdateIssueRequest } from "@multica/core/types";
-import type { IssueGrouping } from "@multica/core/issues/stores/view-store";
-import { propertyIdFromViewKey } from "@multica/core/issues/stores/view-store";
+import type { Issue, IssueAssigneeType, IssueStatus, UpdateIssueRequest } from "@liexiu/core/types";
+import type { IssueGrouping } from "@liexiu/core/issues/stores/view-store";
 import type { BoardColumnGroup } from "../components/board-column";
 
 export type DragMoveTargetUpdates = Pick<
@@ -36,10 +35,6 @@ export function statusGroupId(status: IssueStatus): string {
   return `status:${status}`;
 }
 
-export function propertyGroupId(propertyId: string, optionId: string | null): string {
-  return `property:${propertyId}:${optionId ?? "none"}`;
-}
-
 export function assigneeGroupId(
   type: IssueAssigneeType | null,
   id: string | null,
@@ -50,22 +45,9 @@ export function assigneeGroupId(
 export function getIssueGroupId(
   issue: Issue,
   grouping: IssueGrouping,
-  knownOptionIds?: ReadonlySet<string>,
+  _knownOptionIds?: ReadonlySet<string>,
 ): string {
   if (grouping === "status") return statusGroupId(issue.status);
-  const propertyId = propertyIdFromViewKey(grouping);
-  if (propertyId) {
-    const value = issue.properties?.[propertyId];
-    let optionId = typeof value === "string" ? value : null;
-    // A value referencing an option no longer in the definition (removed
-    // before the in-use guard existed, or by a newer server) must bucket
-    // into the No-value column — an unmatched column id would silently drop
-    // the issue from the board.
-    if (optionId !== null && knownOptionIds && !knownOptionIds.has(optionId)) {
-      optionId = null;
-    }
-    return propertyGroupId(propertyId, optionId);
-  }
   return assigneeGroupId(issue.assignee_type, issue.assignee_id);
 }
 
@@ -108,7 +90,7 @@ export function getMoveAnchors(
 /**
  * Insert `id` into `ids` at the slot implied by `position ASC`, reading each
  * id's position from `issueMap`. Mirrors `insertByPosition` in
- * `@multica/core/issues/cache-helpers` so the board's optimistic placement on
+ * `@liexiu/core/issues/cache-helpers` so the board's optimistic placement on
  * drop matches the cache the settle reconcile rebuilds from — otherwise the
  * card would land in one slot, then jump when local columns re-derive from TQ.
  */
@@ -140,11 +122,6 @@ export function findColumn(
 
 export function issueMatchesGroup(issue: Issue, group: BoardColumnGroup): boolean {
   if (group.status) return issue.status === group.status;
-  if (group.propertyId !== undefined) {
-    const value = issue.properties?.[group.propertyId];
-    const optionId = typeof value === "string" ? value : null;
-    return optionId === (group.propertyOptionId ?? null);
-  }
   return (
     (issue.assignee_type ?? null) === (group.assigneeType ?? null) &&
     (issue.assignee_id ?? null) === (group.assigneeId ?? null)
@@ -156,9 +133,6 @@ export function getMoveUpdates(
   position: number,
 ): DragMoveTargetUpdates {
   if (group.status) return { status: group.status, position };
-  // Property columns: the value change is not part of UpdateIssueRequest —
-  // the board applies it through useSetIssueProperty after the position move.
-  if (group.propertyId !== undefined) return { position };
   return {
     assignee_type: group.assigneeType ?? null,
     assignee_id: group.assigneeId ?? null,

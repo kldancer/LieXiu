@@ -7,7 +7,6 @@ import {
   Bot,
   Clock3,
   Lock,
-  MessageSquare,
   MoreHorizontal,
   Plus,
   Server,
@@ -19,26 +18,26 @@ import type {
   Agent,
   AgentRuntime,
   UpdateAgentRequest,
-} from "@multica/core/types";
+} from "@liexiu/core/types";
 import {
   type AgentPresenceDetail,
   isAgentRuntimeBound,
   useWorkspacePresenceMap,
-} from "@multica/core/agents";
-import { api, ApiError } from "@multica/core/api";
-import { useAuthStore } from "@multica/core/auth";
-import { useWorkspaceId } from "@multica/core/hooks";
-import { useModalStore } from "@multica/core/modals";
-import { useWorkspacePaths } from "@multica/core/paths";
+} from "@liexiu/core/agents";
+import { api, ApiError } from "@liexiu/core/api";
+import { useAuthStore } from "@liexiu/core/auth";
+import { useWorkspaceId } from "@liexiu/core/hooks";
+import { useModalStore } from "@liexiu/core/modals";
+import { useWorkspacePaths } from "@liexiu/core/paths";
 import {
   agentListOptions,
   memberListOptions,
   workspaceKeys,
-} from "@multica/core/workspace/queries";
-import { runtimeDisplayLabel, runtimeListOptions } from "@multica/core/runtimes";
-import { useAgentPermissions } from "@multica/core/permissions";
-import { Button } from "@multica/ui/components/ui/button";
-import { CapabilityBanner } from "@multica/ui/components/common/capability-banner";
+} from "@liexiu/core/workspace/queries";
+import { runtimeDisplayLabel, runtimeListOptions } from "@liexiu/core/runtimes";
+import { useAgentPermissions } from "@liexiu/core/permissions";
+import { Button } from "@liexiu/ui/components/ui/button";
+import { CapabilityBanner } from "@liexiu/ui/components/common/capability-banner";
 import {
   Dialog,
   DialogContent,
@@ -46,14 +45,14 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@multica/ui/components/ui/dialog";
+} from "@liexiu/ui/components/ui/dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-} from "@multica/ui/components/ui/dropdown-menu";
-import { Skeleton } from "@multica/ui/components/ui/skeleton";
+} from "@liexiu/ui/components/ui/dropdown-menu";
+import { Skeleton } from "@liexiu/ui/components/ui/skeleton";
 import { AppLink, useNavigation } from "../../navigation";
 import { PageHeader } from "../../layout/page-header";
 import { ActorAvatar } from "../../common/actor-avatar";
@@ -112,13 +111,11 @@ export function AgentDetailPage({ agentId }: AgentDetailPageProps) {
   const {
     canAssign,
     canEdit,
-    isLoading: permissionsLoading,
   } = useAgentPermissions(agent, wsId);
 
   const [confirmArchive, setConfirmArchive] = useState(false);
 
-  // One-shot channel: the inspector's compact Lark status row asks the
-  // overview pane to focus a tab. The pane clears it after consuming.
+  // One-shot navigation channel for compact inspector actions.
   const [tabNavIntent, setTabNavIntent] = useState<DetailTab | null>(null);
 
   const handleUpdate = async (id: string, data: Record<string, unknown>) => {
@@ -267,29 +264,6 @@ export function AgentDetailPage({ agentId }: AgentDetailPageProps) {
     ? members.find((m) => m.user_id === agent.owner_id) ?? null
     : null;
 
-  // Chat shares the invocation gate with assignment (MUL-3963): starting a
-  // chat triggers agent runs. The button stays visible either way — a denied
-  // click explains itself instead of the affordance silently missing. While
-  // membership is still resolving the decision is undetermined, so the button
-  // is disabled rather than toasting a false "no access" at a real member.
-  //
-  // The control is a real link, so a failed gate has to cancel the navigation
-  // AppLink would otherwise perform — preventDefault is that cancel.
-  const handleDm = (e: React.MouseEvent<HTMLAnchorElement>) => {
-    if (permissionsLoading) {
-      e.preventDefault();
-      return;
-    }
-    if (!canAssign.allowed) {
-      e.preventDefault();
-      toast.error(t(($) => $.detail.dm_no_permission_toast));
-      return;
-    }
-    if (!runtimeBound) {
-      e.preventDefault();
-      toast.error(t(($) => $.detail.runtime_required_toast));
-    }
-  };
   const handleAssign = () => {
     if (!runtimeBound) {
       toast.error(t(($) => $.detail.runtime_required_toast));
@@ -309,13 +283,8 @@ export function AgentDetailPage({ agentId }: AgentDetailPageProps) {
         backHref={paths.agents()}
         canAssign={canAssign.allowed}
         canArchive={canEdit.allowed}
-        dmPending={permissionsLoading}
-        dmHref={`${paths.chat()}?agent=${agent.id}`}
-        onDm={handleDm}
         onAssign={handleAssign}
-        onArchive={
-          agent.system_key ? undefined : () => setConfirmArchive(true)
-        }
+        onArchive={() => setConfirmArchive(true)}
       />
 
       {!canEdit.allowed && (
@@ -434,9 +403,6 @@ function DetailHeader({
   backHref,
   canAssign,
   canArchive,
-  dmPending,
-  dmHref,
-  onDm,
   onAssign,
   onArchive,
 }: {
@@ -446,13 +412,8 @@ function DetailHeader({
   backHref: string;
   canAssign: boolean;
   canArchive: boolean;
-  dmPending: boolean;
-  dmHref: string;
-  /** Runs before the link navigates; calls preventDefault when a gate denies
-   *  the chat, which is what stops AppLink from pushing. */
-  onDm: (e: React.MouseEvent<HTMLAnchorElement>) => void;
   onAssign: () => void;
-  /** Absent for Multica's built-in agents, which the server refuses to
+  /** Absent for LieXiu's built-in agents, which the server refuses to
    *  archive — the menu hides the action rather than offering a failure. */
   onArchive?: () => void;
 }) {
@@ -518,22 +479,6 @@ function DetailHeader({
           </div>
 
           <div className="flex shrink-0 items-center gap-2 self-end lg:self-start">
-            {!isArchived && (
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={dmPending}
-                // An anchor never matches `:disabled`, so the base variant's
-                // `disabled:` rules never fire here — Base UI's data-disabled
-                // is what carries the dimmed, inert look.
-                className="data-disabled:pointer-events-none data-disabled:opacity-50"
-                render={<AppLink href={dmHref} onClick={onDm} />}
-                nativeButton={false}
-              >
-                <MessageSquare className="h-4 w-4" aria-hidden="true" />
-                {t(($) => $.detail.dm)}
-              </Button>
-            )}
             {!isArchived && canAssign && (
               <Button type="button" size="sm" onClick={onAssign}>
                 <Plus className="h-4 w-4" aria-hidden="true" />

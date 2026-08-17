@@ -8,9 +8,7 @@ import {
 } from "./cache-coordinator";
 import { issueChangedDims } from "./surface/membership";
 import { issueKeys, type IssueSortParam } from "./queries";
-import { inboxKeys } from "../inbox/queries";
 import type {
-  InboxItem,
   Issue,
   IssueTableRowsResponse,
   ListIssuesCache,
@@ -31,7 +29,6 @@ const membersKey = issueKeys.myListSorted(
   { assignee_types: ["member"] },
   sort,
 );
-const inboxKey = inboxKeys.list(WS_ID);
 const flatKey = issueKeys.flat(WS_ID, "workspace:all", {}, sort);
 const flatTitleKey = issueKeys.flat(
   WS_ID,
@@ -124,7 +121,6 @@ function makeIssue(idx: number, overrides: Partial<Issue> = {}): Issue {
     due_date: null,
     labels: [],
     metadata: {},
-  properties: {},
     created_at: "2025-01-01T00:00:00Z",
     updated_at: "2025-01-01T00:00:00Z",
     ...overrides,
@@ -321,7 +317,7 @@ describe("applyIssueChange", () => {
     expect(result.staleKeys.map(hashKey)).toContain(hashKey(myAllUpdatedKey));
   });
 
-  it("status change: rebuckets loaded cards, patches inbox, adjusts counts for absent-but-member lists", () => {
+  it("status change: rebuckets loaded cards and adjusts counts for absent-but-member lists", () => {
     qc.setQueryData<ListIssuesCache>(wsKey, bucketed([issue()]));
     // p1 list loaded but the card is beyond its loaded window — the change
     // is certain (old + new status known, membership definite), so the two
@@ -330,27 +326,6 @@ describe("applyIssueChange", () => {
     qc.setQueryData<ListIssuesCache>(projectP1Key, bucketed([], 3));
     // p2 list loaded; the issue was never a member — untouched.
     qc.setQueryData<ListIssuesCache>(projectP2Key, bucketed([]));
-    qc.setQueryData<InboxItem[]>(inboxKey, [
-      {
-        id: "inbox-1",
-        workspace_id: WS_ID,
-        recipient_type: "member",
-        recipient_id: "me",
-        actor_type: "member",
-        actor_id: "bob",
-        type: "status_changed",
-        severity: "info",
-        issue_id: "issue-1",
-        title: "Inbox",
-        body: null,
-        issue_status: "todo",
-        read: false,
-        archived: false,
-        created_at: "2025-01-01T00:00:00Z",
-        details: null,
-      },
-    ]);
-
     const patch = { status: "in_progress" as const };
     const result = applyIssueChange(qc, WS_ID, "issue-1", patch, {
       changed: issueChangedDims(patch, issue()),
@@ -359,10 +334,6 @@ describe("applyIssueChange", () => {
 
     expect(ids(qc, wsKey, "todo")).toEqual([]);
     expect(ids(qc, wsKey, "in_progress")).toEqual(["issue-1"]);
-    expect(
-      qc.getQueryData<InboxItem[]>(inboxKey)?.[0]?.issue_status,
-    ).toBe("in_progress");
-
     // Off-window count arithmetic: todo 3 → 2, in_progress 0 → 1, loaded
     // arrays untouched (never hard-insert).
     expect(total(qc, projectP1Key, "todo")).toBe(2);
@@ -464,7 +435,7 @@ describe("applyIssueChange", () => {
     const agentsKey = issueKeys.myListSorted(
       WS_ID,
       "workspace:agents",
-      { assignee_types: ["agent", "squad"] },
+      { assignee_types: ["agent"] },
       sort,
     );
     qc.setQueryData<ListIssuesCache>(membersKey, bucketed([issue()]));
@@ -535,11 +506,10 @@ describe("applyIssueChange", () => {
     expect(result.staleKeys).toEqual([]);
   });
 
-  it("rollbackIssueChange restores lists, detail, and inbox exactly", () => {
+  it("rollbackIssueChange restores lists and detail exactly", () => {
     const listSnapshot = bucketed([issue()]);
     qc.setQueryData<ListIssuesCache>(myAssignedKey, listSnapshot);
     qc.setQueryData<Issue>(issueKeys.detail(WS_ID, "issue-1"), issue());
-    qc.setQueryData<InboxItem[]>(inboxKey, []);
 
     const patch = { assignee_id: "bob", assignee_type: "member" as const, status: "in_progress" as const };
     const result = applyIssueChange(qc, WS_ID, "issue-1", patch, {
@@ -552,7 +522,6 @@ describe("applyIssueChange", () => {
 
     expect(qc.getQueryData<ListIssuesCache>(myAssignedKey)).toEqual(listSnapshot);
     expect(qc.getQueryData<Issue>(issueKeys.detail(WS_ID, "issue-1"))).toEqual(issue());
-    expect(qc.getQueryData<InboxItem[]>(inboxKey)).toEqual([]);
   });
 
   it("skips grouped caches living under the same key prefixes", () => {

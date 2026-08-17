@@ -4,12 +4,12 @@ import {
   configureShortcutPlatform,
   createShortcutChord,
   useShortcutStore,
-} from "@multica/core/shortcuts";
+} from "@liexiu/core/shortcuts";
 import { RunConfirmModal } from "./run-confirm";
 
-// --- Warm agent / squad / runtime caches (prefetched in the real app) --------
+// --- Warm agent / runtime caches (prefetched in the real app) ---------------
 // The modal resolves the target runtime's cli_version locally — an agent's own
-// runtime, or a squad leader's — so nothing in the dialog waits on the network.
+// runtime — so nothing in the dialog waits on the network.
 // Tests drive the verdict by swapping the runtime's reported cli_version here.
 const cache = {
   agents: [{ id: "agent-1", runtime_id: "runtime-1" }] as Array<{ id: string; runtime_id: string }>,
@@ -17,20 +17,17 @@ const cache = {
     id: string;
     metadata: Record<string, unknown>;
   }>,
-  squads: [{ id: "squad-1", leader_id: "agent-1" }] as Array<{ id: string; leader_id: string }>,
 };
 vi.mock("@tanstack/react-query", () => ({
   useQuery: ({ queryKey }: { queryKey: string[] }) => {
     if (queryKey[0] === "runtimes") return { data: cache.runtimes };
     if (queryKey[0] === "workspaces" && queryKey[2] === "agents") return { data: cache.agents };
-    if (queryKey[0] === "workspaces" && queryKey[2] === "squads") return { data: cache.squads };
     return { data: [] };
   },
 }));
-vi.mock("@multica/core/hooks", () => ({ useWorkspaceId: () => "ws-test" }));
-vi.mock("@multica/core/workspace/queries", () => ({
+vi.mock("@liexiu/core/hooks", () => ({ useWorkspaceId: () => "ws-test" }));
+vi.mock("@liexiu/core/workspace/queries", () => ({
   agentListOptions: (wsId: string) => ({ queryKey: ["workspaces", wsId, "agents"] }),
-  squadListOptions: (wsId: string) => ({ queryKey: ["workspaces", wsId, "squads"] }),
 }));
 // Stub the runtimes barrel: the query-options builder would otherwise drag the
 // network layer in, and the deep cli-version module isn't an exported subpath.
@@ -38,7 +35,7 @@ vi.mock("@multica/core/workspace/queries", () => ({
 // packages/core/runtimes/cli-version.test.ts; here we only need a faithful
 // stand-in for the >= 0.3.28 threshold so the cache → version → verdict wiring
 // is exercised end to end.
-vi.mock("@multica/core/runtimes", () => ({
+vi.mock("@liexiu/core/runtimes", () => ({
   runtimeListOptions: (wsId: string) => ({ queryKey: ["runtimes", wsId, "list"] }),
   readRuntimeCliVersion: (m?: { cli_version?: unknown }) =>
     typeof m?.cli_version === "string" ? m.cli_version : "",
@@ -51,12 +48,12 @@ vi.mock("@multica/core/runtimes", () => ({
 
 const mockUpdate = vi.fn().mockResolvedValue({ id: "issue-1" });
 const mockBatch = vi.fn().mockResolvedValue({ updated: 2 });
-vi.mock("@multica/core/issues/mutations", () => ({
+vi.mock("@liexiu/core/issues/mutations", () => ({
   useUpdateIssue: () => ({ mutateAsync: mockUpdate }),
   useBatchUpdateIssues: () => ({ mutateAsync: mockBatch }),
 }));
 
-vi.mock("@multica/core/workspace/hooks", () => ({
+vi.mock("@liexiu/core/workspace/hooks", () => ({
   useActorName: () => ({ getActorName: () => "Walt" }),
 }));
 
@@ -88,7 +85,7 @@ vi.mock("../i18n", () => ({
 }));
 
 // Keep the ui primitives as light DOM so the logic is what's under test.
-vi.mock("@multica/ui/components/ui/dialog", () => ({
+vi.mock("@liexiu/ui/components/ui/dialog", () => ({
   Dialog: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
   // Keeps the real Popup's prop passthrough, which the send chord binds to.
   DialogContent: ({ children, ...props }: React.HTMLAttributes<HTMLDivElement>) => (
@@ -99,15 +96,15 @@ vi.mock("@multica/ui/components/ui/dialog", () => ({
   DialogTitle: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
   DialogDescription: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
 }));
-vi.mock("@multica/ui/components/ui/button", () => ({
+vi.mock("@liexiu/ui/components/ui/button", () => ({
   Button: ({ children, ...props }: React.ButtonHTMLAttributes<HTMLButtonElement>) => (
     <button {...props}>{children}</button>
   ),
 }));
-vi.mock("@multica/ui/components/ui/textarea", () => ({
+vi.mock("@liexiu/ui/components/ui/textarea", () => ({
   Textarea: (props: React.TextareaHTMLAttributes<HTMLTextAreaElement>) => <textarea {...props} />,
 }));
-vi.mock("@multica/ui/components/ui/spinner", () => ({
+vi.mock("@liexiu/ui/components/ui/spinner", () => ({
   Spinner: () => <span data-testid="spinner" />,
 }));
 // vi.hoisted: vi.mock factories run before module-level consts initialize.
@@ -122,7 +119,6 @@ beforeEach(() => {
   mockToast.success.mockClear();
   cache.agents = [{ id: "agent-1", runtime_id: "runtime-1" }];
   cache.runtimes = [{ id: "runtime-1", metadata: { cli_version: "0.4.0" } }];
-  cache.squads = [{ id: "squad-1", leader_id: "agent-1" }];
   // The real shortcut store drives both the submit chord and the keycap hint,
   // and jsdom's platform follows the host OS — pin it so the chord is ⌘+Enter
   // everywhere, not Ctrl+Enter on a Linux CI runner.
@@ -195,20 +191,6 @@ describe("RunConfirmModal", () => {
   it("disables the note box when the agent's runtime is too old", () => {
     cache.runtimes = [{ id: "runtime-1", metadata: { cli_version: "0.2.21" } }];
     render(<RunConfirmModal onClose={vi.fn()} data={single} />);
-    expect(noteBox()).toBeDisabled();
-    expect(screen.getByText("runtime too old")).toBeInTheDocument();
-  });
-
-  it("resolves a squad's verdict through its leader's runtime, locally", () => {
-    // A squad run is executed by its leader, so the leader's runtime decides.
-    // The squad list gives us leader_id, so this needs no server verdict.
-    cache.runtimes = [{ id: "runtime-1", metadata: { cli_version: "0.2.21" } }];
-    render(
-      <RunConfirmModal
-        onClose={vi.fn()}
-        data={{ ...single, assigneeType: "squad", assigneeId: "squad-1" }}
-      />,
-    );
     expect(noteBox()).toBeDisabled();
     expect(screen.getByText("runtime too old")).toBeInTheDocument();
   });

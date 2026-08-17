@@ -19,7 +19,6 @@ import type {
   Issue,
   IssueLabelsResponse,
   IssueMetadata,
-  IssuePropertyValues,
   IssueTableRowsResponse,
   Label,
 } from "../types";
@@ -351,87 +350,6 @@ export function onIssueMetadataChanged(
   // Server-backed Table counts, membership and cursor boundaries may also
   // depend on metadata-driven timestamps, so refresh its query graph too.
   qc.invalidateQueries({ queryKey: issueKeys.tableAll(wsId) });
-}
-
-/**
- * Apply a custom-property bag snapshot to the issue detail + list caches.
- * Mirrors onIssueMetadataChanged: the server emits the FULL post-mutation
- * bag on every single-key write, so we replace rather than merge. Also used
- * directly by the useSetIssueProperty/useUnsetIssueProperty optimistic path.
- */
-export function onIssuePropertiesChanged(
-  qc: QueryClient,
-  wsId: string,
-  issueId: string,
-  properties: IssuePropertyValues,
-) {
-  patchIssueProperties(qc, wsId, issueId, properties);
-  // Per-parent rows are patched for immediate UI feedback, then all children
-  // projections are marked stale so older fetches cannot win after commit.
-  qc.invalidateQueries({ queryKey: issueKeys.childrenAll(wsId) });
-  qc.invalidateQueries({ queryKey: issueKeys.childrenByParentsAll(wsId) });
-  qc.invalidateQueries({ queryKey: issueKeys.myAll(wsId) });
-  // Plain assignee-group caches are never patched in place (their bucket
-  // shape differs) and would otherwise hold stale chips forever under
-  // staleTime:Infinity (clean-room review F2).
-  qc.invalidateQueries({ queryKey: issueKeys.assigneeGroupsAll(wsId) });
-  qc.invalidateQueries({ queryKey: issueKeys.myAssigneeGroupsAll(wsId) });
-  qc.invalidateQueries({ queryKey: issueKeys.tableAll(wsId) });
-  invalidatePropertyWindowQueries(qc, wsId);
-  // A property write also bumps issue.updated_at server-side
-  // (SetIssuePropertyValue / DeleteIssuePropertyValue). invalidatePropertyWindow
-  // Queries only refetches property-filtered/-sorted windows, so a status board
-  // or flat table sorted by "Updated date" (no property param) would keep the
-  // old order. Refetch those too. Only committed callers reach here (WS event +
-  // mutation onSuccess); the optimistic leg uses patchIssueProperties (MUL-5016).
-  invalidateUpdatedAtSortedIssueLists(qc, wsId);
-}
-
-/** Patch only deterministic entity snapshots. Optimistic mutation legs use
- * this helper so they never start a property-filter/sort refetch before the
- * server commit (which could return the old bag and stomp the optimistic one). */
-export function patchIssueProperties(
-  qc: QueryClient,
-  wsId: string,
-  issueId: string,
-  properties: IssuePropertyValues,
-) {
-  for (const [key, data] of qc.getQueriesData<ListIssuesCache>({ queryKey: issueKeys.list(wsId) })) {
-    if (data) qc.setQueryData<ListIssuesCache>(key, patchIssueInBuckets(data, issueId, { properties }));
-  }
-  patchIssueInFlatCaches(qc, wsId, issueId, { properties });
-  patchIssueInTableCaches(qc, wsId, issueId, { properties });
-  qc.setQueryData<Issue>(issueKeys.detail(wsId, issueId), (old) =>
-    old ? { ...old, properties } : old,
-  );
-  patchIssueInChildrenCaches(qc, wsId, issueId, { properties });
-}
-
-/**
- * Refetch every issue window whose SERVER-side shape depends on property
- * values: queries filtered by `properties` or sorted by `property:<id>`.
- * In-place patching keeps them stale under staleTime:Infinity — a value
- * edit can change an issue's page membership and ordering, and grouped
- * caches never self-heal (review round 3). Windows without property params
- * keep the cheap in-place patch above.
- */
-export function invalidatePropertyWindowQueries(qc: QueryClient, wsId: string) {
-  qc.invalidateQueries({
-    queryKey: issueKeys.all(wsId),
-    predicate: (query) =>
-      query.queryKey.some((part) => {
-        if (!part || typeof part !== "object" || Array.isArray(part)) return false;
-        const rec = part as Record<string, unknown>;
-        if (
-          rec.properties &&
-          typeof rec.properties === "object" &&
-          Object.keys(rec.properties as Record<string, unknown>).length > 0
-        ) {
-          return true;
-        }
-        return typeof rec.sort_by === "string" && rec.sort_by.startsWith("property:");
-      }),
-  });
 }
 
 export function onIssueDeleted(

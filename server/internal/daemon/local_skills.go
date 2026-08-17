@@ -8,8 +8,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/multica-ai/multica/server/internal/skill"
-	"github.com/multica-ai/multica/server/pkg/agent"
+	"github.com/kailonyang/liexiu/server/internal/skill"
+	"github.com/kailonyang/liexiu/server/pkg/agent"
 )
 
 const (

@@ -1,10 +1,8 @@
-import type { Issue, IssueMetadata, IssueReaction } from "./issue";
-import type { IssueProperty, IssuePropertyValues } from "./property";
+import type { Issue, IssueMetadata } from "./issue";
 import type { Agent } from "./agent";
-import type { InboxItem } from "./inbox";
-import type { Comment, Reaction } from "./comment";
+import type { Comment } from "./comment";
 import type { TimelineEntry } from "./activity";
-import type { Workspace, MemberWithUser, Invitation } from "./workspace";
+import type { Workspace } from "./workspace";
 import type { Project } from "./project";
 import type { Label } from "./label";
 
@@ -32,58 +30,21 @@ export type WSEventType =
   | "task:failed"
   | "task:message"
   | "task:cancelled"
-  | "inbox:new"
-  | "inbox:read"
-  | "inbox:unread"
-  | "inbox:archived"
-  | "inbox:unarchived"
-  | "inbox:batch-read"
-  | "inbox:batch-archived"
   | "workspace:updated"
-  | "workspace:deleted"
-  | "member:added"
-  | "member:updated"
-  | "member:removed"
   | "daemon:heartbeat"
   | "daemon:register"
   | "skill:created"
   | "skill:updated"
   | "skill:deleted"
-  | "subscriber:added"
-  | "subscriber:removed"
   | "activity:created"
-  | "reaction:added"
-  | "reaction:removed"
-  | "issue_reaction:added"
-  | "issue_reaction:removed"
-  | "chat:message"
-  | "chat:done"
-  | "chat:quick_actions"
-  | "chat:cancel_finalized"
-  | "chat:session_read"
-  | "chat:session_deleted"
-  | "chat:session_updated"
   | "project:created"
   | "project:updated"
   | "project:deleted"
-  | "squad:created"
-  | "squad:updated"
-  | "squad:deleted"
   | "label:created"
   | "label:updated"
   | "label:deleted"
   | "issue_labels:changed"
   | "issue_metadata:changed"
-  | "issue_properties:changed"
-  | "property:created"
-  | "property:updated"
-  | "pin:created"
-  | "pin:deleted"
-  | "pin:reordered"
-  | "invitation:created"
-  | "invitation:accepted"
-  | "invitation:declined"
-  | "invitation:revoked"
   | "github_installation:created"
   | "github_installation:deleted"
   | "pull_request:linked"
@@ -135,15 +96,6 @@ export interface IssueMetadataChangedPayload {
   metadata: IssueMetadata;
 }
 
-export interface IssuePropertiesChangedPayload {
-  issue_id: string;
-  properties: IssuePropertyValues;
-}
-
-export interface PropertyChangedPayload {
-  property: IssueProperty;
-}
-
 export interface AgentStatusPayload {
   agent: Agent;
 }
@@ -158,42 +110,6 @@ export interface AgentArchivedPayload {
 
 export interface AgentRestoredPayload {
   agent: Agent;
-}
-
-export interface InboxNewPayload {
-  item: InboxItem;
-}
-
-export interface InboxReadPayload {
-  item_id: string;
-  recipient_id: string;
-}
-
-/** Emitted when a recipient flips a notification back to unread. */
-export interface InboxUnreadPayload {
-  item_id: string;
-  recipient_id: string;
-}
-
-export interface InboxArchivedPayload {
-  item_id: string;
-  recipient_id: string;
-}
-
-export interface InboxUnarchivedPayload {
-  item_id: string;
-  issue_id: string | null;
-  recipient_id: string;
-}
-
-export interface InboxBatchReadPayload {
-  recipient_id: string;
-  count: number;
-}
-
-export interface InboxBatchArchivedPayload {
-  recipient_id: string;
-  count: number;
 }
 
 export interface CommentCreatedPayload {
@@ -221,39 +137,6 @@ export interface WorkspaceUpdatedPayload {
   workspace: Workspace;
 }
 
-export interface WorkspaceDeletedPayload {
-  workspace_id: string;
-}
-
-export interface MemberUpdatedPayload {
-  member: MemberWithUser;
-}
-
-export interface MemberAddedPayload {
-  member: MemberWithUser;
-  workspace_id: string;
-  workspace_name?: string;
-}
-
-export interface MemberRemovedPayload {
-  member_id: string;
-  user_id: string;
-  workspace_id: string;
-}
-
-export interface SubscriberAddedPayload {
-  issue_id: string;
-  user_type: string;
-  user_id: string;
-  reason: string;
-}
-
-export interface SubscriberRemovedPayload {
-  issue_id: string;
-  user_type: string;
-  user_id: string;
-}
-
 export interface ActivityCreatedPayload {
   issue_id: string;
   entry: TimelineEntry;
@@ -262,7 +145,6 @@ export interface ActivityCreatedPayload {
 export interface TaskMessagePayload {
   task_id: string;
   issue_id: string;
-  chat_session_id?: string;
   seq: number;
   type: "text" | "thinking" | "tool_use" | "tool_result" | "error";
   tool?: string;
@@ -276,7 +158,6 @@ export interface TaskQueuedPayload {
   task_id: string;
   agent_id: string;
   issue_id: string;
-  chat_session_id?: string;
   status: string;
 }
 
@@ -285,14 +166,12 @@ export interface TaskDispatchPayload {
   agent_id: string;
   issue_id: string;
   runtime_id: string;
-  chat_session_id?: string;
 }
 
 export interface TaskRunningPayload {
   task_id: string;
   agent_id: string;
   issue_id: string;
-  chat_session_id?: string;
   status: string;
 }
 
@@ -305,7 +184,6 @@ export interface TaskWaitingLocalDirectoryPayload {
   task_id: string;
   agent_id: string;
   issue_id: string;
-  chat_session_id?: string;
   status: string;
   wait_reason?: string;
 }
@@ -314,7 +192,6 @@ export interface TaskCompletedPayload {
   task_id: string;
   agent_id: string;
   issue_id: string;
-  chat_session_id?: string;
   status: string;
 }
 
@@ -322,7 +199,6 @@ export interface TaskFailedPayload {
   task_id: string;
   agent_id: string;
   issue_id: string;
-  chat_session_id?: string;
   status: string;
   failure_reason?: string;
   retry_pending?: boolean;
@@ -332,131 +208,7 @@ export interface TaskCancelledPayload {
   task_id: string;
   agent_id: string;
   issue_id: string;
-  chat_session_id?: string;
   status: string;
-}
-
-export interface ReactionAddedPayload {
-  reaction: Reaction;
-  issue_id: string;
-}
-
-export interface ReactionRemovedPayload {
-  comment_id: string;
-  issue_id: string;
-  emoji: string;
-  actor_type: string;
-  actor_id: string;
-}
-
-export interface IssueReactionAddedPayload {
-  reaction: IssueReaction;
-  issue_id: string;
-}
-
-export interface IssueReactionRemovedPayload {
-  issue_id: string;
-  emoji: string;
-  actor_type: string;
-  actor_id: string;
-}
-
-export interface ChatMessageEventPayload {
-  chat_session_id: string;
-  message_id: string;
-  role: "user" | "assistant";
-  content: string;
-  task_id?: string;
-  created_at: string;
-}
-
-export interface ChatDonePayload {
-  chat_session_id: string;
-  task_id: string;
-  /**
-   * Server populates these from the freshly-persisted assistant ChatMessage
-   * row so the WS handler can write it into the messages cache inline. Older
-   * servers (pre-#2123) only sent chat_session_id + task_id; treat every field
-   * below as optional and fall back to a refetch when absent.
-   */
-  message_id?: string;
-  content?: string;
-  elapsed_ms?: number;
-  created_at?: string;
-  /**
-   * "message" (default) or "no_response" — a completed direct-chat turn with
-   * no text reply (MUL-4351). Optional/additive: older servers omit it, so the
-   * consumer defaults to "message". Because direct-chat completion now always
-   * persists exactly one assistant row, message_id/content/created_at are
-   * populated alongside this even for a no_response turn.
-   */
-  message_kind?: import("./chat").ChatMessageKind;
-  /** Server-validated follow-ups attached to the persisted assistant reply. */
-  quick_actions?: import("./chat").ChatQuickAction[];
-  /**
-   * The daemon will follow up with a chat:quick_actions supplement for this
-   * turn — render a placeholder. Never true alongside populated
-   * quick_actions; absent on older servers/daemons.
-   */
-  quick_actions_pending?: boolean;
-}
-
-/**
- * chat:quick_actions — supplements a finished turn with the follow-up
- * suggestions from the daemon's background pass. An empty list is terminal:
- * "no suggestions this turn", resolve any placeholder.
- */
-export interface ChatQuickActionsPayload {
-  chat_session_id: string;
-  task_id: string;
-  message_id: string;
-  quick_actions?: import("./chat").ChatQuickAction[];
-  /**
-   * The regeneration behind an explicit refresh failed: the actions carried
-   * here are the turn's UNCHANGED prior pills, sent only to resolve the pending
-   * spinner. Clients surface a "couldn't refresh" notice rather than treating
-   * them as freshly generated. Absent/false on the normal success path and on
-   * older servers.
-   */
-  failed?: boolean;
-}
-
-/**
- * Deferred outcome of a cancelled chat task (#5219). The cancel HTTP response
- * cannot carry it — the empty/non-empty judgment settles only after the
- * daemon's transcript flush — so the server broadcasts it here instead:
- * outcome "stopped" describes a freshly-persisted "Stopped." assistant row
- * (ChatDonePayload-shaped fields), outcome "restored" is a content-free
- * invalidation hint — the deleted prompt itself is durable server-side and
- * the initiator's client fetches it from the creator-authorized
- * draft-restores endpoint. All fields beyond the discriminator are optional —
- * treat defensively and fall back to a refetch.
- */
-export interface ChatCancelFinalizedPayload {
-  outcome: "stopped" | "restored";
-  chat_session_id: string;
-  task_id: string;
-  /**
-   * The user who triggered the cancelled task. Only this user's client needs
-   * to refetch draft restores; treat a missing value as "not me" (fail
-   * closed — the durable restore is still picked up on the next session
-   * open).
-   */
-  initiator_user_id?: string;
-  message_id?: string;
-  /** "Stopped." assistant row fields — set only for outcome "stopped". */
-  content?: string;
-  message_kind?: import("./chat").ChatMessageKind;
-  created_at?: string;
-  elapsed_ms?: number;
-}
-
-export interface ChatSessionReadPayload {
-  chat_session_id: string;
-}
-
-export interface ChatSessionDeletedPayload {
-  chat_session_id: string;
 }
 
 export interface ProjectCreatedPayload {
@@ -469,26 +221,6 @@ export interface ProjectUpdatedPayload {
 
 export interface ProjectDeletedPayload {
   project_id: string;
-}
-
-export interface InvitationCreatedPayload {
-  invitation: Invitation;
-  workspace_name?: string;
-}
-
-export interface InvitationAcceptedPayload {
-  invitation_id: string;
-  member: MemberWithUser;
-}
-
-export interface InvitationDeclinedPayload {
-  invitation_id: string;
-  invitee_email: string;
-}
-
-export interface InvitationRevokedPayload {
-  invitation_id: string;
-  invitee_email: string;
 }
 
 /**
@@ -510,18 +242,11 @@ export interface WSEventPayloadMap {
   "issue:deleted": IssueDeletedPayload;
   "issue_attachments:changed": IssueAttachmentsChangedPayload;
   "issue_labels:changed": IssueLabelsChangedPayload;
-  "issue_properties:changed": IssuePropertiesChangedPayload;
-  "property:created": PropertyChangedPayload;
-  "property:updated": PropertyChangedPayload;
-  "issue_reaction:added": IssueReactionAddedPayload;
-  "issue_reaction:removed": IssueReactionRemovedPayload;
   "comment:created": CommentCreatedPayload;
   "comment:updated": CommentUpdatedPayload;
   "comment:deleted": CommentDeletedPayload;
   "comment:resolved": CommentResolvedPayload;
   "comment:unresolved": CommentUnresolvedPayload;
-  "reaction:added": ReactionAddedPayload;
-  "reaction:removed": ReactionRemovedPayload;
   "agent:status": AgentStatusPayload;
   "agent:created": AgentCreatedPayload;
   "agent:archived": AgentArchivedPayload;
@@ -535,35 +260,11 @@ export interface WSEventPayloadMap {
   "task:message": TaskMessagePayload;
   "task:cancelled": TaskCancelledPayload;
   "task:progress": unknown;
-  "inbox:new": InboxNewPayload;
-  "inbox:read": InboxReadPayload;
-  "inbox:unread": InboxUnreadPayload;
-  "inbox:archived": InboxArchivedPayload;
-  "inbox:unarchived": InboxUnarchivedPayload;
-  "inbox:batch-read": InboxBatchReadPayload;
-  "inbox:batch-archived": InboxBatchArchivedPayload;
   "workspace:updated": WorkspaceUpdatedPayload;
-  "workspace:deleted": WorkspaceDeletedPayload;
-  "member:added": MemberAddedPayload;
-  "member:updated": MemberUpdatedPayload;
-  "member:removed": MemberRemovedPayload;
-  "subscriber:added": SubscriberAddedPayload;
-  "subscriber:removed": SubscriberRemovedPayload;
   "activity:created": ActivityCreatedPayload;
-  "chat:message": ChatMessageEventPayload;
-  "chat:done": ChatDonePayload;
-  "chat:quick_actions": ChatQuickActionsPayload;
-  "chat:cancel_finalized": ChatCancelFinalizedPayload;
-  "chat:session_read": ChatSessionReadPayload;
-  "chat:session_deleted": ChatSessionDeletedPayload;
-  "chat:session_updated": unknown;
   "project:created": ProjectCreatedPayload;
   "project:updated": ProjectUpdatedPayload;
   "project:deleted": ProjectDeletedPayload;
-  "invitation:created": InvitationCreatedPayload;
-  "invitation:accepted": InvitationAcceptedPayload;
-  "invitation:declined": InvitationDeclinedPayload;
-  "invitation:revoked": InvitationRevokedPayload;
   // No formal payload interfaces yet — server emits domain objects clients
   // currently consume as opaque triggers (refetch on receipt).
   "daemon:heartbeat": unknown;
@@ -571,15 +272,9 @@ export interface WSEventPayloadMap {
   "skill:created": unknown;
   "skill:updated": unknown;
   "skill:deleted": unknown;
-  "squad:created": unknown;
-  "squad:updated": unknown;
-  "squad:deleted": unknown;
   "label:created": unknown;
   "label:updated": unknown;
   "label:deleted": unknown;
-  "pin:created": unknown;
-  "pin:deleted": unknown;
-  "pin:reordered": unknown;
   "github_installation:created": unknown;
   "github_installation:deleted": unknown;
   "pull_request:linked": unknown;

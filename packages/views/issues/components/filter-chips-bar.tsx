@@ -12,23 +12,17 @@ import {
   X,
 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
-import { Button } from "@multica/ui/components/ui/button";
-import { useWorkspaceId } from "@multica/core/hooks";
-import { memberListOptions, agentListOptions, squadListOptions } from "@multica/core/workspace/queries";
-import { projectListOptions } from "@multica/core/projects/queries";
-import { labelListOptions } from "@multica/core/labels/queries";
-import { propertyListOptions } from "@multica/core/properties";
+import { Button } from "@liexiu/ui/components/ui/button";
+import { useWorkspaceId } from "@liexiu/core/hooks";
+import { memberListOptions, agentListOptions } from "@liexiu/core/workspace/queries";
+import { projectListOptions } from "@liexiu/core/projects/queries";
+import { labelListOptions } from "@liexiu/core/labels/queries";
 import {
   type ActorFilterValue,
   type FilterDimension,
-  type FilterSnapshot,
   type IssueDateFilter,
-} from "@multica/core/issues/stores/view-store";
-import {
-  actorFilterKey,
-  type IssueViewBaseline,
-} from "@multica/core/issue-views/baseline";
-import { useViewStore, useViewStoreApi } from "@multica/core/issues/stores/view-store-context";
+} from "@liexiu/core/issues/stores/view-store";
+import { useViewStore, useViewStoreApi } from "@liexiu/core/issues/stores/view-store-context";
 import { StatusIcon } from "./status-icon";
 import { PriorityIcon } from "./priority-icon";
 import { ActorAvatar } from "../../common/actor-avatar";
@@ -95,7 +89,7 @@ function AvatarStack({ actors }: { actors: ActorFilterValue[] }) {
   );
 }
 
-/** Colored-dot stack for labels and select-property options. */
+/** Colored-dot stack for labels and select options. */
 function DotStack({ colors }: { colors: string[] }) {
   if (colors.length === 0) return null;
   return (
@@ -120,7 +114,6 @@ function DotStack({ colors }: { colors: string[] }) {
 function useFilterChips(
   dateFilter: IssueDateFilter | null,
   onDateFilterChange?: (filter: IssueDateFilter | null) => void,
-  baseline?: IssueViewBaseline,
 ) {
   const { t } = useT("issues");
   const wsId = useWorkspaceId();
@@ -133,7 +126,6 @@ function useFilterChips(
   const projectFilters = useViewStore((s) => s.projectFilters);
   const includeNoProject = useViewStore((s) => s.includeNoProject);
   const labelFilters = useViewStore((s) => s.labelFilters);
-  const propertyFilters = useViewStore((s) => s.propertyFilters);
   const store = useViewStoreApi();
 
   const hasStoreFilters =
@@ -144,8 +136,7 @@ function useFilterChips(
     creatorFilters.length > 0 ||
     projectFilters.length > 0 ||
     includeNoProject ||
-    labelFilters.length > 0 ||
-    Object.values(propertyFilters).some((selected) => selected.length > 0);
+    labelFilters.length > 0;
   const showDateChip = !!onDateFilterChange && !!dateFilter;
 
   const enabled = hasStoreFilters;
@@ -157,10 +148,6 @@ function useFilterChips(
     ...agentListOptions(wsId),
     enabled: enabled && (assigneeFilters.length > 0 || creatorFilters.length > 0),
   });
-  const { data: squads = [] } = useQuery({
-    ...squadListOptions(wsId),
-    enabled: enabled && assigneeFilters.some((f) => f.type === "squad"),
-  });
   const { data: projects = [] } = useQuery({
     ...projectListOptions(wsId),
     enabled: enabled && projectFilters.length > 0,
@@ -169,109 +156,26 @@ function useFilterChips(
     ...labelListOptions(wsId),
     enabled: enabled && labelFilters.length > 0,
   });
-  const { data: workspaceProperties = [] } = useQuery({
-    ...propertyListOptions(wsId),
-    enabled: enabled && Object.keys(propertyFilters).length > 0,
-  });
 
   const actorName = useMemo(() => {
     const byKey = new Map<string, string>();
     for (const m of members) byKey.set(`member:${m.id}`, m.name);
     for (const a of agents) byKey.set(`agent:${a.id}`, a.name);
-    for (const s of squads) byKey.set(`squad:${s.id}`, s.name);
     return (actor: ActorFilterValue) => byKey.get(`${actor.type}:${actor.id}`);
-  }, [members, agents, squads]);
+  }, [members, agents]);
 
-  // Inside a saved view chips show only the user's additions ON TOP of the
-  // view; removing one returns the dimension to the view's values (never
-  // empty). Without a baseline this is plain clear.
   const clearDimension = (dimension: FilterDimension) => {
-    if (!baseline) {
-      store.getState().clearFilterDimension(dimension);
-      return;
-    }
-    const s = store.getState();
-    const raw = baseline.raw;
-    const current: FilterSnapshot = {
-      statusFilters: s.statusFilters,
-      priorityFilters: s.priorityFilters,
-      assigneeFilters: s.assigneeFilters,
-      includeNoAssignee: s.includeNoAssignee,
-      creatorFilters: s.creatorFilters,
-      projectFilters: s.projectFilters,
-      includeNoProject: s.includeNoProject,
-      labelFilters: s.labelFilters,
-      propertyFilters: s.propertyFilters,
-    };
-    switch (dimension) {
-      case "status":
-        s.resetFiltersTo({ ...current, statusFilters: raw.statusFilters });
-        break;
-      case "priority":
-        s.resetFiltersTo({ ...current, priorityFilters: raw.priorityFilters });
-        break;
-      case "assignee":
-        s.resetFiltersTo({
-          ...current,
-          assigneeFilters: raw.assigneeFilters,
-          includeNoAssignee: raw.includeNoAssignee,
-        });
-        break;
-      case "creator":
-        s.resetFiltersTo({ ...current, creatorFilters: raw.creatorFilters });
-        break;
-      case "project":
-        s.resetFiltersTo({
-          ...current,
-          projectFilters: raw.projectFilters,
-          includeNoProject: raw.includeNoProject,
-        });
-        break;
-      case "label":
-        s.resetFiltersTo({ ...current, labelFilters: raw.labelFilters });
-        break;
-      default: {
-        const propertyId = dimension.slice("property:".length);
-        const propertyFilters = { ...current.propertyFilters };
-        const base = raw.propertyFilters[propertyId];
-        if (base) propertyFilters[propertyId] = base;
-        else delete propertyFilters[propertyId];
-        s.resetFiltersTo({ ...current, propertyFilters });
-      }
-    }
+    store.getState().clearFilterDimension(dimension);
   };
 
-  // Values the view already fixes are invisible here — subtract them.
-  const deltaStatus = baseline
-    ? statusFilters.filter((s) => !baseline.status.has(s))
-    : statusFilters;
-  const deltaPriority = baseline
-    ? priorityFilters.filter((p) => !baseline.priority.has(p))
-    : priorityFilters;
-  const deltaAssignees = baseline
-    ? assigneeFilters.filter((a) => !baseline.assignee.has(actorFilterKey(a)))
-    : assigneeFilters;
-  const deltaNoAssignee = baseline
-    ? includeNoAssignee && !baseline.includeNoAssignee
-    : includeNoAssignee;
-  const deltaCreators = baseline
-    ? creatorFilters.filter((a) => !baseline.creator.has(actorFilterKey(a)))
-    : creatorFilters;
-  const deltaProjects = baseline
-    ? projectFilters.filter((id) => !baseline.project.has(id))
-    : projectFilters;
-  const deltaNoProject = baseline
-    ? includeNoProject && !baseline.includeNoProject
-    : includeNoProject;
-  const deltaLabels = baseline
-    ? labelFilters.filter((id) => !baseline.label.has(id))
-    : labelFilters;
-  const deltaProperties: Record<string, string[]> = {};
-  for (const [id, selected] of Object.entries(propertyFilters)) {
-    const fixed = baseline?.property.get(id);
-    const delta = fixed ? selected.filter((v) => !fixed.has(v)) : selected;
-    if (delta.length > 0) deltaProperties[id] = delta;
-  }
+  const deltaStatus = statusFilters;
+  const deltaPriority = priorityFilters;
+  const deltaAssignees = assigneeFilters;
+  const deltaNoAssignee = includeNoAssignee;
+  const deltaCreators = creatorFilters;
+  const deltaProjects = projectFilters;
+  const deltaNoProject = includeNoProject;
+  const deltaLabels = labelFilters;
 
   const chips: FilterChip[] = [];
 
@@ -377,35 +281,6 @@ function useFilterChips(
       onRemove: () => clearDimension("label"),
     });
   }
-  for (const [propertyId, selected] of Object.entries(deltaProperties)) {
-    if (selected.length === 0) continue;
-    const definition = workspaceProperties.find((p) => p.id === propertyId);
-    // A stale filter on an archived definition is stripped by the surface
-    // controller before querying; hide its chip rather than render a ghost.
-    if (!definition) continue;
-    const optionName = (optionId: string): string | undefined => {
-      if (definition.type === "checkbox") {
-        return optionId === "true"
-          ? t(($) => $.pickers.custom_property.true_label)
-          : t(($) => $.pickers.custom_property.false_label);
-      }
-      return definition.config.options?.find((o) => o.id === optionId)?.name;
-    };
-    const optionColors =
-      definition.type === "checkbox"
-        ? []
-        : selected
-            .map((id) => definition.config.options?.find((o) => o.id === id)?.color)
-            .filter((c): c is string => !!c);
-    chips.push({
-      key: `property:${propertyId}`,
-      icon: <Tag className={CHIP_ICON_CLASS} />,
-      label: definition.name,
-      valueIcons: optionColors.length > 0 ? <DotStack colors={optionColors} /> : undefined,
-      value: summarize(selected.map(optionName)),
-      onRemove: () => clearDimension(`property:${propertyId}`),
-    });
-  }
   if (showDateChip && dateFilter) {
     const fieldLabel =
       dateFilter.field === "created_at"
@@ -428,12 +303,6 @@ function useFilterChips(
   }
 
   const clearAll = () => {
-    if (baseline) {
-      // Back to exactly the view's own conditions.
-      store.getState().resetFiltersTo(baseline.raw);
-      onDateFilterChange?.(null);
-      return;
-    }
     store.getState().clearFilters();
     onDateFilterChange?.(null);
   };
@@ -498,22 +367,12 @@ export function FilterChipList({ trailing }: { trailing?: ReactNode }) {
 export function FilterChipsBar({
   dateFilter = null,
   onDateFilterChange,
-  onSave,
-  saveLabel,
-  viewBaseline,
 }: {
   dateFilter?: IssueDateFilter | null;
   onDateFilterChange?: (filter: IssueDateFilter | null) => void;
-  /** Shows the save/edit button. Hosts that support saved views pass this
-   *  to open their dialog; surfaces without support omit it. */
-  onSave?: () => void;
-  /** Override for the trailing button label — "编辑"/"另存" in view mode. */
-  saveLabel?: string;
-  /** Open saved view: chips show only the user's additions on top of it. */
-  viewBaseline?: IssueViewBaseline;
 }) {
   const { t } = useT("issues");
-  const { chips, hasAny, clearAll } = useFilterChips(dateFilter, onDateFilterChange, viewBaseline);
+  const { chips, hasAny, clearAll } = useFilterChips(dateFilter, onDateFilterChange);
 
   if (!hasAny) return null;
 
@@ -531,16 +390,6 @@ export function FilterChipsBar({
         >
           {t(($) => $.filters.chip_clear)}
         </Button>
-        {onSave && (
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={onSave}
-            className="h-6 px-2 text-caption"
-          >
-            {saveLabel ?? t(($) => $.filters.chip_save)}
-          </Button>
-        )}
       </span>
     </div>
   );

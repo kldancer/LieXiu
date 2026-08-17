@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { RuntimeModel } from "@multica/core/types";
+import type { RuntimeModel } from "@liexiu/core/types";
 import { buildModelChangeUpdate } from "./model-change-cleanup";
 
 const FAST_HIGH: RuntimeModel = {

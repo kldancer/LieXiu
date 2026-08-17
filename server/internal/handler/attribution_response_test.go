@@ -8,7 +8,7 @@ import (
 	"testing"
 
 	"github.com/jackc/pgx/v5/pgtype"
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
+	db "github.com/kailonyang/liexiu/server/pkg/db/generated"
 )
 
 // TestTaskAttributionBase covers the pure row→attribution mapping (MUL-4302 §9):
@@ -17,7 +17,6 @@ import (
 func TestTaskAttributionBase(t *testing.T) {
 	member := parseUUID("11111111-1111-1111-1111-111111111111")
 	comment := parseUUID("22222222-2222-2222-2222-222222222222")
-	ruleVer := parseUUID("33333333-3333-3333-3333-333333333333")
 
 	t.Run("direct_human sets both refs + evidence", func(t *testing.T) {
 		got := taskAttributionBase(db.AgentTaskQueue{
@@ -41,26 +40,6 @@ func TestTaskAttributionBase(t *testing.T) {
 		}
 		if got.Initiator.Name != "" {
 			t.Errorf("base must not carry a name (hydration is separate), got %q", got.Initiator.Name)
-		}
-	})
-
-	t.Run("rule_owner: accountable set, originator NULL, rule_version present", func(t *testing.T) {
-		got := taskAttributionBase(db.AgentTaskQueue{
-			OriginatorSource:  pgtype.Text{String: "rule_owner", Valid: true},
-			AccountableUserID: member, // originator left invalid (autopilot)
-			RuleVersionID:     ruleVer,
-		})
-		if got.Source != "rule_owner" || !got.Precise {
-			t.Fatalf("source/precise = %q/%v, want rule_owner/true", got.Source, got.Precise)
-		}
-		if got.Initiator == nil || got.Initiator.ID != uuidToString(member) {
-			t.Errorf("initiator = %+v, want member (rule publisher)", got.Initiator)
-		}
-		if got.Originator != nil {
-			t.Errorf("rule_owner must have NULL originator, got %+v", got.Originator)
-		}
-		if got.RuleVersionID != uuidToString(ruleVer) {
-			t.Errorf("rule_version_id = %q, want %s", got.RuleVersionID, uuidToString(ruleVer))
 		}
 	})
 

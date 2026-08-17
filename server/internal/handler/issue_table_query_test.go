@@ -177,7 +177,7 @@ func TestIssueTableProjectScopeAssigneeTypes(t *testing.T) {
 		Scope: issueTableScope{
 			Kind:          "project",
 			ProjectID:     "00000000-0000-0000-0000-000000000001",
-			AssigneeTypes: []string{"agent", "squad"},
+			AssigneeTypes: []string{"agent"},
 		},
 		Sort: issueTableSortRequest{Field: "position", Direction: "asc"},
 	}
@@ -456,21 +456,6 @@ func TestIssueTablePositionCursorIncludesIndexableLowerBound(t *testing.T) {
 	}
 	if !strings.Contains(predicate, "i.position >= $3::double precision") {
 		t.Fatalf("position cursor is missing its indexable lower bound: %s", predicate)
-	}
-}
-
-func TestIssueTableGroupIdentityBindsIncludeEmpty(t *testing.T) {
-	withoutEmpty := issueTableGroupIdentity(issueTableGroupSpec{
-		Kind:       "property",
-		PropertyID: "00000000-0000-4000-8000-000000000001",
-	})
-	withEmpty := issueTableGroupIdentity(issueTableGroupSpec{
-		Kind:         "property",
-		PropertyID:   "00000000-0000-4000-8000-000000000001",
-		IncludeEmpty: true,
-	})
-	if withoutEmpty == withEmpty {
-		t.Fatalf("include-empty property cursors share an identity: %q", withEmpty)
 	}
 }
 

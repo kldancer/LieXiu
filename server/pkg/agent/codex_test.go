@@ -17,7 +17,7 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/multica-ai/multica/server/pkg/redact"
+	"github.com/kailonyang/liexiu/server/pkg/redact"
 )
 
 func newTestCodexClient(t *testing.T) (*codexClient, *fakeStdin, []Message) {
@@ -767,7 +767,7 @@ func TestCodexFirstTurnNoProgressTimeoutClamp(t *testing.T) {
 }
 
 // TestCodexFirstTurnNoProgressTimeoutExplicitOverride covers the
-// MULTICA_CODEX_FIRST_TURN_TIMEOUT path added for GH #3262 / #5959: a positive
+// LIEXIU_CODEX_FIRST_TURN_TIMEOUT path added for GH #3262 / #5959: a positive
 // configured value is honored as-is for the first-turn watchdog ceiling,
 // including upward past the default that the semantic inactivity timeout alone
 // can never raise. This resolver only sets that one timer's duration; the
@@ -1260,7 +1260,7 @@ func TestCodexRawItemAgentMessageFinalAnswer(t *testing.T) {
 
 // TestCodexDeliverableOutputExcludesNarration pins Result.Output to the turn's
 // deliverable. Codex used to concatenate every agent message, so a tool-using
-// run shipped its intermediate narration to Slack and Lark along with the answer
+// run shipped its intermediate narration to external channels along with the answer
 // (GH #6006). The wiring mirrors executeOnce: onMessage tracks the last agent
 // message, onFinalAnswer captures the phase-labelled one, and
 // codexDeliverableOutput picks between them.
@@ -1327,7 +1327,7 @@ func TestCodexDeliverableOutputExcludesNarration(t *testing.T) {
 				t.Fatalf("Result.Output = %q, want %q", got, tc.want)
 			}
 			// Narrowing delivery must not narrow the transcript: both messages
-			// still stream to the timeline the Multica UI renders.
+			// still stream to the timeline the LieXiu UI renders.
 			if len(streamed) != 2 || streamed[0] != "Let me check the logs." {
 				t.Fatalf("expected both agent messages streamed, got %q", streamed)
 			}
@@ -1860,9 +1860,9 @@ func TestCodexStartOrResumeThreadResumesPriorThread(t *testing.T) {
 	}
 }
 
-// codexRuntimeBriefCanary stands in for the Multica runtime brief the daemon
+// codexRuntimeBriefCanary stands in for the LieXiu runtime brief the daemon
 // would inline if developerInstructions were ever wired back up.
-const codexRuntimeBriefCanary = "MULTICA-RUNTIME-BRIEF-CANARY"
+const codexRuntimeBriefCanary = "LIEXIU-RUNTIME-BRIEF-CANARY"
 
 // assertNoDeveloperInstructions pins the MUL-5392 contract: Codex loads the
 // per-task AGENTS.md from the thread's cwd, so the daemon never inlines the
@@ -3022,7 +3022,7 @@ func TestCodexExecuteFirstTurnNoProgressSurfacesDiagnostics(t *testing.T) {
 }
 
 // TestCodexExecuteFirstTurnOverrideAboveSemanticIsTruncated pins the competing-
-// timer contract for MULTICA_CODEX_FIRST_TURN_TIMEOUT (GH #3262 / #5959): the
+// timer contract for LIEXIU_CODEX_FIRST_TURN_TIMEOUT (GH #3262 / #5959): the
 // first status:running arms the semantic-inactivity timer and the first-turn
 // timer together, so a first-turn override ABOVE the semantic timeout cannot
 // extend the first-item wait — the semantic timer fires first. That also
@@ -4357,9 +4357,9 @@ func TestEnsureCodexMcpConfigEmptyClearsBlock(t *testing.T) {
 	// `[mcp_servers.user]`) is left untouched.
 	tmp := filepath.Join(t.TempDir(), "config.toml")
 	initial := "sandbox_mode = \"workspace-write\"\n\n" +
-		multicaCodexMcpBeginMarker + "\n" +
+		liexiuCodexMcpBeginMarker + "\n" +
 		"[mcp_servers.fetch]\ncommand = \"uvx\"\n" +
-		multicaCodexMcpEndMarker + "\n\n" +
+		liexiuCodexMcpEndMarker + "\n\n" +
 		"[mcp_servers.user_global]\ncommand = \"keep\"\n"
 	if err := os.WriteFile(tmp, []byte(initial), 0o600); err != nil {
 		t.Fatalf("seed config: %v", err)
@@ -4373,7 +4373,7 @@ func TestEnsureCodexMcpConfigEmptyClearsBlock(t *testing.T) {
 		t.Fatalf("read after: %v", err)
 	}
 	got := string(data)
-	if strings.Contains(got, multicaCodexMcpBeginMarker) {
+	if strings.Contains(got, liexiuCodexMcpBeginMarker) {
 		t.Fatalf("managed block should be cleared, got:\n%s", got)
 	}
 	if !strings.Contains(got, "[mcp_servers.user_global]") {
@@ -4405,7 +4405,7 @@ func TestEnsureCodexMcpConfigWritesManagedBlock(t *testing.T) {
 	}
 	got := string(data)
 
-	if !strings.Contains(got, multicaCodexMcpBeginMarker) || !strings.Contains(got, multicaCodexMcpEndMarker) {
+	if !strings.Contains(got, liexiuCodexMcpBeginMarker) || !strings.Contains(got, liexiuCodexMcpEndMarker) {
 		t.Fatalf("expected managed block markers, got:\n%s", got)
 	}
 	alphaIdx := strings.Index(got, "[mcp_servers.alpha]")
@@ -4452,7 +4452,7 @@ func TestEnsureCodexMcpConfigTranslatesRemoteHTTPServer(t *testing.T) {
 		t.Fatalf("seed: %v", err)
 	}
 
-	raw := json.RawMessage(`{"mcpServers":{"composio":{"type":"http","url":"https://mcp.example.test/notion","headers":{"Authorization":"Bearer test-token","x-api-key":"secret"}}}}`)
+	raw := json.RawMessage(`{"mcpServers":{"local-mcp":{"type":"http","url":"https://local-mcp.example/tool","headers":{"Authorization":"Bearer test-token","x-api-key":"secret"}}}}`)
 	if err := ensureCodexMcpConfig(tmp, raw, slog.Default()); err != nil {
 		t.Fatalf("ensure: %v", err)
 	}
@@ -4463,8 +4463,8 @@ func TestEnsureCodexMcpConfigTranslatesRemoteHTTPServer(t *testing.T) {
 	got := string(data)
 
 	for _, want := range []string{
-		`[mcp_servers.composio]`,
-		`url = "https://mcp.example.test/notion"`,
+		`[mcp_servers.local-mcp]`,
+		`url = "https://local-mcp.example/tool"`,
 		`http_headers = { Authorization = "Bearer test-token", x-api-key = "secret" }`,
 		`experimental_use_rmcp_client = true`,
 	} {
@@ -4525,7 +4525,7 @@ func TestEnsureCodexMcpConfigDropsInternalSelectorsFromRemoteHTTPServer(t *testi
 	t.Parallel()
 
 	tmp := filepath.Join(t.TempDir(), "config.toml")
-	raw := json.RawMessage(`{"mcpServers":{"remote":{"type":"http","url":"https://mcp.example.test/session","headers":{"Authorization":"Bearer test-token"},"timeout":45,"tools":{"include":["kb_get"]},"prompts":{"include":["daily"]},"resources":{"include":["docs"]}}}}`)
+	raw := json.RawMessage(`{"mcpServers":{"remote":{"type":"http","url":"https://local-mcp.example/session","headers":{"Authorization":"Bearer test-token"},"timeout":45,"tools":{"include":["kb_get"]},"prompts":{"include":["daily"]},"resources":{"include":["docs"]}}}}`)
 	if err := ensureCodexMcpConfig(tmp, raw, slog.Default()); err != nil {
 		t.Fatalf("ensure: %v", err)
 	}
@@ -4537,7 +4537,7 @@ func TestEnsureCodexMcpConfigDropsInternalSelectorsFromRemoteHTTPServer(t *testi
 
 	for _, want := range []string{
 		`[mcp_servers.remote]`,
-		`url = "https://mcp.example.test/session"`,
+		`url = "https://local-mcp.example/session"`,
 		`http_headers = { Authorization = "Bearer test-token" }`,
 		`timeout = 45`,
 		`experimental_use_rmcp_client = true`,
@@ -4565,7 +4565,7 @@ func TestEnsureCodexMcpConfigDropsInternalSelectorsFromRemoteHTTPServer(t *testi
 func TestRenderCodexMcpServersBlockTreatsURLOnlyServerAsRemote(t *testing.T) {
 	t.Parallel()
 
-	block, hasServers, err := renderCodexMcpServersBlock(json.RawMessage(`{"mcpServers":{"remote":{"url":"https://mcp.example.test/session"}}}`))
+	block, hasServers, err := renderCodexMcpServersBlock(json.RawMessage(`{"mcpServers":{"remote":{"url":"https://local-mcp.example/session"}}}`))
 	if err != nil {
 		t.Fatalf("render: %v", err)
 	}
@@ -4574,7 +4574,7 @@ func TestRenderCodexMcpServersBlockTreatsURLOnlyServerAsRemote(t *testing.T) {
 	}
 	for _, want := range []string{
 		`[mcp_servers.remote]`,
-		`url = "https://mcp.example.test/session"`,
+		`url = "https://local-mcp.example/session"`,
 		`experimental_use_rmcp_client = true`,
 	} {
 		if !strings.Contains(block, want) {
@@ -4721,7 +4721,7 @@ func TestEnsureCodexMcpConfigAbsentLeavesUserTablesAlone(t *testing.T) {
 		if !strings.Contains(got, "[mcp_servers.user_global]") {
 			t.Fatalf("absent mcp_config (%q) must leave user MCP tables alone, got:\n%s", string(raw), got)
 		}
-		if strings.Contains(got, multicaCodexMcpBeginMarker) {
+		if strings.Contains(got, liexiuCodexMcpBeginMarker) {
 			t.Fatalf("absent mcp_config (%q) must not write managed markers, got:\n%s", string(raw), got)
 		}
 	}
@@ -4754,7 +4754,7 @@ func TestEnsureCodexMcpConfigEmptyManagedSetStripsUserMcp(t *testing.T) {
 		if strings.Contains(got, "user_global") {
 			t.Fatalf("managed empty set (%q) must strip user MCP tables, got:\n%s", string(raw), got)
 		}
-		if !strings.Contains(got, multicaCodexMcpBeginMarker) || !strings.Contains(got, multicaCodexMcpEndMarker) {
+		if !strings.Contains(got, liexiuCodexMcpBeginMarker) || !strings.Contains(got, liexiuCodexMcpEndMarker) {
 			t.Fatalf("managed empty set (%q) must still write markers so future runs find them, got:\n%s", string(raw), got)
 		}
 		if !strings.Contains(got, `sandbox_mode = "workspace-write"`) {

@@ -8,10 +8,9 @@ import (
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/multica-ai/multica/server/internal/service"
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
+	"github.com/kailonyang/liexiu/server/internal/service"
+	db "github.com/kailonyang/liexiu/server/pkg/db/generated"
 )
 
 // RecoverOrphanedTasks is called by the daemon at startup for each runtime
@@ -41,7 +40,7 @@ func (h *Handler) RecoverOrphanedTasks(w http.ResponseWriter, r *http.Request) {
 	// task:failed events, agent reconcile, issue rollback, and auto-retry
 	// behaviour as the runtime sweeper. This was previously a fast-path
 	// that bypassed those side effects, leaving the UI stale when no retry
-	// was created (max_attempts exhausted, autopilot, non-retryable reason).
+	// was created (max_attempts exhausted or a non-retryable reason).
 	retried := h.TaskService.HandleFailedTasks(r.Context(), rows)
 
 	if len(rows) > 0 {
@@ -90,21 +89,6 @@ func (h *Handler) PinTaskSession(w http.ResponseWriter, r *http.Request) {
 	if req.WorkDir != "" {
 		params.WorkDir = pgtype.Text{String: req.WorkDir, Valid: true}
 	}
-	// The pin can arrive after the user has already cancelled the run — it is
-	// asynchronous, and for Codex it waits for the rollout to reach the store.
-	// The cancel transaction then found no session to publish, so the chat's
-	// resume pointer is still on the previous turn and would shadow the session
-	// this pin is about to record (the claim handler reads the pointer before
-	// the GetLastChatTaskSession fallback). Advancing it here closes that half
-	// of GH #6340.
-	//
-	// Both writes commit together. Landing the session on the task row first and
-	// the pointer second leaves the same window the cancel path had: the row
-	// already names the new session while the pointer still names the previous
-	// turn, and a follow-up claimed in between resumes the older one. The lock
-	// comes first for the same reason it does in CancelTaskWithResult —
-	// chat_session -> agent_task_queue is the global order, and ErrNoRows simply
-	// means there is no session to lock or advance.
 	tx, err := h.TxStarter.Begin(r.Context())
 	if err != nil {
 		slog.Warn("pin-session failed to start tx", "task_id", taskID, "error", err)
@@ -114,21 +98,8 @@ func (h *Handler) PinTaskSession(w http.ResponseWriter, r *http.Request) {
 	defer tx.Rollback(r.Context())
 	qtx := h.Queries.WithTx(tx)
 
-	if _, err := qtx.LockChatSessionForTask(r.Context(), params.ID); err != nil && !errors.Is(err, pgx.ErrNoRows) {
-		slog.Warn("pin-session failed to lock chat session", "task_id", taskID, "error", err)
-		writeError(w, http.StatusInternalServerError, "pin session failed")
-		return
-	}
 	if err := qtx.UpdateAgentTaskSession(r.Context(), params); err != nil {
 		slog.Warn("pin-session failed", "task_id", taskID, "error", err)
-		writeError(w, http.StatusInternalServerError, "pin session failed")
-		return
-	}
-	// The statement re-reads the row, ignores anything that is not a cancelled
-	// chat task, and refuses to move the pointer when a newer turn already owns
-	// a session — so a straggler pin cannot drag the conversation backwards.
-	if err := qtx.AdvanceCancelledChatSessionPointer(r.Context(), params.ID); err != nil {
-		slog.Warn("advance cancelled chat session pointer failed", "task_id", taskID, "error", err)
 		writeError(w, http.StatusInternalServerError, "pin session failed")
 		return
 	}
@@ -146,14 +117,21 @@ func (h *Handler) PinTaskSession(w http.ResponseWriter, r *http.Request) {
 type RerunIssueRequest struct {
 	// TaskID identifies the execution-log row the user clicked retry on.
 	// When set, the rerun targets the agent that ran that specific task
-	// (and reuses its leader/worker role) rather than the issue's current
+	// rather than the issue's current
 	// assignee — so clicking retry on row that belonged to a now-displaced
 	// agent re-fires that same agent, not the new assignee.
 	TaskID string `json:"task_id,omitempty"`
 }
 
+func memberActorUserID(actorType, actorID string) pgtype.UUID {
+	if actorType != "member" {
+		return pgtype.UUID{}
+	}
+	return parseUUID(actorID)
+}
+
 // RerunIssue manually re-enqueues an agent run for the issue. By default it
-// targets the issue's current assignee (agent or squad leader); if the
+// targets the issue's current agent assignee; if the
 // request body carries task_id, the rerun targets the agent that ran that
 // specific past task instead. The new task is flagged force_fresh_session=true:
 // the daemon claim handler skips the (agent_id, issue_id) session-resume
@@ -211,6 +189,10 @@ func (h *Handler) RerunIssue(w http.ResponseWriter, r *http.Request) {
 	task, err := h.TaskService.RerunIssue(r.Context(), issue.ID, sourceTaskID, pgtype.UUID{}, actorUserID, canInvoke)
 	if errors.Is(err, service.ErrRerunInvokeNotAllowed) {
 		h.writeDispatchBlocked(w, http.StatusForbidden, ReasonInvocationNotAllowed)
+		return
+	}
+	if errors.Is(err, service.ErrOrchestrationRerunRequiresCommand) {
+		writeError(w, http.StatusConflict, err.Error())
 		return
 	}
 	if err != nil {

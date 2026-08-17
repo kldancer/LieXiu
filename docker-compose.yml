@@ -1,12 +1,12 @@
-name: multica
+name: liexiu
 
 services:
   postgres:
     image: pgvector/pgvector:pg17
     environment:
-      POSTGRES_DB: multica
-      POSTGRES_USER: ${POSTGRES_USER:-multica}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-multica}
+      POSTGRES_DB: liexiu
+      POSTGRES_USER: ${POSTGRES_USER:-liexiu}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-liexiu}
     ports:
       - "127.0.0.1:5432:5432"
     volumes:

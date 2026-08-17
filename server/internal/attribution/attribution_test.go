@@ -24,7 +24,6 @@ var (
 	srcTask  = uid(0x5A)
 	issue    = uid(0x15)
 	originTk = uid(0x0A)
-	ruleVer  = uid(0x4E)
 )
 
 func TestClassifyComment_MemberAuthoredIsDirectHuman(t *testing.T) {
@@ -70,13 +69,10 @@ func TestClassifyComment_AgentAuthoredInheritsParentAsDelegation(t *testing.T) {
 	}
 }
 
-func TestClassifyComment_AutopilotRootedParentInheritsAccountableOnly(t *testing.T) {
-	// The parent task is autopilot-rooted: it has NO authorizing human
-	// (ParentOriginator NULL) but IS accountable to the trigger creator
-	// (ParentAccountable = human). Delegating from it must copy accountable down —
-	// keeping the chain root stable and precise — while leaving originator NULL so
-	// authorization is unchanged and a fail-closed workspace does not reject the
-	// fan-out (MUL-4302 §3.2).
+func TestClassifyComment_ParentAccountableInheritsAccountableOnly(t *testing.T) {
+	// A source task can have no authorizing human while still carrying an
+	// accountable identity. Delegating from it copies that identity down while
+	// leaving originator NULL.
 	got := ClassifyComment(CommentFacts{
 		CommentID:         comment,
 		AuthorType:        "agent",
@@ -88,10 +84,10 @@ func TestClassifyComment_AutopilotRootedParentInheritsAccountableOnly(t *testing
 		t.Fatalf("source = %q, want delegation (not unattributed)", got.Source)
 	}
 	if got.UserID.Valid {
-		t.Errorf("originator must stay NULL (autopilot-rooted, no human authorized), got %v", got.UserID)
+		t.Errorf("originator must stay NULL, got %v", got.UserID)
 	}
 	if got.AccountableUserID != human {
-		t.Errorf("accountable must inherit the parent's trigger creator, got %v", got.AccountableUserID)
+		t.Errorf("accountable must inherit the parent, got %v", got.AccountableUserID)
 	}
 	if !got.Source.Precise() {
 		t.Errorf("delegation is a precise source; fail-closed must not reject it")
@@ -101,9 +97,9 @@ func TestClassifyComment_AutopilotRootedParentInheritsAccountableOnly(t *testing
 	}
 }
 
-func TestClassifyDirect_AutopilotRootedOriginInheritsAccountableOnly(t *testing.T) {
-	// agent_create sub-issue whose origin task is autopilot-rooted: inherit the
-	// origin's accountable via delegation, originator stays NULL.
+func TestClassifyDirect_OriginAccountableInheritsAccountableOnly(t *testing.T) {
+	// An agent-created sub-issue whose origin task has no originator but does
+	// carry an accountable identity inherits it via delegation.
 	got := ClassifyDirect(DirectFacts{
 		IssueID:           issue,
 		CreatorType:       "agent",
@@ -156,7 +152,7 @@ func TestClassifyComment_AgentAuthoredNoSourceTaskIsUnattributed(t *testing.T) {
 
 func TestClassifyComment_AgentAuthoredParentWithoutHumanIsUnattributed(t *testing.T) {
 	// Source task exists but has no human at its own top of chain (e.g. an
-	// autopilot-originated parent). Must not fabricate a human, but should still
+	// automation-originated parent). Must not fabricate a human, but should still
 	// record the delegation lineage for evidence.
 	got := ClassifyComment(CommentFacts{
 		CommentID:    comment,
@@ -312,8 +308,8 @@ func TestClassifyDirect_AgentCreateInheritsOriginAsDelegation(t *testing.T) {
 // TestAccountableMirrorsOriginatorInvariant is the MUL-4302 §11 acceptance check
 // at the classification layer: EVERY result the resolver produces must satisfy the
 // ONE-WAY invariant `originator (UserID) IS NOT NULL ⟹ accountable == originator`.
-// When UserID is NULL the two MAY diverge (rule_owner / owner_fallback name an
-// accountable human while authorization carries none), so the invariant only
+// When UserID is NULL the two MAY diverge (owner_fallback names an accountable
+// human while authorization carries none), so the invariant only
 // constrains the valid-originator direction. finalizeAttribution centralizes this;
 // the test guards against a future Classify path forgetting to route through it.
 func TestAccountableMirrorsOriginatorInvariant(t *testing.T) {
@@ -328,9 +324,7 @@ func TestAccountableMirrorsOriginatorInvariant(t *testing.T) {
 		ClassifyDirect(DirectFacts{IssueID: issue, CreatorType: "agent"}),
 		DirectHumanRun(human, EvidenceComment, comment),
 		DirectHumanRun(pgtype.UUID{}, "", pgtype.UUID{}),
-		Unattributed(EvidenceAutopilotRun, srcTask),
-		RuleOwner(human, ruleVer, EvidenceAutopilotRun, srcTask),         // divergent: accountable set, originator NULL
-		RuleOwner(pgtype.UUID{}, ruleVer, EvidenceAutopilotRun, srcTask), // no publisher → unattributed
+		Unattributed(EvidenceIssueAssignment, issue),
 	}
 	for i, r := range results {
 		// One-way invariant: a valid originator must equal accountable.
@@ -341,9 +335,9 @@ func TestAccountableMirrorsOriginatorInvariant(t *testing.T) {
 		// accountable with a NULL originator is allowed (divergence), but the
 		// reverse — originator set from accountable — must never happen implicitly.
 		if r.AccountableUserID.Valid && !r.UserID.Valid &&
-			r.Source != SourceRuleOwner && r.Source != SourceTriggerOwner && r.Source != SourceOwnerFallback &&
+			r.Source != SourceOwnerFallback &&
 			r.Source != SourceDelegation && r.Source != SourceCommentSource {
-			t.Errorf("result[%d]: accountable set with NULL originator only allowed for delegation/comment_source/trigger_owner/rule_owner/owner_fallback, got source=%q", i, r.Source)
+			t.Errorf("result[%d]: accountable set with NULL originator only allowed for delegation/comment_source/owner_fallback, got source=%q", i, r.Source)
 		}
 	}
 }
@@ -363,68 +357,6 @@ func TestDirectHumanRun(t *testing.T) {
 	}
 	if unresolved.UserID.Valid || unresolved.AccountableUserID.Valid {
 		t.Errorf("invalid user must not fabricate a human")
-	}
-}
-
-func TestRuleOwner(t *testing.T) {
-	// The divergence case: an autopilot run has NO authorizing human (originator
-	// NULL) but IS accountable to the rule publisher.
-	got := RuleOwner(human, ruleVer, EvidenceAutopilotRun, issue)
-	if got.Source != SourceRuleOwner {
-		t.Fatalf("source = %q, want rule_owner", got.Source)
-	}
-	if got.UserID.Valid {
-		t.Errorf("rule_owner must NOT set originator (authorization stays NULL), got %v", got.UserID)
-	}
-	if got.AccountableUserID != human {
-		t.Errorf("accountable should be the rule publisher, got %v", got.AccountableUserID)
-	}
-	if got.RuleVersionID != ruleVer {
-		t.Errorf("rule_version_id = %v, want %v", got.RuleVersionID, ruleVer)
-	}
-	if got.EvidenceKind != EvidenceAutopilotRun || got.EvidenceRefID != issue {
-		t.Errorf("evidence should be carried through")
-	}
-
-	// No publisher (system-published / unresolved) must not fabricate a human.
-	none := RuleOwner(pgtype.UUID{}, ruleVer, EvidenceAutopilotRun, issue)
-	if none.Source != SourceUnattributed {
-		t.Errorf("missing publisher must degrade to unattributed, got %q", none.Source)
-	}
-	if none.UserID.Valid || none.AccountableUserID.Valid {
-		t.Errorf("missing publisher must carry no human on either side")
-	}
-}
-
-func TestTriggerOwner(t *testing.T) {
-	// The divergence case (MUL-4302; Bohan): an autopilot schedule/webhook run has
-	// NO authorizing human (originator NULL) but IS accountable to the member who
-	// created the firing trigger.
-	got := TriggerOwner(human, EvidenceAutopilotRun, issue)
-	if got.Source != SourceTriggerOwner {
-		t.Fatalf("source = %q, want trigger_owner", got.Source)
-	}
-	if !got.Source.Precise() {
-		t.Errorf("trigger_owner must be a precise source")
-	}
-	if got.UserID.Valid {
-		t.Errorf("trigger_owner must NOT set originator (authorization stays NULL), got %v", got.UserID)
-	}
-	if got.AccountableUserID != human {
-		t.Errorf("accountable should be the trigger creator, got %v", got.AccountableUserID)
-	}
-	if got.EvidenceKind != EvidenceAutopilotRun || got.EvidenceRefID != issue {
-		t.Errorf("evidence should be carried through")
-	}
-
-	// No creator (unrecoverable) must not fabricate a human — degrades to
-	// unattributed so the caller can fall back to rule_owner.
-	none := TriggerOwner(pgtype.UUID{}, EvidenceAutopilotRun, issue)
-	if none.Source != SourceUnattributed {
-		t.Errorf("missing creator must degrade to unattributed, got %q", none.Source)
-	}
-	if none.UserID.Valid || none.AccountableUserID.Valid {
-		t.Errorf("missing creator must carry no human on either side")
 	}
 }
 
@@ -460,20 +392,20 @@ func TestOwnerFallback(t *testing.T) {
 }
 
 func TestUnattributed(t *testing.T) {
-	got := Unattributed(EvidenceAutopilotRun, srcTask)
+	got := Unattributed(EvidenceIssueAssignment, issue)
 	if got.Source != SourceUnattributed {
 		t.Fatalf("source = %q, want unattributed", got.Source)
 	}
 	if got.UserID.Valid || got.AccountableUserID.Valid {
 		t.Errorf("unattributed must carry no human on either side")
 	}
-	if got.EvidenceKind != EvidenceAutopilotRun || got.EvidenceRefID != srcTask {
+	if got.EvidenceKind != EvidenceIssueAssignment || got.EvidenceRefID != issue {
 		t.Errorf("evidence should be carried so the row is not a NULL-source bypass")
 	}
 }
 
 func TestSourcePrecise(t *testing.T) {
-	precise := []Source{SourceDirectHuman, SourceDelegation, SourceCommentSource, SourceTriggerOwner, SourceRuleOwner}
+	precise := []Source{SourceDirectHuman, SourceDelegation, SourceCommentSource}
 	degraded := []Source{SourceOwnerFallback, SourceBackfill, SourceUnattributed, Source("")}
 	for _, s := range precise {
 		if !s.Precise() {

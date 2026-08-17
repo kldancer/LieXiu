@@ -15,19 +15,19 @@ import {
 } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import type { Agent, SkillSummary } from "@multica/core/types";
-import { api } from "@multica/core/api";
-import { workspaceKeys } from "@multica/core/workspace/queries";
-import { useWorkspacePaths } from "@multica/core/paths";
-import { resolvePublicFileUrl } from "@multica/core/workspace/avatar-url";
-import { Button } from "@multica/ui/components/ui/button";
-import { Checkbox } from "@multica/ui/components/ui/checkbox";
-import { Input } from "@multica/ui/components/ui/input";
+import type { Agent, SkillSummary } from "@liexiu/core/types";
+import { api } from "@liexiu/core/api";
+import { workspaceKeys } from "@liexiu/core/workspace/queries";
+import { useWorkspacePaths } from "@liexiu/core/paths";
+import { resolvePublicFileUrl } from "@liexiu/core/workspace/avatar-url";
+import { Button } from "@liexiu/ui/components/ui/button";
+import { Checkbox } from "@liexiu/ui/components/ui/checkbox";
+import { Input } from "@liexiu/ui/components/ui/input";
 import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
-} from "@multica/ui/components/ui/collapsible";
+} from "@liexiu/ui/components/ui/collapsible";
 import {
   Dialog,
   DialogContent,
@@ -35,21 +35,21 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@multica/ui/components/ui/dialog";
+} from "@liexiu/ui/components/ui/dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from "@multica/ui/components/ui/dropdown-menu";
+} from "@liexiu/ui/components/ui/dropdown-menu";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
-} from "@multica/ui/components/ui/tooltip";
-import { ActorAvatar } from "@multica/ui/components/common/actor-avatar";
-import { cn } from "@multica/ui/lib/utils";
+} from "@liexiu/ui/components/ui/tooltip";
+import { ActorAvatar } from "@liexiu/ui/components/common/actor-avatar";
+import { cn } from "@liexiu/ui/lib/utils";
 import { useT } from "../../i18n";
 import { useIntentNavigate } from "../../navigation";
 import { isRefreshableOrigin, readOrigin } from "../lib/origin";

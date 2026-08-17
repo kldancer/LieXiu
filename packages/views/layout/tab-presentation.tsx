@@ -11,46 +11,38 @@ import {
   type TabTitleSpec,
   type TabEntityData,
   type TabLabelKey,
-} from "@multica/core/paths";
-import { issueDetailOptions } from "@multica/core/issues/queries";
-import { projectDetailOptions } from "@multica/core/projects/queries";
-import { autopilotDetailOptions } from "@multica/core/autopilots/queries";
+} from "@liexiu/core/paths";
+import { issueDetailOptions } from "@liexiu/core/issues/queries";
+import { projectDetailOptions } from "@liexiu/core/projects/queries";
 import {
   skillDetailOptions,
   agentListOptions,
   memberListOptions,
-  squadListOptions,
-} from "@multica/core/workspace/queries";
-import { runtimeListOptions } from "@multica/core/runtimes/queries";
-import { runtimeDisplayName } from "@multica/core/runtimes";
-import { chatSessionsOptions } from "@multica/core/chat/queries";
-import {
-  inboxListOptions,
-  archivedInboxListOptions,
-} from "@multica/core/inbox/queries";
-import { cn } from "@multica/ui/lib/utils";
+} from "@liexiu/core/workspace/queries";
+import { runtimeListOptions } from "@liexiu/core/runtimes/queries";
+import { runtimeDisplayName } from "@liexiu/core/runtimes";
+import { cn } from "@liexiu/ui/lib/utils";
 import { StatusIcon } from "../issues/components";
 import { ProjectIcon } from "../projects/components/project-icon";
 import { ActorAvatar } from "../common/actor-avatar";
-import { getInboxDisplayTitle } from "../inbox/components/inbox-display";
 import { useT } from "../i18n";
 import { ROUTE_ICON_COMPONENTS } from "./route-icon-components";
 
 /**
  * Desktop tab presentation: turn a tab URL into a leading visual and a title,
  * live from the query cache. This is the view half of the contract whose pure
- * core is `@multica/core/paths` (`parseTabSubject` + `resolveTabPresentation`).
+ * core is `@liexiu/core/paths` (`parseTabSubject` + `resolveTabPresentation`).
  *
  * Cache-only reads: every query in `useTabEntityData` is `enabled: false`. It
  * observes whatever the pages/directory already loaded and re-renders when that
- * data changes, so an open tab's icon/title stay in sync (project renamed,
- * issue status changed, chat session retitled) without amplifying requests. A
+ * data changes, so an open tab's icon/title stay in sync (project renamed and
+ * issue status changed) without amplifying requests. A
  * resource that has not loaded yet renders a stable type fallback until its
  * page fills the cache.
  *
  * The one exception is an actor tab's avatar: `ResourceLeadingVisual` renders
  * `ActorAvatar`, which loads the (workspace-global, sidebar-warmed) member /
- * agent / squad directories itself. That is intentional — it resolves the
+ * agent / member directories itself. That is intentional — it resolves the
  * avatar and, in turn, the name this hook reads from the same lists.
  */
 
@@ -63,10 +55,8 @@ const NONE = "__tab_presentation_none__";
 const PENDING_RESOURCE_KEYS: ReadonlySet<TabLabelKey> = new Set<TabLabelKey>([
   "issue",
   "project",
-  "autopilot",
   "agent",
   "member",
-  "squad",
   "skill",
   "machine",
   "runtime",
@@ -74,30 +64,8 @@ const PENDING_RESOURCE_KEYS: ReadonlySet<TabLabelKey> = new Set<TabLabelKey>([
 
 /** Gather cached entity data for a subject. All reads are cache-only. */
 function useTabEntityData(subject: TabSubject, wsId: string): TabEntityData {
-  const { t: chatT } = useT("chat");
 
-  // Read both inbox lists cache-only; the archived view keeps its own list, so
-  // an archived selection has to resolve against the archived cache — the same
-  // list the InboxPage populates when `?view=archived` is active.
-  const inboxList = useQuery({ ...inboxListOptions(wsId), enabled: false }).data;
-  const archivedInboxList = useQuery({
-    ...archivedInboxListOptions(wsId),
-    enabled: false,
-  }).data;
-  const activeInboxList =
-    subject.kind === "inbox" && subject.archived ? archivedInboxList : inboxList;
-  const inboxItem =
-    subject.kind === "inbox" && subject.selectedKey
-      ? (activeInboxList?.find(
-          (i) => (i.issue_id ?? i.id) === subject.selectedKey,
-        ) ?? null)
-      : null;
-
-  // One issue query serves both a direct issue tab and an inbox-selected issue.
-  const issueId =
-    subject.kind === "issue"
-      ? subject.id
-      : (inboxItem?.issue_id ?? "");
+  const issueId = subject.kind === "issue" ? subject.id : "";
   // An issue tab's URL segment may be a human-readable identifier (`MUL-123`).
   // The route seeds that entry when it resolves, but only the UUID-keyed entry
   // receives realtime patches — so hop through it, or a tab opened by
@@ -117,13 +85,6 @@ function useTabEntityData(subject: TabSubject, wsId: string): TabEntityData {
     ...projectDetailOptions(wsId, subject.kind === "project" ? subject.id : NONE),
     enabled: false,
   }).data;
-  const autopilot = useQuery({
-    ...autopilotDetailOptions(
-      wsId,
-      subject.kind === "autopilot" ? subject.id : NONE,
-    ),
-    enabled: false,
-  }).data;
   const skill = useQuery({
     ...skillDetailOptions(wsId, subject.kind === "skill" ? subject.id : NONE),
     enabled: false,
@@ -131,9 +92,7 @@ function useTabEntityData(subject: TabSubject, wsId: string): TabEntityData {
 
   const agents = useQuery({ ...agentListOptions(wsId), enabled: false }).data;
   const members = useQuery({ ...memberListOptions(wsId), enabled: false }).data;
-  const squads = useQuery({ ...squadListOptions(wsId), enabled: false }).data;
   const runtimes = useQuery({ ...runtimeListOptions(wsId), enabled: false }).data;
-  const sessions = useQuery({ ...chatSessionsOptions(wsId), enabled: false }).data;
 
   const data: TabEntityData = {};
   switch (subject.kind) {
@@ -149,9 +108,6 @@ function useTabEntityData(subject: TabSubject, wsId: string): TabEntityData {
     case "project":
       if (project) data.project = { icon: project.icon, title: project.title };
       break;
-    case "autopilot":
-      if (autopilot) data.autopilot = { title: autopilot.autopilot.title };
-      break;
     case "skill":
       if (skill) data.skill = { name: skill.name };
       break;
@@ -161,7 +117,7 @@ function useTabEntityData(subject: TabSubject, wsId: string): TabEntityData {
           ? agents?.find((a) => a.id === subject.id)?.name
           : subject.actorType === "member"
             ? members?.find((m) => m.user_id === subject.id)?.name
-            : squads?.find((s) => s.id === subject.id)?.name;
+            : undefined;
       if (name) data.actorName = name;
       break;
     }
@@ -175,28 +131,6 @@ function useTabEntityData(subject: TabSubject, wsId: string): TabEntityData {
       if (rt) data.runtime = { name: runtimeDisplayName(rt) };
       break;
     }
-    case "chat":
-      if (subject.sessionId) {
-        const s = sessions?.find((x) => x.id === subject.sessionId);
-        if (s) data.chatSessionTitle = s.title?.trim() || chatT(($) => $.window.untitled);
-      }
-      break;
-    case "inbox":
-      if (inboxItem) {
-        if (inboxItem.issue_id && issue) {
-          data.inboxSelection = {
-            kind: "issue",
-            identifier: issue.identifier,
-            title: issue.title,
-          };
-        } else if (!inboxItem.issue_id) {
-          data.inboxSelection = {
-            kind: "item",
-            title: getInboxDisplayTitle(inboxItem),
-          };
-        }
-      }
-      break;
   }
   return data;
 }
@@ -249,9 +183,7 @@ export function useTabPresentation(
       ? {
           kind: "icon",
           icon:
-            visual.actorType === "squad"
-              ? "Users"
-              : visual.actorType === "member"
+            visual.actorType === "member"
                 ? "CircleUser"
                 : "Bot",
         }

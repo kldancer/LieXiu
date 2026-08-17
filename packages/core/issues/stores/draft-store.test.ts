@@ -43,12 +43,9 @@ const RESET_STATE = {
       assigneeType: undefined,
       assigneeId: undefined,
       labelIds: [],
-      propertyValues: {},
     },
     agent: {
       prompt: "",
-      actorType: undefined,
-      actorId: undefined,
     },
     activeMode: "manual" as const,
   },
@@ -102,8 +99,6 @@ describe("issue draft store — last assignee", () => {
             workspace_id: "ws-1",
             issue_id: null,
             comment_id: null,
-            chat_session_id: null,
-            chat_message_id: null,
             uploader_type: "member",
             uploader_id: "alice",
             filename: "shot.png",
@@ -122,13 +117,12 @@ describe("issue draft store — last assignee", () => {
     expect(useIssueDraftStore.getState().draft.shared.attachments).toEqual([]);
   });
 
-  it("clearDraft removes persisted custom property values", () => {
-    const { setManual, clearDraft } = useIssueDraftStore.getState();
+  it("clearDraft removes persisted manual values", () => {
+    const { clearDraft } = useIssueDraftStore.getState();
 
-    setManual({ propertyValues: { "property-1": "option-1" } });
     clearDraft();
 
-    expect(useIssueDraftStore.getState().draft.manual.propertyValues).toEqual({});
+    expect(useIssueDraftStore.getState().draft.manual.labelIds).toEqual([]);
   });
 
   it("clearDraft removes the persisted project selection", () => {
@@ -174,13 +168,12 @@ describe("issue draft store — mode switch preserves both sides", () => {
     setManual({ title: "Manual title", description: "Manual body" });
     setShared({ projectId: "project-1", priority: "high" });
     // Switching to agent seeds the agent slot but must not clear manual.
-    setAgent({ prompt: "Agent prompt", actorType: "agent", actorId: "agent-1" });
+    setAgent({ prompt: "Agent prompt" });
 
     const { draft } = useIssueDraftStore.getState();
     expect(draft.manual.title).toBe("Manual title");
     expect(draft.manual.description).toBe("Manual body");
     expect(draft.agent.prompt).toBe("Agent prompt");
-    expect(draft.agent.actorId).toBe("agent-1");
     // Shared fields are visible to both sides.
     expect(draft.shared.projectId).toBe("project-1");
     expect(draft.shared.priority).toBe("high");
@@ -199,7 +192,7 @@ describe("issue draft store — legacy rehydrate", () => {
 
   it("migrates a pre-MUL-5181 flat draft into the shared/manual slots", async () => {
     localStorage.setItem(
-      "multica_issue_draft:acme",
+      "liexiu_issue_draft:acme",
       JSON.stringify({
         state: {
           draft: {
@@ -211,7 +204,6 @@ describe("issue draft store — legacy rehydrate", () => {
             startDate: null,
             dueDate: "2026-08-01",
             labelIds: ["label-1"],
-            propertyValues: { "property-1": "option-1" },
             // no `attachments` — written by a build that predates the field
           },
         },
@@ -229,7 +221,6 @@ describe("issue draft store — legacy rehydrate", () => {
     expect(draft.manual.description).toBe("body");
     expect(draft.manual.status).toBe("todo");
     expect(draft.manual.labelIds).toEqual(["label-1"]);
-    expect(draft.manual.propertyValues).toEqual({ "property-1": "option-1" });
     // Shared fields land in the shared slot, with attachments backfilled.
     expect(draft.shared.projectId).toBe("project-1");
     expect(draft.shared.priority).toBe("high");
@@ -242,7 +233,7 @@ describe("issue draft store — legacy rehydrate", () => {
 
   it("backfills missing sub-fields on an already-nested persisted draft", async () => {
     localStorage.setItem(
-      "multica_issue_draft:beta",
+      "liexiu_issue_draft:beta",
       JSON.stringify({
         state: {
           draft: {
@@ -274,7 +265,7 @@ describe("issue draft store — legacy rehydrate", () => {
 
   it("normalizes pre-L2 shared attachments and drops stale uploading placeholders", async () => {
     localStorage.setItem(
-      "multica_issue_draft:gamma",
+      "liexiu_issue_draft:gamma",
       JSON.stringify({
         state: {
           draft: {
@@ -390,7 +381,7 @@ describe("issue draft store — logout cleanup", () => {
     const { setManual, setLastAssignee } = useIssueDraftStore.getState();
     setManual({ title: "secret wip" });
     setLastAssignee("member", "alice");
-    expect(localStorage.getItem("multica_issue_draft:acme")).not.toBeNull();
+    expect(localStorage.getItem("liexiu_issue_draft:acme")).not.toBeNull();
 
     // use-logout's order: reset first (each reset is a setState, and persist
     // writes the new state back to storage under the still-active slug), THEN
@@ -399,6 +390,6 @@ describe("issue draft store — logout cleanup", () => {
     resetAllRegisteredDrafts();
     clearWorkspaceStorage(defaultStorage, "acme");
 
-    expect(localStorage.getItem("multica_issue_draft:acme")).toBeNull();
+    expect(localStorage.getItem("liexiu_issue_draft:acme")).toBeNull();
   });
 });

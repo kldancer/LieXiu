@@ -1,10 +1,10 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
-import type { Issue, UpdateIssueRequest } from "@multica/core/types";
+import type { Issue, UpdateIssueRequest } from "@liexiu/core/types";
 import { BatchActionToolbar } from "./batch-action-toolbar";
 
 // MUL-4155: batch status changes must apply directly (no run-confirm modal),
-// while agent/squad assignment still confirms and delete still confirms. These
+// while agent assignment still confirms and delete still confirms. These
 // tests drive the pickers' onUpdate callbacks and assert which path is taken.
 
 const selection = vi.hoisted(() => ({
@@ -14,19 +14,19 @@ const selection = vi.hoisted(() => ({
   select: vi.fn(),
   deselect: vi.fn(),
 }));
-vi.mock("@multica/core/issues/stores/selection-store", () => ({
+vi.mock("@liexiu/core/issues/stores/selection-store", () => ({
   useIssueSelectionStore: (selector: (s: typeof selection) => unknown) => selector(selection),
 }));
 
 const batchUpdate = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
 const batchDelete = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
-vi.mock("@multica/core/issues/mutations", () => ({
+vi.mock("@liexiu/core/issues/mutations", () => ({
   useBatchUpdateIssues: () => ({ mutateAsync: batchUpdate, isPending: false }),
   useBatchDeleteIssues: () => ({ mutateAsync: batchDelete, isPending: false }),
 }));
 
 const openModal = vi.hoisted(() => vi.fn());
-vi.mock("@multica/core/modals", () => ({
+vi.mock("@liexiu/core/modals", () => ({
   useModalStore: (selector: (s: { open: typeof openModal }) => unknown) => selector({ open: openModal }),
 }));
 
@@ -85,7 +85,6 @@ function makeIssue(overrides: Partial<Issue> = {}): Issue {
     start_date: null,
     due_date: null,
     metadata: {},
-    properties: {},
     created_at: "2026-01-01T00:00:00Z",
     updated_at: "2026-01-01T00:00:00Z",
     ...overrides,

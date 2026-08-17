@@ -10,7 +10,7 @@
 
 import { useEffect, useRef } from "react"
 
-import { cn } from "@multica/ui/lib/utils"
+import { cn } from "@liexiu/ui/lib/utils"
 
 interface DotSphereProps {
   className?: string

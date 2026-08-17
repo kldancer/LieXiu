@@ -31,26 +31,10 @@ export function assigneeTypesForActorKind(
     case "members":
       return ["member"];
     case "agents":
-      return ["agent", "squad"];
+      return ["agent"];
     default:
       return undefined;
   }
-}
-
-/** Saved-view scope_variant → tab. Unknown/absent variants mean "all". */
-export function actorKindForViewVariant(
-  variant: string | null | undefined,
-): WorkspaceIssueActorKind {
-  return variant === "members" || variant === "agents" ? variant : "all";
-}
-
-/** My-view scope_variant → my-scope relation. Unknown/absent means "all". */
-export function myRelationForViewVariant(
-  variant: string | null | undefined,
-): Extract<IssueScope, { type: "my" }>["relation"] {
-  return variant === "assigned" || variant === "created" || variant === "involved"
-    ? variant
-    : "all";
 }
 
 export class UnsupportedIssueScopeError extends Error {

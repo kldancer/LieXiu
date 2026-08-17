@@ -3,21 +3,21 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Loader2, ScrollText } from "lucide-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { cn } from "@multica/ui/lib/utils";
+import { cn } from "@liexiu/ui/lib/utils";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
-} from "@multica/ui/components/ui/tooltip";
-import { api } from "@multica/core/api";
+} from "@liexiu/ui/components/ui/tooltip";
+import { api } from "@liexiu/core/api";
 import {
   chatKeys,
   isTaskMessageTaskId,
   mergeTaskMessagesBySeq,
   taskMessagesOptions,
-} from "@multica/core/chat/queries";
-import type { AgentTask } from "@multica/core/types/agent";
-import type { TaskMessagePayload } from "@multica/core/types/events";
+} from "@liexiu/core/chat/queries";
+import type { AgentTask } from "@liexiu/core/types/agent";
+import type { TaskMessagePayload } from "@liexiu/core/types/events";
 import { AgentTranscriptDialog } from "./agent-transcript-dialog";
 import { buildTimeline, type TimelineItem } from "./build-timeline";
 
@@ -40,8 +40,8 @@ interface TranscriptButtonProps {
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
   /**
-   * Optional content rendered above the transcript event list. Used to
-   * surface autopilot webhook payloads inline with the run history.
+   * Optional content rendered above the transcript event list for run-specific
+   * context supplied by the parent surface.
    */
   headerSlot?: React.ReactNode;
 }
@@ -139,9 +139,9 @@ export function TranscriptButton({
       setOpen(false);
     };
 
-    window.addEventListener("multica:navigate", handleGlobalNavigate);
+    window.addEventListener("liexiu:navigate", handleGlobalNavigate);
     return () => {
-      window.removeEventListener("multica:navigate", handleGlobalNavigate);
+      window.removeEventListener("liexiu:navigate", handleGlobalNavigate);
     };
   }, [open, setOpen]);
 

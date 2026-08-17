@@ -3,11 +3,11 @@
 /**
  * ReadonlyContent — compatibility wrapper over the canonical <RichContent>.
  *
- * The renderer itself moved to packages/views/rich-content/ (MUL-4922) so Chat,
- * Issue descriptions and Comments all share ONE implementation of Markdown
+ * The renderer itself moved to packages/views/rich-content/ (MUL-4922) so
+ * Issue descriptions, Comments and task transcripts share ONE Markdown
  * parsing, sanitize, fenced-code dispatch, mentions, links and attachments.
  * This file stays only so existing document-density callers (comment cards,
- * issue detail, autopilot detail, Markdown attachment preview) keep their
+ * issue detail and Markdown attachment preview) keep their
  * import path and props.
  *
  * Do not reintroduce rendering logic here. New behaviour belongs in
@@ -15,7 +15,7 @@
  */
 
 import { memo } from "react";
-import type { Attachment } from "@multica/core/types";
+import type { Attachment } from "@liexiu/core/types";
 import { RichContent } from "../rich-content";
 
 interface ReadonlyContentProps {

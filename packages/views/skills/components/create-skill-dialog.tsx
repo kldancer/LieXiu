@@ -14,30 +14,30 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
-import { api } from "@multica/core/api";
-import type { Skill } from "@multica/core/types";
-import { useWorkspaceId } from "@multica/core/hooks";
-import { isImeComposing } from "@multica/core/utils";
+import { api } from "@liexiu/core/api";
+import type { Skill } from "@liexiu/core/types";
+import { useWorkspaceId } from "@liexiu/core/hooks";
+import { isImeComposing } from "@liexiu/core/utils";
 import {
   skillDetailOptions,
   workspaceKeys,
-} from "@multica/core/workspace/queries";
+} from "@liexiu/core/workspace/queries";
 import {
   Dialog,
   DialogContent,
   DialogTitle,
-} from "@multica/ui/components/ui/dialog";
+} from "@liexiu/ui/components/ui/dialog";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
-} from "@multica/ui/components/ui/tooltip";
-import { Button } from "@multica/ui/components/ui/button";
-import { Input } from "@multica/ui/components/ui/input";
-import { Label } from "@multica/ui/components/ui/label";
-import { Textarea } from "@multica/ui/components/ui/textarea";
-import { useScrollFade } from "@multica/ui/hooks/use-scroll-fade";
-import { cn } from "@multica/ui/lib/utils";
+} from "@liexiu/ui/components/ui/tooltip";
+import { Button } from "@liexiu/ui/components/ui/button";
+import { Input } from "@liexiu/ui/components/ui/input";
+import { Label } from "@liexiu/ui/components/ui/label";
+import { Textarea } from "@liexiu/ui/components/ui/textarea";
+import { useScrollFade } from "@liexiu/ui/hooks/use-scroll-fade";
+import { cn } from "@liexiu/ui/lib/utils";
 import { openExternal } from "../../platform";
 import { RuntimeLocalSkillImportPanel } from "./runtime-local-skill-import-panel";
 import { useT } from "../../i18n";

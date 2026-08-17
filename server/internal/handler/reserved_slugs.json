@@ -1,5 +1,5 @@
 {
-  "$comment": "Source of truth for reserved workspace slugs. Edit this file only. The Go side embeds this JSON directly; the TS side (packages/core/paths/reserved-slugs.ts) is regenerated from this file by `pnpm generate:reserved-slugs`. CI re-runs the generator and fails on any diff, so the two sides cannot drift. Convention for new global routes: single word (`/login`, `/inbox`) or `/{noun}/{verb}` (`/workspaces/new`). Never add hyphenated root-level word groups (`/new-workspace`, `/create-team`) — they collide with common user workspace names.",
+  "$comment": "Source of truth for reserved workspace slugs. Edit this file only. The Go side embeds this JSON directly; the TS side (packages/core/paths/reserved-slugs.ts) is regenerated from this file by `pnpm generate:reserved-slugs`. CI re-runs the generator and fails on any diff, so the two sides cannot drift. Convention for new global routes: use a single word such as `/login`, or a noun/verb pair. Never add hyphenated root-level word groups (`/new-workspace`, `/create-team`) — they collide with common user workspace names.",
   "groups": [
     {
       "label": "Auth flow",
@@ -23,11 +23,11 @@
     },
     {
       "label": "Platform / marketing routes (current + likely-future)",
-      "description": "`multica` is reserved as the brand name to block impersonation workspaces. `www`, `new`, `home`, `homepage`, `dashboard` are confusables or likely-future global landing/entry routes; `homepage` matches the existing `/homepage` landing variant in apps/web.",
+      "description": "`liexiu` is reserved as the brand name to block impersonation workspaces. `www`, `new`, `home`, `homepage`, `dashboard` are confusables or likely-future global landing/entry routes; `homepage` matches the existing `/homepage` landing variant in apps/web.",
       "slugs": [
         "api",
         "admin",
-        "multica",
+        "liexiu",
         "www",
         "new",
         "home",
@@ -54,11 +54,10 @@
       ]
     },
     {
-      "label": "Account / billing (likely-future global routes in the avatar menu)",
+      "label": "Account routes in the avatar menu",
       "slugs": [
         "profile",
         "account",
-        "billing",
         "notifications",
         "search",
         "members"
@@ -70,10 +69,7 @@
       "slugs": [
         "issues",
         "projects",
-        "autopilots",
         "agents",
-        "squads",
-        "inbox",
         "my-issues",
         "usage",
         "runtimes",

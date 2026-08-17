@@ -10,18 +10,18 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@multica/ui/components/ui/dialog";
-import { Button } from "@multica/ui/components/ui/button";
-import { Textarea } from "@multica/ui/components/ui/textarea";
-import { Spinner } from "@multica/ui/components/ui/spinner";
-import type { IssueAssigneeType, UpdateIssueRequest } from "@multica/core/types";
-import { useUpdateIssue, useBatchUpdateIssues } from "@multica/core/issues/mutations";
-import { useActorName } from "@multica/core/workspace/hooks";
-import { useWorkspaceId } from "@multica/core/hooks";
-import { agentListOptions, squadListOptions } from "@multica/core/workspace/queries";
-import { runtimeListOptions, readRuntimeCliVersion, handoffSupported } from "@multica/core/runtimes";
-import { useShortcut, shortcutMatchesEvent, isPlainShortcut } from "@multica/core/shortcuts";
-import { isImeComposing } from "@multica/core/utils";
+} from "@liexiu/ui/components/ui/dialog";
+import { Button } from "@liexiu/ui/components/ui/button";
+import { Textarea } from "@liexiu/ui/components/ui/textarea";
+import { Spinner } from "@liexiu/ui/components/ui/spinner";
+import type { IssueAssigneeType, UpdateIssueRequest } from "@liexiu/core/types";
+import { useUpdateIssue, useBatchUpdateIssues } from "@liexiu/core/issues/mutations";
+import { useActorName } from "@liexiu/core/workspace/hooks";
+import { useWorkspaceId } from "@liexiu/core/hooks";
+import { agentListOptions } from "@liexiu/core/workspace/queries";
+import { runtimeListOptions, readRuntimeCliVersion, handoffSupported } from "@liexiu/core/runtimes";
+import { useShortcut, shortcutMatchesEvent, isPlainShortcut } from "@liexiu/core/shortcuts";
+import { isImeComposing } from "@liexiu/core/utils";
 import { ShortcutKeycaps } from "../common/shortcut-keycaps";
 import { useT } from "../i18n";
 
@@ -47,7 +47,7 @@ function boldName(text: string): ReactNode {
 
 interface RunConfirmData {
   issueIds?: string[];
-  // Assign is the only mode: agent/squad assignment is the sole issue write that
+  // Assign is the only mode: agent assignment is the sole issue write that
   // needs the pre-trigger confirmation. Batch status changes apply directly now
   // (MUL-4155), so there is no "status" mode.
   mode?: "assign";
@@ -83,7 +83,14 @@ export function RunConfirmModal({
   const { t } = useT("modals");
   const { getActorName } = useActorName();
   const sendShortcut = useShortcut("send");
-  const d = (data ?? {}) as RunConfirmData;
+  const rawData = (data ?? {}) as RunConfirmData;
+  const writableTarget =
+    rawData.assigneeType === "member" || rawData.assigneeType === "agent";
+  const d: RunConfirmData = {
+    ...rawData,
+    assigneeType: writableTarget ? rawData.assigneeType : undefined,
+    assigneeId: writableTarget ? rawData.assigneeId : undefined,
+  };
   const issueIds = d.issueIds ?? [];
 
   const [note, setNote] = useState("");
@@ -97,26 +104,20 @@ export function RunConfirmModal({
   const batchUpdate = useBatchUpdateIssues();
 
   // Handoff-support verdict, resolved entirely from warm client caches
-  // (useWorkspacePresencePrefetch keeps agents / squads / runtimes hot), so the
-  // note box settles on the first frame with no round-trip — the same shape as
-  // the quick-create version gate. An agent assignee targets its own runtime; a
-  // squad targets its leader's, which the squad list gives us directly, so both
-  // are knowable locally. `null` means "cannot tell" (assignee not in cache
+  // (useWorkspacePresencePrefetch keeps agents / runtimes hot), so the note
+  // box settles on the first frame with no round-trip — the same shape as the
+  // quick-create version gate. An agent assignee targets its own runtime.
+  // `null` means "cannot tell" (assignee not in cache
   // yet, or no runtime bound) and leaves the box enabled: the note is a soft
   // gate, and a spurious warning is worse than a note an old daemon drops.
   const wsId = useWorkspaceId();
   const { data: agents = [] } = useQuery({ ...agentListOptions(wsId), enabled: !!wsId });
   const { data: runtimes = [] } = useQuery({ ...runtimeListOptions(wsId), enabled: !!wsId });
-  const { data: squads = [] } = useQuery({ ...squadListOptions(wsId), enabled: !!wsId });
   const localHandoff = useMemo<boolean | null>(() => {
     if (!d.assigneeId) return null;
     let agentId: string | undefined;
     if (d.assigneeType === "agent") {
       agentId = d.assigneeId;
-    } else if (d.assigneeType === "squad") {
-      // A squad run is executed by its leader, so the leader's runtime is the
-      // one that has to render the note.
-      agentId = squads.find((s) => s.id === d.assigneeId)?.leader_id;
     }
     if (!agentId) return null;
     const agent = agents.find((a) => a.id === agentId);
@@ -124,7 +125,7 @@ export function RunConfirmModal({
     const runtime = runtimes.find((r) => r.id === agent.runtime_id);
     if (!runtime) return null;
     return handoffSupported(readRuntimeCliVersion(runtime.metadata));
-  }, [d.assigneeType, d.assigneeId, agents, runtimes, squads]);
+  }, [d.assigneeType, d.assigneeId, agents, runtimes]);
 
   // Soft gate: an old runtime can't render the note. Disable the box but let
   // the assignment proceed (MUL-3375 §6.3).
@@ -138,14 +139,10 @@ export function RunConfirmModal({
     return { ...base, ...extra };
   };
 
-  // The copy names whoever the issue is handed to; for a squad that is the
-  // squad itself, since its leader deciding who works is an internal detail.
-  const assigneeName =
-    d.assigneeName ??
-    getActorName(d.assigneeType === "squad" ? "squad" : "agent", d.assigneeId ?? "");
+  const assigneeName = d.assigneeName ?? getActorName("agent", d.assigneeId ?? "");
 
   const submit = async (suppressRun: boolean) => {
-    if (issueIds.length === 0 || submitting) return;
+    if (issueIds.length === 0 || !d.assigneeType || !d.assigneeId || submitting) return;
     setPendingAction(suppressRun ? "suppress" : "go");
     const payload = applyTo({
       ...(suppressRun ? { suppress_run: true } : {}),

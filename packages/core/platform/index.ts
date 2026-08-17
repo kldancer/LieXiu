@@ -5,12 +5,3 @@ export { defaultStorage } from "./storage";
 export { createPersistStorage } from "./persist-storage";
 export { createWorkspaceAwareStorage, setCurrentWorkspace, getCurrentSlug, getCurrentWsId, subscribeToCurrentSlug, registerForWorkspaceRehydration } from "./workspace-storage";
 export { clearWorkspaceStorage } from "./storage-cleanup";
-export {
-  registerSystemNotificationClickHandler,
-  isWebNotificationSupported,
-  getWebNotificationPermission,
-  requestWebNotificationPermission,
-  showWebNotification,
-  type SystemNotificationPayload,
-  type WebNotificationPermission,
-} from "./system-notification";

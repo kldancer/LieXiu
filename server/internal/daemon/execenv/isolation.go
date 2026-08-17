@@ -14,10 +14,10 @@ import (
 )
 
 // PreparationHelperArg selects the private execution-environment helper mode
-// in the multica binary. The daemon runs Prepare/Reuse in that subprocess so a
+// in the liexiu binary. The daemon runs Prepare/Reuse in that subprocess so a
 // blocked filesystem syscall can be terminated without leaving an in-process
 // goroutine that may resume writing after the task has already been retried.
-const PreparationHelperArg = "__multica_execenv_prepare"
+const PreparationHelperArg = "__liexiu_execenv_prepare"
 
 const (
 	preparationActionPrepare = "prepare"
@@ -59,7 +59,7 @@ type preparationResponse struct {
 }
 
 // PrepareIsolated executes Prepare in a killable helper process. command must
-// name the current multica binary followed by PreparationHelperArg in
+// name the current liexiu binary followed by PreparationHelperArg in
 // production; accepting a slice also lets tests use the Go test binary as the
 // helper without installing a CLI binary.
 func PrepareIsolated(ctx context.Context, command []string, params PrepareParams, logger *slog.Logger) (*Environment, error) {

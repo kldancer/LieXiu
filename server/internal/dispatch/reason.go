@@ -24,8 +24,8 @@ const (
 	// target under the invocation-permission model. Deliberately generic — it
 	// does not distinguish "target is private" from "target does not exist".
 	ReasonInvocationNotAllowed ReasonCode = "invocation_not_allowed"
-	// ReasonTargetUnavailable: the target cannot run (archived agent, deleted /
-	// archived squad, unresolvable leader, or no assignee).
+	// ReasonTargetUnavailable: the target agent cannot run (archived, missing,
+	// or otherwise unavailable).
 	ReasonTargetUnavailable ReasonCode = "target_unavailable"
 	// ReasonRuntimeOffline: the target is permitted and bound to a runtime, but
 	// that runtime is not online at dispatch time. The task is not lost — the
@@ -45,13 +45,6 @@ const (
 	// ReasonAlreadyActive: a run is already active/pending for this target and
 	// this trigger did not coalesce.
 	ReasonAlreadyActive ReasonCode = "already_active"
-	// ReasonSelfTriggerSuppressed: the target was intentionally not (re-)triggered
-	// because doing so would be a self-trigger the guard suppresses, and no active
-	// run remains to cover it — e.g. a squad leader's own @mention of its squad
-	// whose latest task is already terminal. Not a permission block, but NOT
-	// success: nothing new runs. (Named to avoid implying the NEW comment was
-	// already processed.)
-	ReasonSelfTriggerSuppressed ReasonCode = "self_trigger_suppressed"
 	// ReasonInternalError: an unexpected server error prevented a clean decision.
 	ReasonInternalError ReasonCode = "internal_error"
 )

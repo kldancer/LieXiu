@@ -11,7 +11,7 @@ import {
   viewStoreSlice,
 } from "./view-store";
 
-export const ISSUE_SURFACE_VIEW_STORAGE_KEY = "multica_issue_surface_views";
+export const ISSUE_SURFACE_VIEW_STORAGE_KEY = "liexiu_issue_surface_views";
 
 type PersistedIssueViewState = ReturnType<
   ReturnType<typeof viewStorePersistOptions>["partialize"]
@@ -122,29 +122,6 @@ export function getIssueSurfaceViewStore(
   });
   surfaceStores.set(surfaceKey, store);
   return store;
-}
-
-/**
- * First-open seeding for saved-view surfaces (`view:<id>` keys): apply the
- * view's stored definition ONLY when this user has no local state for the
- * surface yet. Later opens keep the user's own adjustments — the definition
- * is a default, not a sync source.
- */
-export function seedIssueSurfaceViewState(
-  surfaceKey: string,
-  definition: unknown,
-) {
-  const hasLocal =
-    issueSurfaceViewRegistryStore.getState().surfaces[surfaceKey] !== undefined;
-  if (hasLocal) return;
-  const store = getIssueSurfaceViewStore(surfaceKey);
-  // The definition is a server-owned jsonb blob — run it through the same
-  // sanitizer persisted snapshots use so a malformed field degrades to the
-  // default instead of poisoning the store. setState triggers the persist
-  // subscription, so the seed becomes the surface's local state exactly
-  // like a user-made change would.
-  const defaults = viewStoreSlice(store.setState);
-  store.setState(mergeViewStatePersisted(definition, defaults), true);
 }
 
 export function clearIssueSurfaceViewState(surfaceKey: string) {

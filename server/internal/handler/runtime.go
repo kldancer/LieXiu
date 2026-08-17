@@ -14,10 +14,10 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/multica-ai/multica/server/internal/util"
-	"github.com/multica-ai/multica/server/pkg/agent"
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
-	"github.com/multica-ai/multica/server/pkg/protocol"
+	"github.com/kailonyang/liexiu/server/internal/util"
+	"github.com/kailonyang/liexiu/server/pkg/agent"
+	db "github.com/kailonyang/liexiu/server/pkg/db/generated"
+	"github.com/kailonyang/liexiu/server/pkg/protocol"
 )
 
 type AgentRuntimeResponse struct {
@@ -765,17 +765,16 @@ var errRuntimeNotDrained = errors.New("runtime still has non-terminal tasks")
 // runtimeTeardownResult reports what the shared teardown changed so the caller
 // can broadcast it after the transaction commits.
 type runtimeTeardownResult struct {
-	UnboundAgents    []db.Agent
-	CancelledTasks   []db.AgentTaskQueue
-	PausedAutopilots []db.Autopilot
+	UnboundAgents  []db.Agent
+	CancelledTasks []db.AgentTaskQueue
 }
 
 // unbindRuntimeForDelete is the teardown every runtime-delete path runs inside
 // its transaction, immediately before deleting the agent_runtime row (MUL-5559).
 //
 // It replaces the old archive-then-hard-delete of the runtime's agents. An agent
-// is a persistent business object — identity, instructions, skills, chats,
-// labels, channel installations, autopilot config — while a runtime is
+// is a persistent business object — identity, instructions, skills, labels and
+// channel installations — while a runtime is
 // replaceable execution capacity, so retiring a machine unbinds its agents
 // instead of destroying them. Unbound (runtime_id IS NULL) is a normal state,
 // orthogonal to archived: service.AgentReadiness already refuses to give work to
@@ -784,30 +783,25 @@ type runtimeTeardownResult struct {
 //
 // Order matters:
 //
-//  1. Unbind the user agents. Archived ones included: an agent archived earlier
-//     is just as much the user's data. System agents are excluded — they are
-//     invisible infrastructure with no rebind affordance, so they are deleted in
-//     step 5 as before.
-//  2. Pause active Autopilots assigned directly to those agents or to squads
-//     they lead. The automation config stays intact and the persisted reason
-//     explains that rebinding the Agent is the recovery path.
-//  3. Cancel the non-terminal tasks of this runtime AND of the agents we just
+//  1. Unbind every agent bound to the runtime. Archived ones included: an agent
+//     archived earlier is just as much the user's data. Personal-v1 has no
+//     hidden/system-agent exception.
+//  2. Cancel the non-terminal tasks of this runtime AND of the agents we just
 //     unbound. The agent-side match is load-bearing: agent.runtime_id can move
 //     without rewriting agent_task_queue.runtime_id, so a task an unbound agent
 //     left pinned to another runtime would otherwise stay claimable while its
 //     owner is no longer allowed to run.
-//  4. Assert the runtime is drained (see errRuntimeNotDrained).
-//  5. Detach the task history. Without this, deleting the runtime row would
+//  3. Assert the runtime is drained (see errRuntimeNotDrained).
+//  4. Detach the task history. Without this, deleting the runtime row would
 //     cascade agent_task_queue away — and task_message / task_usage /
 //     task_token with it — so the agents would survive with no record of what
 //     they ever did.
-//  6. Hard-delete the system agents, clearing first the rows whose cleanup has
-//     no FK to follow (invocation targets, channel installations, chat pins,
-//     labels, chat draft restores).
+//  5. Leave agent identity and task history intact; only the runtime binding
+//     is removed. Runtime-owned rows are deleted by the database cascade.
 func unbindRuntimeForDelete(ctx context.Context, qtx *db.Queries, runtimeID pgtype.UUID) (runtimeTeardownResult, error) {
 	var out runtimeTeardownResult
 
-	unbound, err := qtx.UnbindUserAgentsFromRuntime(ctx, runtimeID)
+	unbound, err := qtx.UnbindAgentsFromRuntime(ctx, runtimeID)
 	if err != nil {
 		return out, fmt.Errorf("unbind agents: %w", err)
 	}
@@ -817,12 +811,6 @@ func unbindRuntimeForDelete(ctx context.Context, qtx *db.Queries, runtimeID pgty
 	for i, a := range unbound {
 		unboundIDs[i] = a.ID
 	}
-	paused, err := qtx.PauseAutopilotsByUnboundAgents(ctx, unboundIDs)
-	if err != nil {
-		return out, fmt.Errorf("pause autopilots: %w", err)
-	}
-	out.PausedAutopilots = paused
-
 	cancelled, err := qtx.CancelAgentTasksByRuntimeOrAgent(ctx, db.CancelAgentTasksByRuntimeOrAgentParams{
 		RuntimeIds: []pgtype.UUID{runtimeID},
 		AgentIds:   unboundIDs,
@@ -846,42 +834,14 @@ func unbindRuntimeForDelete(ctx context.Context, qtx *db.Queries, runtimeID pgty
 		return out, fmt.Errorf("unbind task history: %w", err)
 	}
 
-	// agent_invocation_target has no agent_id FK (MUL-3963).
-	if err := qtx.DeleteAgentInvocationTargetsBySystemRuntimeAgents(ctx, runtimeID); err != nil {
-		return out, fmt.Errorf("clean up agent invocation targets: %w", err)
-	}
-	// channel_* has no workspace/agent FK (MUL-3515 §4); an orphaned
-	// installation would keep occupying its bot's (channel_type, app_id)
-	// routing slot and make that bot un-rebindable (#4810).
-	if err := qtx.DeleteChannelInstallationsBySystemRuntimeAgents(ctx, runtimeID); err != nil {
-		return out, fmt.Errorf("clean up channel installations: %w", err)
-	}
-	if err := qtx.DeleteChatPinnedAgentsBySystemRuntimeAgents(ctx, runtimeID); err != nil {
-		return out, fmt.Errorf("clean up chat pins: %w", err)
-	}
-	// agent_to_label has no agent_id FK.
-	if err := qtx.DeleteAgentLabelAssignmentsBySystemRuntimeAgents(ctx, runtimeID); err != nil {
-		return out, fmt.Errorf("clean up agent label assignments: %w", err)
-	}
-	// chat_session cascades from agent and chat_draft_restore has no FK to
-	// follow it (#5219), so prune the restores before the agent rows go.
-	if err := pruneRuntimeSystemAgentChatDraftRestores(ctx, qtx, runtimeID); err != nil {
-		return out, fmt.Errorf("clean up chat draft restores: %w", err)
-	}
-	if err := qtx.DeleteSystemAgentsByRuntime(ctx, runtimeID); err != nil {
-		return out, fmt.Errorf("clean up system agents: %w", err)
-	}
 	return out, nil
 }
 
 // publishRuntimeTeardown fans out a committed teardown. Ordering matches the
-// other revocation paths: task:cancelled, then per-agent and Autopilot updates,
-// then the runtime-list refresh.
+// other revocation paths: task:cancelled, then per-agent updates, then the
+// runtime-list refresh.
 func (h *Handler) publishRuntimeTeardown(ctx context.Context, res runtimeTeardownResult, wsID, userID string) {
 	if h.TaskService != nil && len(res.CancelledTasks) > 0 {
-		// The teardown deletes the runtime's system agents, and a system agent's
-		// chat sessions go with it, so the workspace of a cancelled chat task is
-		// no longer resolvable from the task row. It is this workspace.
 		h.TaskService.BroadcastCancelledTasks(ctx, wsID, res.CancelledTasks)
 	}
 	for _, a := range res.UnboundAgents {
@@ -890,11 +850,6 @@ func (h *Handler) publishRuntimeTeardown(ctx context.Context, res runtimeTeardow
 		// runtime_bound=false. No agent:archived here — nothing was archived.
 		h.publish(protocol.EventAgentStatus, wsID, "member", userID, map[string]any{
 			"agent": broadcastAgentResponse(h.agentToResponse(a)),
-		})
-	}
-	for _, a := range res.PausedAutopilots {
-		h.publish(protocol.EventAutopilotUpdated, wsID, "member", userID, map[string]any{
-			"autopilot": autopilotToResponse(a, nil),
 		})
 	}
 	h.publish(protocol.EventDaemonRegister, wsID, "member", userID, map[string]any{
@@ -981,7 +936,7 @@ func (h *Handler) DeleteAgentRuntime(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "failed to lock runtime")
 		return
 	}
-	if _, err := qtx.ListUserAgentsByRuntimeForUpdate(r.Context(), rt.ID); err != nil {
+	if _, err := qtx.ListAgentsByRuntimeForUpdate(r.Context(), rt.ID); err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to lock runtime dependencies")
 		return
 	}
@@ -1029,7 +984,6 @@ func (h *Handler) DeleteAgentRuntime(w http.ResponseWriter, r *http.Request) {
 		"deleted_by", userID,
 		"agents_unbound", len(teardown.UnboundAgents),
 		"tasks_cancelled", len(teardown.CancelledTasks),
-		"autopilots_paused", len(teardown.PausedAutopilots),
 	)
 
 	h.publishRuntimeTeardown(r.Context(), teardown, wsID, userID)
@@ -1078,8 +1032,8 @@ type unbindAgentsAndDeleteRuntimeRequest struct {
 }
 
 // UnbindAgentsAndDeleteRuntime is the confirmed delete entry point: unbind every
-// user agent bound to the runtime, pause affected Autopilots, cancel active
-// tasks, detach task history, hard-delete only the system agents, and finally
+// agent bound to the runtime, cancel active tasks, detach task history, and
+// leave agent identity and task history intact before finally
 // delete the runtime row — all inside a single transaction so a partial failure
 // never leaves a runtime half-torn-down.
 //
@@ -1092,7 +1046,7 @@ type unbindAgentsAndDeleteRuntimeRequest struct {
 // revokeAndRemoveMember (workspace_revoke.go) so the two paths share the same
 // race-safety properties: the dispatcher can't claim a task whose runtime is
 // about to vanish, and post-commit publish events emit the same
-// task:cancelled → agent:status/autopilot:updated → daemon:register fan-out.
+// task:cancelled → agent:status → daemon:register fan-out.
 //
 // The expected_active_agent_ids check is the load-bearing piece for the UX:
 // the front-end snapshots the agent list when the dialog opens and presents
@@ -1176,7 +1130,7 @@ func (h *Handler) UnbindAgentsAndDeleteRuntime(w http.ResponseWriter, r *http.Re
 		writeError(w, http.StatusInternalServerError, "failed to lock runtime")
 		return
 	}
-	if _, err := qtx.ListUserAgentsByRuntimeForUpdate(r.Context(), rt.ID); err != nil {
+	if _, err := qtx.ListAgentsByRuntimeForUpdate(r.Context(), rt.ID); err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to lock runtime dependencies")
 		return
 	}
@@ -1206,10 +1160,10 @@ func (h *Handler) UnbindAgentsAndDeleteRuntime(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	// Single teardown, shared with the light DELETE path: unbind every user
-	// agent (active and archived) plus their task history, cancel what was
-	// running or queued, and hard-delete only the system agents. Nothing the
-	// user configured is destroyed — the agents just need a new runtime.
+	// Single teardown, shared with the light DELETE path: unbind every agent
+	// (active and archived) plus their task history, and cancel what was still
+	// running or queued. Nothing the user configured is destroyed — the agents
+	// just need a new runtime.
 	teardown, err := unbindRuntimeForDelete(r.Context(), qtx, rt.ID)
 	if err != nil {
 		if errors.Is(err, errRuntimeNotDrained) {
@@ -1244,14 +1198,12 @@ func (h *Handler) UnbindAgentsAndDeleteRuntime(w http.ResponseWriter, r *http.Re
 		"deleted_by", userID,
 		"agents_unbound", len(teardown.UnboundAgents),
 		"tasks_cancelled", len(teardown.CancelledTasks),
-		"autopilots_paused", len(teardown.PausedAutopilots),
 	)
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"status":            "ok",
-		"agents_unbound":    len(teardown.UnboundAgents),
-		"tasks_cancelled":   len(teardown.CancelledTasks),
-		"autopilots_paused": len(teardown.PausedAutopilots),
+		"status":          "ok",
+		"agents_unbound":  len(teardown.UnboundAgents),
+		"tasks_cancelled": len(teardown.CancelledTasks),
 		// Deprecated mirror of agents_unbound: installed clients built against
 		// the archive-and-delete contract read this key. The count is the same
 		// set of agents; they are no longer archived.

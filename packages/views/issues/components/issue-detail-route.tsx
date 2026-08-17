@@ -1,9 +1,9 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { useCanonicalIssue } from "@multica/core/issues/canonical-id";
-import { useWorkspaceId } from "@multica/core/hooks";
-import { useWorkspacePaths } from "@multica/core/paths";
+import { useCanonicalIssue } from "@liexiu/core/issues/canonical-id";
+import { useWorkspaceId } from "@liexiu/core/hooks";
+import { useWorkspacePaths } from "@liexiu/core/paths";
 import { useNavigation } from "../../navigation";
 import { IssueDetail, IssueDetailSkeleton, IssueNotFound } from "./issue-detail";
 
@@ -49,8 +49,8 @@ export function useCanonicalIssueUrl(routeId: string, identifier: string | undef
  *    every cache key below stays UUID-keyed and realtime updates land (see
  *    `useCanonicalIssue`);
  *  - rewrite the address bar to the canonical identifier URL. That belongs to
- *    the route and only the route — the inbox renders `IssueDetail` in a side
- *    panel, where replacing the URL would navigate the user out of the inbox.
+ *    the route and only the route — embedded issue views can render
+ *    `IssueDetail` in a side panel without replacing the parent URL.
  */
 export function IssueDetailRoute({ routeId, onDelete }: IssueDetailRouteProps) {
   const wsId = useWorkspaceId();

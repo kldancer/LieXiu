@@ -12,7 +12,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/multica-ai/multica/server/pkg/agent"
+	"github.com/kailonyang/liexiu/server/pkg/agent"
 )
 
 // TestDefaultAgentCommandNamesCoversAllProbes guards the invariant documented

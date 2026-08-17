@@ -10,7 +10,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
+	db "github.com/kailonyang/liexiu/server/pkg/db/generated"
 )
 
 // TestCreateComment_BumpsIssueUpdatedAt pins MUL-5009: a new comment counts as

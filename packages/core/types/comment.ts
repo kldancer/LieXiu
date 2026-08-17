@@ -5,15 +5,6 @@ export type CommentType = "comment" | "status_change" | "progress_update" | "sys
 // author_id; render paths should branch on author_type rather than the UUID.
 export type CommentAuthorType = "member" | "agent" | "system";
 
-export interface Reaction {
-  id: string;
-  comment_id: string;
-  actor_type: string;
-  actor_id: string;
-  emoji: string;
-  created_at: string;
-}
-
 export interface Comment {
   id: string;
   issue_id: string;
@@ -22,7 +13,6 @@ export interface Comment {
   content: string;
   type: CommentType;
   parent_id: string | null;
-  reactions: Reaction[];
   attachments: import("./attachment").Attachment[];
   created_at: string;
   updated_at: string;
@@ -35,7 +25,7 @@ export interface Comment {
   // keys off the id rather than a dedicated `type`, because `type` is
   // client-supplied on the generic comment endpoint and would be forgeable.
   quick_action_id?: string | null;
-  // Per-target result of every explicit @agent / @squad mention in this comment
+  // Per-target result of every explicit @agent mention in this comment
   // (MUL-4525 §2). Present only on create/edit responses; older servers omit it.
   trigger_outcomes?: CommentTriggerOutcome[];
 }
@@ -50,7 +40,7 @@ export type CommentTriggerStatus =
   | "blocked";
 
 export interface CommentTriggerOutcome {
-  target_type: string; // "agent" | "squad"
+  target_type: string; // "agent"
   target_id: string;
   status: CommentTriggerStatus | string;
   reason_code: string;
@@ -58,8 +48,7 @@ export interface CommentTriggerOutcome {
 
 export type CommentTriggerSource =
   | "issue_assignee"
-  | "mention_agent"
-  | "mention_squad_leader";
+  | "mention_agent";
 
 export interface CommentTriggerPreviewAgent {
   id: string;
@@ -71,7 +60,7 @@ export interface CommentTriggerPreviewAgent {
 
 export interface CommentTriggerPreview {
   agents: CommentTriggerPreviewAgent[];
-  // Explicit @agent / @squad mentions that will NOT trigger if posted as-is
+  // Explicit @agent mentions that will NOT trigger if posted as-is
   // (MUL-4525 §2). Additive: older servers omit it.
   blocked?: CommentTriggerOutcome[];
 }

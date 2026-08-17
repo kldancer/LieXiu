@@ -2,13 +2,13 @@
 
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { ActorAvatar as ActorAvatarBase } from "@multica/ui/components/common/actor-avatar";
-import { useActorName } from "@multica/core/workspace/hooks";
-import { useWorkspaceId } from "@multica/core/hooks";
-import { runtimeListOptions } from "@multica/core/runtimes/queries";
-import { agentListOptions } from "@multica/core/workspace/queries";
-import { deriveAgentAvailability } from "@multica/core/agents";
-import type { AgentTask, Issue } from "@multica/core/types";
+import { ActorAvatar as ActorAvatarBase } from "@liexiu/ui/components/common/actor-avatar";
+import { useActorName } from "@liexiu/core/workspace/hooks";
+import { useWorkspaceId } from "@liexiu/core/hooks";
+import { runtimeListOptions } from "@liexiu/core/runtimes/queries";
+import { agentListOptions } from "@liexiu/core/workspace/queries";
+import { deriveAgentAvailability } from "@liexiu/core/agents";
+import type { AgentTask, Issue } from "@liexiu/core/types";
 import { workloadConfig } from "../presence";
 import { useT } from "../../i18n";
 
@@ -180,11 +180,9 @@ interface WorkspaceAgentActivityHoverContentProps {
  * that work lands on, and how many tasks it takes — and the rows group by
  * issue, mirroring what clicking the chip does to the list.
  *
- * It says nothing about work it excludes. Chat/autopilot runs have no
- * linked issue and leave no trace anywhere on this page: no row, no head,
- * no indicator. A footnote about them would explain an absence the user
- * never perceived — inventing a discrepancy rather than resolving one.
- * Same for tasks on issues the current filters or the loaded page exclude.
+ * It says nothing about work outside the loaded issue set. A footnote about
+ * excluded work would explain an absence the user never perceived — inventing
+ * a discrepancy rather than resolving one.
  *
  * Deliberately not a dashboard: two figures and grouped rows.
  */

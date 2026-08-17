@@ -1,18 +1,18 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { ActorAvatar as ActorAvatarBase } from "@multica/ui/components/common/actor-avatar";
-import { Skeleton } from "@multica/ui/components/ui/skeleton";
-import { useWorkspaceId } from "@multica/core/hooks";
-import { useWorkspacePaths } from "@multica/core/paths";
-import { agentListOptions } from "@multica/core/workspace/queries";
-import { resolvePublicFileUrl } from "@multica/core/workspace/avatar-url";
+import { ActorAvatar as ActorAvatarBase } from "@liexiu/ui/components/common/actor-avatar";
+import { Skeleton } from "@liexiu/ui/components/ui/skeleton";
+import { useWorkspaceId } from "@liexiu/core/hooks";
+import { useWorkspacePaths } from "@liexiu/core/paths";
+import { agentListOptions } from "@liexiu/core/workspace/queries";
+import { resolvePublicFileUrl } from "@liexiu/core/workspace/avatar-url";
 import {
   agentTaskSnapshotOptions,
   useAgentPresenceDetail,
-} from "@multica/core/agents";
-import { issueDetailOptions } from "@multica/core/issues";
-import type { AgentTask } from "@multica/core/types";
+} from "@liexiu/core/agents";
+import { issueDetailOptions } from "@liexiu/core/issues";
+import type { AgentTask } from "@liexiu/core/types";
 import { AlertTriangle } from "lucide-react";
 import { AppLink } from "../../navigation";
 import { useT, useTimeAgo } from "../../i18n";
@@ -23,7 +23,7 @@ interface AgentLivePeekCardProps {
 }
 
 // Live "peek" card for an agent avatar — shows the three live signals the
-// squad members tab cares about (workload, current issue, last activity).
+// agent roster cares about (workload, current issue, last activity).
 // Companion to AgentProfileCard, which surfaces static identity (description,
 // runtime, skills, owner). Keeping them separate avoids polluting the 23+
 // existing AgentProfileCard call sites with live-only concerns.

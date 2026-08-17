@@ -2,23 +2,23 @@
 
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import { CheckCircle2, MessageSquare, MessagesSquare, Search } from "lucide-react";
-import type { TimelineEntry } from "@multica/core/types";
-import { useActorName } from "@multica/core/workspace/hooks";
+import type { TimelineEntry } from "@liexiu/core/types";
+import { useActorName } from "@liexiu/core/workspace/hooks";
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
-} from "@multica/ui/components/ui/popover";
-import { Button } from "@multica/ui/components/ui/button";
-import { cn } from "@multica/ui/lib/utils";
-import { createShortcutChord, useShortcut } from "@multica/core/shortcuts";
-import { preprocessMentionShortcodes } from "@multica/core/markdown";
-import { isImeComposing } from "@multica/core/utils";
+} from "@liexiu/ui/components/ui/popover";
+import { Button } from "@liexiu/ui/components/ui/button";
+import { cn } from "@liexiu/ui/lib/utils";
+import { createShortcutChord, useShortcut } from "@liexiu/core/shortcuts";
+import { preprocessMentionShortcodes } from "@liexiu/core/markdown";
+import { isImeComposing } from "@liexiu/core/utils";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
-} from "@multica/ui/components/ui/tooltip";
+} from "@liexiu/ui/components/ui/tooltip";
 import { ActorAvatar } from "../../common/actor-avatar";
 import { pickerNavigationDirection } from "../../common/picker-keys";
 import { ShortcutKeycaps } from "../../common/shortcut-keycaps";
@@ -329,7 +329,7 @@ export function ThreadNavPanel({
   const searchRef = useRef<HTMLInputElement | null>(null);
   const listRef = useRef<HTMLDivElement | null>(null);
 
-  // Previews are cached by content so an unrelated timeline update (a reaction,
+  // Previews are cached by content so an unrelated timeline update (a new reply,
   // a reply in another thread) doesn't re-flatten every root comment.
   const previewCacheRef = useRef(
     new Map<string, { content: string | undefined; preview: { title: string; body: string } }>(),

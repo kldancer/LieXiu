@@ -41,14 +41,14 @@ import {
   type MouseEvent as ReactMouseEvent,
 } from "react";
 import { useEditor, EditorContent, type Editor } from "@tiptap/react";
-import { cn } from "@multica/ui/lib/utils";
-import type { UploadResult } from "@multica/core/hooks/use-file-upload";
-import { useWorkspaceSlug } from "@multica/core/paths";
+import { cn } from "@liexiu/ui/lib/utils";
+import type { UploadResult } from "@liexiu/core/hooks/use-file-upload";
+import { useWorkspaceSlug } from "@liexiu/core/paths";
 import { useQueryClient } from "@tanstack/react-query";
-import { issueIdentifierOptions } from "@multica/core/issues/queries";
-import { workspaceListOptions } from "@multica/core/workspace/queries";
-import { isIssueIdentifier } from "@multica/ui/markdown";
-import type { Attachment } from "@multica/core/types";
+import { issueIdentifierOptions } from "@liexiu/core/issues/queries";
+import { workspaceListOptions } from "@liexiu/core/workspace/queries";
+import { isIssueIdentifier } from "@liexiu/ui/markdown";
+import type { Attachment } from "@liexiu/core/types";
 import {
   parseMarkdownChunked,
   MARKDOWN_CHUNK_THRESHOLD,
@@ -63,7 +63,7 @@ import {
   insertUploadPlaceholder,
   settleUploadNode,
 } from "./extensions/file-upload";
-import { configStore } from "@multica/core/config";
+import { configStore } from "@liexiu/core/config";
 import { preprocessMarkdown } from "./utils/preprocess";
 import { repairEmptyListItems } from "./utils/repair-list-items";
 import { resolveClickIntent, useAppOrigin } from "../navigation";
@@ -180,7 +180,7 @@ interface ContentEditorBaseProps {
   /**
    * When true, the `@` suggestion picker is disabled but the mention node
    * type remains in the schema, so existing mentions pasted in from other
-   * Multica editors still render as the normal pill. Use for editors where
+   * LieXiu editors still render as the normal pill. Use for editors where
    * *creating* a new mention has no business meaning (e.g. agent system
    * prompts) but *preserving* an existing one still matters.
    */
@@ -412,9 +412,8 @@ const ContentEditor = forwardRef<ContentEditorRef, ContentEditorProps>(
     // the initial document twice when Markdown serialization canonicalizes it.
     const lastSyncedValueRef = useRef(value);
     // Authoritative Markdown behind the document the user is editing. Keep the
-    // raw controlled value rather than the editor serialization: Tiptap may
-    // omit invisible channel-media provenance comments while retaining the
-    // visible image, and the server needs those comments in the merge base.
+    // raw controlled value rather than editor serialization so server merges
+    // use the exact controlled description as their base.
     const documentBaseRef = useRef(normalizeMarkdown(value ?? defaultValue ?? ""));
     // Live placeholder text. Passed into the Placeholder extension as a getter
     // (not a static string) so the plugin re-reads it on every decoration pass —

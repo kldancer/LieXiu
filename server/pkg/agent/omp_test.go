@@ -441,8 +441,8 @@ func TestOmpAndPiRegisterSideBySide(t *testing.T) {
 		cmd      string
 		id       string
 	}{
-		{"MULTICA_PI_PATH", "MULTICA_PI_MODEL", "pi", "pi"},
-		{"MULTICA_OMP_PATH", "MULTICA_OMP_MODEL", "omp", "omp"},
+		{"LIEXIU_PI_PATH", "LIEXIU_PI_MODEL", "pi", "pi"},
+		{"LIEXIU_OMP_PATH", "LIEXIU_OMP_MODEL", "omp", "omp"},
 	} {
 		t.Run(tc.id, func(t *testing.T) {
 			// Verify the descriptor's env prefix and command match what

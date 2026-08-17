@@ -7,20 +7,18 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/multica-ai/multica/server/internal/service"
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
+	"github.com/kailonyang/liexiu/server/internal/service"
+	db "github.com/kailonyang/liexiu/server/pkg/db/generated"
 )
 
 // An issue reaches clients rendered two different ways: the HTTP handler
-// marshals IssueResponse, while events published outside it (autopilot and the
+// marshals IssueResponse, while events published outside it (for example, the
 // channel engine's /issue command on issue:created, the background stuck-issue
 // status reset on issue:updated) marshal service.IssueToMap.
 // Clients type both as a complete Issue and insert the
 // object straight into the list cache without runtime validation, so a key
 // present in one rendering and absent from the other is a field that reads
-// back undefined depending on which entry point created the issue — a project
-// that never lands in its project view, a custom-property column that shows
-// empty until the next refetch.
+// back undefined depending on which entry point created the issue.
 //
 // Adding a field to IssueResponse without adding it to IssueToMap must fail
 // here rather than in the UI.
@@ -82,9 +80,9 @@ func TestIssueToMap_ValuesMatchIssueResponse(t *testing.T) {
 	}
 }
 
-// metadata and properties are documented as always present so clients can
-// index them without a nil guard. A row that never had either bag written
-// must still broadcast {}, never null.
+// Metadata is documented as always present so clients can index it without a
+// nil guard. A row that never had the bag written must still broadcast {},
+// never null.
 func TestIssueToMap_UnsetJSONBagsAreEmptyObjects(t *testing.T) {
 	issue := db.Issue{Number: 42}
 
@@ -97,7 +95,7 @@ func TestIssueToMap_UnsetJSONBagsAreEmptyObjects(t *testing.T) {
 		t.Fatalf("unmarshal IssueToMap: %v", err)
 	}
 
-	for _, key := range []string{"metadata", "properties"} {
+	for _, key := range []string{"metadata"} {
 		if got := string(payload[key]); got != "{}" {
 			t.Errorf("issue[%q] = %s; want {} so clients can index it without a nil guard", key, got)
 		}
@@ -146,7 +144,6 @@ func fullyPopulatedIssue(t *testing.T) db.Issue {
 		CreatedAt:     pgtype.Timestamptz{Time: utcDate(2026, time.January, 1), Valid: true},
 		UpdatedAt:     pgtype.Timestamptz{Time: utcDate(2026, time.January, 2), Valid: true},
 		Metadata:      []byte(`{"pr_url":"https://example.test/pr/1"}`),
-		Properties:    []byte(`{"77777777-7777-7777-7777-777777777777":"done"}`),
 	}
 }
 

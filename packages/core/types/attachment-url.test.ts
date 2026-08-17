@@ -3,7 +3,6 @@ import {
   attachmentDownloadPath,
   attachmentIdFromDownloadURL,
   contentReferencesAttachment,
-  stripChannelMediaMarkers,
 } from "./attachment-url";
 
 const ID = "11111111-2222-3333-4444-555555555555";
@@ -11,21 +10,6 @@ const ID = "11111111-2222-3333-4444-555555555555";
 describe("attachmentDownloadPath", () => {
   it("returns the stable per-attachment download path", () => {
     expect(attachmentDownloadPath(ID)).toBe(`/api/attachments/${ID}/download`);
-  });
-});
-
-describe("stripChannelMediaMarkers", () => {
-  it("removes provenance while retaining the visible channel image", () => {
-    const image = `![](${attachmentDownloadPath(ID)})`;
-    const marker = `<!-- multica:channel-media:${ID} -->`;
-
-    expect(stripChannelMediaMarkers(`${image}\n\n${marker}`)).toBe(`${image}\n\n`);
-  });
-
-  it("leaves unrelated HTML comments untouched", () => {
-    expect(stripChannelMediaMarkers("before <!-- user note --> after")).toBe(
-      "before <!-- user note --> after",
-    );
   });
 });
 
@@ -87,7 +71,7 @@ describe("contentReferencesAttachment", () => {
     id: ID,
     url: "/uploads/workspaces/ws/legacy.png",
     download_url: "https://cdn.example.com/workspaces/ws/file.png?Signature=fresh",
-    markdown_url: `https://multica-api.copilothub.ai/api/attachments/${ID}/download`,
+    markdown_url: `https://liexiu-api.copilothub.ai/api/attachments/${ID}/download`,
   };
 
   it("matches when the markdown uses the stable download path", () => {
@@ -137,7 +121,7 @@ describe("contentReferencesAttachment", () => {
   // Regression — issue DESCRIPTION editor binding (Desktop image render).
   //
   // The editor persists the durable `markdown_url`
-  // (`<MULTICA_PUBLIC_URL>/api/attachments/<id>/download`) into the body,
+  // (`<LIEXIU_PUBLIC_URL>/api/attachments/<id>/download`) into the body,
   // NOT the raw storage `a.url`. The description composer used to bind
   // pending uploads with `md.includes(a.url)`, which never matched this
   // shape, so the upload was never linked via `attachment_ids`. After a

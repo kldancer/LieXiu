@@ -2,9 +2,9 @@
 
 import { useMemo, useState } from "react";
 import { BarChart3 } from "lucide-react";
-import { NumberFlow } from "@multica/ui/components/ui/number-flow";
-import { FAILURE_CLASSES, type FailureClass } from "@multica/core/dashboard";
-import { useWorkspacePaths } from "@multica/core/paths";
+import { NumberFlow } from "@liexiu/ui/components/ui/number-flow";
+import { FAILURE_CLASSES, type FailureClass } from "@liexiu/core/dashboard";
+import { useWorkspacePaths } from "@liexiu/core/paths";
 import { KpiCard } from "../../runtimes/components/shared";
 import {
   DailyErrorsChart,

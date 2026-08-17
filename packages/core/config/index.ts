@@ -7,14 +7,8 @@ interface ConfigState {
   // (CloudFront signing enabled server-side). Renderers must not treat a raw
   // storage URL on that domain as a loadable media source (MUL-3254).
   cdnSigned: boolean;
-  allowSignup: boolean;
-  googleClientId: string;
   daemonServerUrl: string;
   daemonAppUrl: string;
-  // Self-host gate (#3433): when true, every "Create workspace" affordance
-  // must be hidden. Defaults to false so unknown / older servers behave like
-  // the managed-cloud case.
-  workspaceCreationDisabled: boolean;
   // Self-host-only gate for the Git provider integration (Forgejo / Gitea /
   // GitLab). When false the whole Settings → Integrations "Git providers"
   // section is hidden. Defaults to false so unknown / older servers and the
@@ -27,9 +21,6 @@ interface ConfigState {
   serverVersion: string;
   setCdnConfig: (config: { cdnDomain: string; cdnSigned?: boolean }) => void;
   setAuthConfig: (config: {
-    allowSignup: boolean;
-    googleClientId?: string;
-    workspaceCreationDisabled?: boolean;
     vcsIntegrationAvailable?: boolean;
   }) => void;
   setDaemonConfig: (config: {
@@ -43,21 +34,14 @@ interface ConfigState {
 export const configStore = createStore<ConfigState>((set) => ({
   cdnDomain: "",
   cdnSigned: false,
-  allowSignup: true,
-  googleClientId: "",
   daemonServerUrl: "",
   daemonAppUrl: "",
-  workspaceCreationDisabled: false,
   vcsIntegrationAvailable: false,
   featureFlags: {},
   serverVersion: "",
   setCdnConfig: ({ cdnDomain, cdnSigned = false }) => set({ cdnDomain, cdnSigned }),
-  setAuthConfig: ({
-    allowSignup,
-    googleClientId = "",
-    workspaceCreationDisabled = false,
-    vcsIntegrationAvailable = false,
-  }) => set({ allowSignup, googleClientId, workspaceCreationDisabled, vcsIntegrationAvailable }),
+  setAuthConfig: ({ vcsIntegrationAvailable = false }) =>
+    set({ vcsIntegrationAvailable }),
   setDaemonConfig: ({ daemonServerUrl = "", daemonAppUrl = "" }) =>
     set({ daemonServerUrl, daemonAppUrl }),
   setFeatureFlags: (flags = {}) => set({ featureFlags: { ...flags } }),

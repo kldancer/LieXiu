@@ -1,22 +1,7 @@
 "use client";
 
-import { Suspense } from "react";
-import { MyIssuesPage } from "@multica/views/my-issues";
-import { useIssueViewUrlSync } from "../../../../platform/use-issue-view-url-sync";
-
-function IssueViewUrlSync() {
-  // useSearchParams requires a Suspense boundary in the app router.
-  useIssueViewUrlSync({ scope_type: "my" });
-  return null;
-}
+import { MyIssuesPage } from "@liexiu/views/my-issues";
 
 export default function Page() {
-  return (
-    <>
-      <Suspense fallback={null}>
-        <IssueViewUrlSync />
-      </Suspense>
-      <MyIssuesPage />
-    </>
-  );
+  return <MyIssuesPage />;
 }

@@ -18,78 +18,70 @@ import {
   Minimize2,
   MoreHorizontal,
   Settings2,
-  Shapes,
   Tag,
   X as XIcon,
 } from "lucide-react";
-import { cn } from "@multica/ui/lib/utils";
+import { cn } from "@liexiu/ui/lib/utils";
 import { toast } from "sonner";
 import type {
   Issue,
   IssueStatus,
   IssuePriority,
   IssueAssigneeType,
-  IssuePropertyValue,
-} from "@multica/core/types";
-import { contentReferencesAttachment } from "@multica/core/types";
+} from "@liexiu/core/types";
+import { contentReferencesAttachment } from "@liexiu/core/types";
 import {
   DialogContent,
   DialogTitle,
-} from "@multica/ui/components/ui/dialog";
+} from "@liexiu/ui/components/ui/dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
-  DropdownMenuSub,
-  DropdownMenuSubContent,
-  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
-} from "@multica/ui/components/ui/dropdown-menu";
-import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from "@multica/ui/components/ui/tooltip";
-import { Button } from "@multica/ui/components/ui/button";
-import { Switch } from "@multica/ui/components/ui/switch";
+} from "@liexiu/ui/components/ui/dropdown-menu";
+import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from "@liexiu/ui/components/ui/tooltip";
+import { Button } from "@liexiu/ui/components/ui/button";
+import { Switch } from "@liexiu/ui/components/ui/switch";
 import { ContentEditor, type ContentEditorRef, TitleEditor, type TitleEditorRef, useFileDropZone, FileDropOverlay, useUploadGate, useComposerSubmit } from "../editor";
 import { useIssueCreateUploads } from "./use-issue-create-uploads";
-import { useShortcut } from "@multica/core/shortcuts";
+import { useShortcut } from "@liexiu/core/shortcuts";
 import { ShortcutKeycaps } from "../common/shortcut-keycaps";
 import { StatusIcon, StatusPicker, PriorityIcon, PriorityPicker, StagePicker, AssigneePicker, StartDatePicker, DueDatePicker, LabelPicker } from "../issues/components";
 import { maxSiblingStage } from "../issues/components/pickers/stage-picker";
 import { ProjectPicker } from "../projects/components/project-picker";
 import { useIssueTriggerPreview } from "../issues/hooks/use-issue-trigger-preview";
-import { useActorName } from "@multica/core/workspace/hooks";
-import { useCurrentWorkspace, useWorkspacePaths } from "@multica/core/paths";
-import { useWorkspaceId } from "@multica/core/hooks";
-import { useIssueDraftStore, type IssueCreateDraft } from "@multica/core/issues/stores/draft-store";
-import { useCreateModeStore } from "@multica/core/issues/stores/create-mode-store";
-import { useQuickCreateStore } from "@multica/core/issues/stores/quick-create-store";
+import { useActorName } from "@liexiu/core/workspace/hooks";
+import { useCurrentWorkspace, useWorkspacePaths } from "@liexiu/core/paths";
+import { useWorkspaceId } from "@liexiu/core/hooks";
+import { useIssueDraftStore, type IssueCreateDraft } from "@liexiu/core/issues/stores/draft-store";
+import { useCreateModeStore } from "@liexiu/core/issues/stores/create-mode-store";
+import { useQuickCreateStore } from "@liexiu/core/issues/stores/quick-create-store";
 import {
   useIssueCreateSettingsStore,
   type ManualCreateField,
-} from "@multica/core/issues/stores/issue-create-settings-store";
-import { issueDetailOptions, childIssuesOptions } from "@multica/core/issues/queries";
-import { useCreateIssue, useUpdateIssue } from "@multica/core/issues/mutations";
-import { useAttachLabelToIssue } from "@multica/core/labels";
-import {
-  propertyListOptions,
-  useSetIssueProperty,
-} from "@multica/core/properties";
+} from "@liexiu/core/issues/stores/issue-create-settings-store";
+import { issueDetailOptions, childIssuesOptions } from "@liexiu/core/issues/queries";
+import { useCreateIssue, useUpdateIssue } from "@liexiu/core/issues/mutations";
+import { useAttachLabelToIssue } from "@liexiu/core/labels";
 import {
   ApiError,
   DuplicateIssueErrorBodySchema,
   type DuplicateIssueErrorBody,
   parseWithFallback,
-} from "@multica/core/api";
-import { FileUploadButton } from "@multica/ui/components/common/file-upload-button";
+} from "@liexiu/core/api";
+import { FileUploadButton } from "@liexiu/ui/components/common/file-upload-button";
 import { ClearablePillButton, PillButton } from "../common/pill-button";
 import { ActorAvatar } from "../common/actor-avatar";
-import { PropertyIcon } from "../common/property-icon";
-import {
-  CustomPropertyValueDisplay,
-  CustomPropertyValueInput,
-} from "../issues/components/pickers/custom-property-picker";
 import { IssuePickerModal } from "./issue-picker-modal";
 import { useT } from "../i18n";
+
+type WritableIssueAssigneeType = IssueAssigneeType;
+
+function writableAssigneeType(value: unknown): WritableIssueAssigneeType | undefined {
+  return value === "member" || value === "agent" ? value : undefined;
+}
 
 // ---------------------------------------------------------------------------
 // ManualCreatePanel — manual-mode body of the create-issue dialog. Renders
@@ -106,7 +98,7 @@ import { useT } from "../i18n";
 // Visually it borrows the comment header's avatar+text line, minus the
 // interactivity — purely a caption, never a link/hover-card. It renders its own
 // reveal band (a grid 0fr→1fr collapse) so it sits on a dedicated row above the
-// property toolbar without reflowing anything: collapsed it is 0px (the flex-1
+// field toolbar without reflowing anything: collapsed it is 0px (the flex-1
 // editor absorbs the delta), and it expands only once the predicate resolves,
 // animating straight to the correct copy.
 function CreateRunHint({
@@ -114,13 +106,13 @@ function CreateRunHint({
   assigneeId,
   status,
 }: {
-  assigneeType?: IssueAssigneeType;
+  assigneeType?: WritableIssueAssigneeType;
   assigneeId?: string;
   status: IssueStatus;
 }) {
   const { t } = useT("modals");
   const { getActorName } = useActorName();
-  const isAgentLike = assigneeType === "agent" || assigneeType === "squad";
+  const isAgentLike = assigneeType === "agent";
   const preview = useIssueTriggerPreview({
     isCreate: true,
     assigneeType: assigneeType ?? null,
@@ -133,13 +125,10 @@ function CreateRunHint({
   // copy instead of flashing "parked" before the run preview lands.
   const ready = isAgentLike && !!assigneeId && !preview.isLoading;
   const willStart = preview.totalCount > 0;
-  const isSquad = assigneeType === "squad";
   const triggerAgentId = preview.triggers[0]?.agent_id ?? assigneeId;
 
-  // Avatar + copy mirror the flow. A squad doesn't "work" — its leader
-  // evaluates and delegates — so the squad path keeps the squad as the subject
-  // (avatar + name) and uses the leader-delegates copy. A single agent picks
-  // the issue up directly; a parked issue shows whoever it was assigned to.
+  // A single agent picks the issue up directly; a parked issue shows the
+  // assigned agent.
   let avatarType: string;
   let avatarId: string | undefined;
   let text: string;
@@ -147,12 +136,6 @@ function CreateRunHint({
     avatarType = assigneeType ?? "agent";
     avatarId = assigneeId;
     text = t(($) => $.run_confirm.create_parked);
-  } else if (isSquad) {
-    avatarType = "squad";
-    avatarId = assigneeId;
-    text = t(($) => $.run_confirm.create_will_start_squad, {
-      name: getActorName("squad", assigneeId ?? ""),
-    });
   } else {
     avatarType = "agent";
     avatarId = triggerAgentId;
@@ -237,15 +220,18 @@ export function ManualCreatePanel({
   const [priority, setPriority] = useState<IssuePriority>(
     (data?.priority as IssuePriority | undefined) ?? draft.shared.priority,
   );
-  const [assigneeType, setAssigneeType] = useState<IssueAssigneeType | undefined>(() => {
+  const [assigneeType, setAssigneeType] = useState<WritableIssueAssigneeType | undefined>(() => {
     if (data && "assignee_type" in data) {
-      return (data.assignee_type as IssueAssigneeType | null) ?? undefined;
+      return writableAssigneeType(data.assignee_type);
     }
     return draft.manual.assigneeType;
   });
   const [assigneeId, setAssigneeId] = useState<string | undefined>(() => {
     if (data && "assignee_id" in data) {
-      return (data.assignee_id as string | null) ?? undefined;
+      return writableAssigneeType(data.assignee_type) &&
+        typeof data.assignee_id === "string"
+        ? data.assignee_id
+        : undefined;
     }
     return draft.manual.assigneeId;
   });
@@ -254,8 +240,6 @@ export function ManualCreatePanel({
     (data?.due_date as string | undefined) ?? draft.shared.dueDate,
   );
   const [labelIds, setLabelIds] = useState<string[]>(draft.manual.labelIds);
-  const [propertyValues, setPropertyValues] = useState(draft.manual.propertyValues ?? {});
-  const [customPropertyPickerId, setCustomPropertyPickerId] = useState<string | null>(null);
   const [projectId, setProjectId] = useState<string | undefined>(() => {
     if (data && "project_id" in data) {
       return (data.project_id as string | null) ?? undefined;
@@ -296,7 +280,6 @@ export function ManualCreatePanel({
   // Fetch parent issue details for the chip (status/identifier/title).
   // List cache usually has it already, so this resolves synchronously.
   const wsId = useWorkspaceId();
-  const { data: workspaceProperties = [] } = useQuery(propertyListOptions(wsId));
   const { data: parentIssue } = useQuery({
     ...issueDetailOptions(wsId, parentIssueId ?? ""),
     enabled: !!parentIssueId,
@@ -354,7 +337,7 @@ export function ManualCreatePanel({
   const updateTitle = (v: string) => { setTitle(v); setManual({ title: v }); };
   const updateStatus = (v: IssueStatus) => { setStatus(v); setManual({ status: v }); };
   const updatePriority = (v: IssuePriority) => { setPriority(v); setShared({ priority: v }); };
-  const updateAssignee = (type?: IssueAssigneeType, id?: string) => {
+  const updateAssignee = (type?: WritableIssueAssigneeType, id?: string) => {
     setAssigneeType(type); setAssigneeId(id);
     setManual({ assigneeType: type, assigneeId: id });
   };
@@ -362,13 +345,6 @@ export function ManualCreatePanel({
   const updateStartDate = (v: string | null) => { setStartDate(v); setManual({ startDate: v }); };
   const updateDueDate = (v: string | null) => { setDueDate(v); setShared({ dueDate: v }); };
   const updateLabelIds = (ids: string[]) => { setLabelIds(ids); setManual({ labelIds: ids }); };
-  const updatePropertyValue = (propertyId: string, value: IssuePropertyValue | undefined) => {
-    const next = { ...propertyValues };
-    if (value === undefined) delete next[propertyId];
-    else next[propertyId] = value;
-    setPropertyValues(next);
-    setManual({ propertyValues: next });
-  };
 
   // Inline pill reveal per toolbar field: kept by Settings → Issue, holding a
   // non-default value (a hidden field with a value must stay visible — the
@@ -387,7 +363,6 @@ export function ManualCreatePanel({
   const createIssueMutation = useCreateIssue();
   const updateIssueMutation = useUpdateIssue();
   const attachLabelMutation = useAttachLabelToIssue();
-  const setIssuePropertyMutation = useSetIssueProperty();
   const resetForNextIssue = () => {
     setTitle("");
     setStatus("todo");
@@ -395,8 +370,6 @@ export function ManualCreatePanel({
     setStartDate(null);
     setDueDate(null);
     setLabelIds([]);
-    setPropertyValues({});
-    setCustomPropertyPickerId(null);
     setProjectId(undefined);
     setParentIssueId(undefined);
     setStage(null);
@@ -411,7 +384,6 @@ export function ManualCreatePanel({
       assigneeId,
       startDate: null,
       labelIds: [],
-      propertyValues: {},
     });
     setShared({
       priority: "none",
@@ -479,34 +451,6 @@ export function ManualCreatePanel({
         stage: parentIssueId && stage != null ? stage : undefined,
         project_id: projectId,
       });
-
-      // Custom-property values can only be addressed once the issue has an
-      // id. Keep the modal in its submitting state until every value settles
-      // so closing or "Create another" cannot race the fan-out.
-      const propertyEntries = Object.entries(propertyValues);
-      if (propertyEntries.length > 0) {
-        const results = await Promise.allSettled(
-          propertyEntries.map(([propertyId, value]) =>
-            setIssuePropertyMutation.mutateAsync({
-              issueId: issue.id,
-              propertyId,
-              value,
-            }),
-          ),
-        );
-        let failed = 0;
-        for (const result of results) {
-          if (result.status === "rejected") {
-            failed += 1;
-            console.error("[create-issue] custom property set failed", result.reason);
-          }
-        }
-        if (failed > 0) {
-          toast.error(
-            t(($) => $.create_issue.toast_set_properties_failed, { count: failed }),
-          );
-        }
-      }
 
       // Link queued children to the new parent. Deferred to after create
       // because the new issue's ID doesn't exist yet. Partial failures don't
@@ -719,13 +663,6 @@ export function ManualCreatePanel({
       const seeded = [title.trim(), desc].filter(Boolean).join("\n\n");
       if (seeded) setAgent({ prompt: seeded });
     }
-    if (
-      !draft.agent.actorId &&
-      assigneeId &&
-      (assigneeType === "agent" || assigneeType === "squad")
-    ) {
-      setAgent({ actorType: assigneeType, actorId: assigneeId });
-    }
     setLastMode("agent");
     setActiveMode("agent");
     // Prefer the hydrated identifier from `parentIssue`, but fall back to the
@@ -910,10 +847,10 @@ export function ManualCreatePanel({
                 <AssigneePicker
                   assigneeType={assigneeType ?? null}
                   assigneeId={assigneeId ?? null}
-                  onUpdate={(u) => updateAssignee(
-                    u.assignee_type ?? undefined,
-                    u.assignee_id ?? undefined,
-                  )}
+                  onUpdate={(u) => {
+                    const type = writableAssigneeType(u.assignee_type);
+                    updateAssignee(type, type ? u.assignee_id ?? undefined : undefined);
+                  }}
                   triggerRender={<PillButton />}
                   align="start"
                   open={fieldPickerOpen === "assignee" ? true : undefined}
@@ -994,42 +931,6 @@ export function ManualCreatePanel({
                   onOpenChange={setDueDatePickerOpen}
                 />
               )}
-
-              {/* Workspace-defined fields use the same typed editors as issue
-                  detail, but write into the persisted draft until creation. */}
-              {workspaceProperties
-                .filter(
-                  (property) =>
-                    Object.prototype.hasOwnProperty.call(propertyValues, property.id) ||
-                    customPropertyPickerId === property.id,
-                )
-                .map((property) => {
-                  const value = propertyValues[property.id];
-                  return (
-                    <CustomPropertyValueInput
-                      key={property.id}
-                      property={property}
-                      value={value}
-                      onChange={(next) => updatePropertyValue(property.id, next)}
-                      open={customPropertyPickerId === property.id}
-                      onOpenChange={(open) =>
-                        setCustomPropertyPickerId(open ? property.id : null)
-                      }
-                      triggerRender={<PillButton />}
-                      trigger={
-                        <>
-                          <PropertyIcon property={property} className="size-3.5 text-caption" />
-                          <span className="max-w-32 truncate">{property.name}</span>
-                          {value !== undefined && (
-                            <span className="max-w-40 truncate text-muted-foreground">
-                              <CustomPropertyValueDisplay property={property} value={value} />
-                            </span>
-                          )}
-                        </>
-                      }
-                    />
-                  );
-                })}
 
               {/* Parent chip — appears when parent is set.
                   Placed before the ⋯ so it wraps to a new line with ⋯ if
@@ -1152,33 +1053,6 @@ export function ManualCreatePanel({
                     <ArrowDown className="h-3.5 w-3.5" />
                     {t(($) => $.create_issue.add_subissue)}
                   </DropdownMenuItem>
-                  {workspaceProperties.length > 0 && (
-                    <DropdownMenuSub>
-                      <DropdownMenuSubTrigger>
-                        <Shapes className="h-3.5 w-3.5" />
-                        {t(($) => $.create_issue.custom_properties)}
-                      </DropdownMenuSubTrigger>
-                      <DropdownMenuSubContent className="w-56">
-                        {workspaceProperties.map((property) => (
-                          <DropdownMenuItem
-                            key={property.id}
-                            disabled={Object.prototype.hasOwnProperty.call(
-                              propertyValues,
-                              property.id,
-                            )}
-                            onClick={() => setCustomPropertyPickerId(property.id)}
-                          >
-                            <PropertyIcon property={property} className="size-3.5 text-caption" />
-                            <span className="truncate">{property.name}</span>
-                            {Object.prototype.hasOwnProperty.call(
-                              propertyValues,
-                              property.id,
-                            ) && <Check className="ml-auto size-3.5" />}
-                          </DropdownMenuItem>
-                        ))}
-                      </DropdownMenuSubContent>
-                    </DropdownMenuSub>
-                  )}
                   <DropdownMenuSeparator />
                   {/* Field visibility lives in Settings → Issue; the modal
                       closes first so the dialog doesn't linger over the
@@ -1314,7 +1188,7 @@ export function manualDialogContentClass(isExpanded: boolean) {
 // shell's shared Dialog, but a few legacy callers (and the test suite) still
 // import this module's modal version. Equivalent runtime behavior to the
 // pre-refactor component when used standalone.
-import { Dialog as DialogRoot } from "@multica/ui/components/ui/dialog";
+import { Dialog as DialogRoot } from "@liexiu/ui/components/ui/dialog";
 export function CreateIssueModal(props: {
   onClose: () => void;
   data?: Record<string, unknown> | null;

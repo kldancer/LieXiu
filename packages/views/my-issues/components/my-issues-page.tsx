@@ -2,11 +2,11 @@
 
 import { useStore } from "zustand";
 import { ListTodo } from "lucide-react";
-import { useAuthStore } from "@multica/core/auth";
+import { useAuthStore } from "@liexiu/core/auth";
 import {
   myIssuesRelationFromScope,
   myIssuesViewStore,
-} from "@multica/core/issues/stores/my-issues-view-store";
+} from "@liexiu/core/issues/stores/my-issues-view-store";
 import { PageHeader } from "../../layout/page-header";
 import { IssueSurface } from "../../issues/surface/issue-surface";
 import { useT } from "../../i18n";
@@ -32,7 +32,7 @@ export function MyIssuesPage() {
             userId: user.id,
             relation: myIssuesRelationFromScope(scope),
           }}
-          modes={["board", "list", "table", "swimlane"]}
+          modes={["board", "list"]}
           batchToolbar="list"
           renderHeader={({ controller }) => (
             <MyIssuesHeader

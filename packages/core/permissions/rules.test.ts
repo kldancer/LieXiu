@@ -69,7 +69,6 @@ function makeComment(overrides: Partial<Comment> = {}): Comment {
     content: "hi",
     type: "comment",
     parent_id: null,
-    reactions: [],
     attachments: [],
     created_at: "2026-04-01T00:00:00Z",
     updated_at: "2026-04-01T00:00:00Z",

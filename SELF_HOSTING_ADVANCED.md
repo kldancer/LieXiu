@@ -1,6 +1,6 @@
 # Self-Hosting — Advanced Configuration
 
-This document covers advanced configuration for self-hosted Multica deployments. For the quick start guide, see [SELF_HOSTING.md](SELF_HOSTING.md).
+This document covers advanced configuration for self-hosted LieXiu deployments. For the quick start guide, see [SELF_HOSTING.md](SELF_HOSTING.md).
 
 ## Configuration
 
@@ -10,8 +10,9 @@ All configuration is done via environment variables. Copy `.env.example` as a st
 
 | Variable | Description | Example |
 |----------|-------------|---------|
-| `DATABASE_URL` | PostgreSQL connection string | `postgres://multica:multica@localhost:5432/multica?sslmode=disable` |
+| `DATABASE_URL` | PostgreSQL connection string | `postgres://liexiu:liexiu@localhost:5432/liexiu?sslmode=disable` |
 | `JWT_SECRET` | **Must change from default.** Secret key for signing JWT tokens. Use a long random string. | `openssl rand -hex 32` |
+| `LIEXIU_OWNER_BOOTSTRAP_SECRET` | **Must change from default.** Secret used to bind the local owner and canonical Workspace on first bootstrap. | `openssl rand -hex 32` |
 | `FRONTEND_ORIGIN` | URL where the frontend is served (used for CORS) | `https://app.example.com` |
 
 ### Database Pool Tuning (Optional)
@@ -23,66 +24,21 @@ These have sensible defaults and only need to be set when tuning a large or cons
 | `DATABASE_MAX_CONNS` | pgxpool max connections per pod. `pod_count × DATABASE_MAX_CONNS` should stay well below the Postgres `max_connections` ceiling. With a connection pooler (PgBouncer / RDS Proxy / Supavisor) in front, this can be raised significantly. | `25` |
 | `DATABASE_MIN_CONNS` | pgxpool warm baseline connections per pod. Auto-clamped to `DATABASE_MAX_CONNS`. | `5` |
 
-### Email (Required for Authentication)
+### Local owner bootstrap
 
-Multica supports two email backends. `SMTP_HOST` takes priority when set; otherwise `RESEND_API_KEY` is used. With neither configured, verification codes are printed to the server log — copy them from there to log in.
+`LIEXIU_OWNER_BOOTSTRAP_SECRET` is the only deployment secret needed for the first local owner binding. Generate at least 32 random bytes, store it outside the repository, and do not put it in URLs or logs. It is accepted only by the bootstrap flow; normal browser sessions use the secure JWT cookie and CSRF protection, while CLI and daemon access use PAT/JWT or daemon credentials.
 
-#### Option A: Resend (recommended for cloud deployments)
+The bootstrap flow is idempotent for the already-bound local instance. It creates or reuses one owner and one canonical Workspace. Existing Workspace rows are not deleted or merged. Ambiguous legacy data fails closed and requires an explicit operator decision rather than an implicit Workspace choice.
 
-| Variable | Description |
-|----------|-------------|
-| `RESEND_API_KEY` | Your Resend API key |
-| `RESEND_FROM_EMAIL` | Sender email address (default: `noreply@multica.ai`) |
+### Canonical Workspace
 
-#### Option B: SMTP relay (for self-hosted / on-premise deployments)
+Self-hosted deployments expose the canonical Workspace through `GET /api/workspaces/canonical`. The supported CLI surface is:
 
-Use this option when your deployment cannot reach the public internet or you already have an internal mail relay (e.g. Exchange, Postfix, SendGrid on-prem).
-
-| Variable | Description | Default |
-|----------|-------------|----------|
-| `SMTP_HOST` | SMTP relay hostname (setting this activates SMTP mode) | - |
-| `SMTP_PORT` | SMTP port | `25` |
-| `SMTP_USERNAME` | SMTP username (leave empty for unauthenticated relay) | - |
-| `SMTP_PASSWORD` | SMTP password | - |
-| `SMTP_TLS` | TLS mode. `implicit` (aliases `smtps`, `ssl`) forces SMTPS on connect; port `465` auto-enables it. Unset / `starttls` upgrades via STARTTLS | `starttls` |
-| `SMTP_TLS_INSECURE` | Set `true` to skip TLS certificate verification (self-signed / private CA certs) | `false` |
-| `SMTP_EHLO_NAME` | EHLO/HELO name announced to the relay. Set a real FQDN when a strict relay (e.g. Google Workspace) rejects the default greeting from a public IP | machine hostname |
-
-STARTTLS is used automatically when advertised by the server. Port 465 (SMTPS / implicit TLS) is supported and auto-enables implicit TLS; set `SMTP_TLS=implicit` (aliases `smtps`, `ssl`) to force it on a non-standard port.
-
-> **Note:** If neither Resend nor SMTP is configured, generated verification codes are printed to backend logs — copy them from there to log in. A fixed local testing code (e.g. `888888`) is **opt-in only**: set `MULTICA_DEV_VERIFICATION_CODE=888888` in `.env` and keep `APP_ENV` non-production. The Docker self-host stack pins `APP_ENV=production`, so the shortcut is ignored there. **Never enable a fixed code on a publicly reachable instance.**
-
-### Google OAuth (Optional)
-
-| Variable | Description |
-|----------|-------------|
-| `GOOGLE_CLIENT_ID` | Google OAuth client ID |
-| `GOOGLE_CLIENT_SECRET` | Google OAuth client secret |
-| `GOOGLE_REDIRECT_URI` | OAuth callback URL (e.g. `https://app.example.com/auth/callback`) |
-
-Changes take effect after restarting the backend / compose stack. The web UI reads `GOOGLE_CLIENT_ID` from `/api/config` at runtime, so no web rebuild is needed.
-
-### Signup Controls (Optional)
-
-| Variable | Description |
-|----------|-------------|
-| `ALLOW_SIGNUP` | Set to `false` to disable new user signups on a private instance |
-| `ALLOWED_EMAIL_DOMAINS` | Optional comma-separated allowlist of email domains |
-| `ALLOWED_EMAILS` | Optional comma-separated allowlist of exact email addresses |
-| `DISABLE_WORKSPACE_CREATION` | Set to `true` to make `POST /api/workspaces` return 403 for every caller — users can only join workspaces they were invited to |
-
-Changes take effect after restarting the backend / compose stack. The web UI reads `ALLOW_SIGNUP` and `DISABLE_WORKSPACE_CREATION` from `/api/config` at runtime, so no web rebuild is needed.
-
-#### Locking down workspace creation
-
-`ALLOW_SIGNUP=false` blocks new accounts from being created, but it does **not** block an already-signed-in user from creating another workspace via `POST /api/workspaces`. On a self-hosted instance where every issue/repo/agent must be visible to the platform admin, set `DISABLE_WORKSPACE_CREATION=true` to close that gap. The recommended bootstrap sequence is:
-
-1. Start the instance with `DISABLE_WORKSPACE_CREATION=false` (the default).
-2. Sign in as the admin and create the shared workspace.
-3. Set `DISABLE_WORKSPACE_CREATION=true` and restart the backend. Optionally set `ALLOW_SIGNUP=false` at the same time if you also want to block new account creation.
-4. Going forward, additional users join via invitation only — the "Create workspace" affordance is hidden in the UI and any direct API call returns 403.
-
-> Note: setting `ALLOW_SIGNUP=false` blocks **all** new account creation, including users who already have a pending invitation. If you need invited users to be able to sign up but not create their own workspaces, keep `ALLOW_SIGNUP=true` (optionally combined with `ALLOWED_EMAIL_DOMAINS` / `ALLOWED_EMAILS`) and only flip `DISABLE_WORKSPACE_CREATION=true`.
+```bash
+liexiu workspace get
+liexiu workspace update --name "My Workspace"
+liexiu workspace member list
+```
 
 ### File Storage (Optional)
 
@@ -132,7 +88,7 @@ existed are fixed without a backfill.
 
 The `Secure` flag on session cookies is derived automatically from the scheme of `FRONTEND_ORIGIN`: HTTPS origins get `Secure` cookies; plain-HTTP origins (LAN / private-network self-host) get non-secure cookies so the browser can actually store them.
 
-If the frontend and backend are served from different hostnames, `COOKIE_DOMAIN` is **required**, not optional: the browser must be able to read the `multica_csrf` cookie from the page's own origin to send the `X-CSRF-Token` header, and without it every write request fails with `403 {"error":"CSRF validation failed"}`. Scope it to the narrowest parent domain that covers both hosts — it also shares the `multica_auth` session cookie with every host under that domain. See [Reverse Proxy](#reverse-proxy) for the full split-domain configuration and its trust requirements.
+If the frontend and backend are served from different hostnames, `COOKIE_DOMAIN` is **required**, not optional: the browser must be able to read the `liexiu_csrf` cookie from the page's own origin to send the `X-CSRF-Token` header, and without it every write request fails with `403 {"error":"CSRF validation failed"}`. Scope it to the narrowest parent domain that covers both hosts — it also shares the `liexiu_auth` session cookie with every host under that domain. See [Reverse Proxy](#reverse-proxy) for the full split-domain configuration and its trust requirements.
 
 ### Server
 
@@ -162,67 +118,43 @@ rewrite configuration. Its backend fallback therefore accepts
 `BACKEND_PORT` → `API_PORT` → `SERVER_PORT` → `8080`, while an explicit
 `REMOTE_API_URL` or `NEXT_PUBLIC_API_URL` still takes priority.
 
-### WeCom frame tracing
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `MULTICA_WECOM_TRACE` | empty (off) | `1` records every WeCom frame the backend reads and writes, including the first 120 runes of each message body. Anything else is off. |
-
-Turn it on for a debugging session and unset it when the session ends. Before
-you do:
-
-- **It is read at boot, so changing it needs a backend restart** — `docker compose -f docker-compose.selfhost.yml up -d backend`. There is no runtime toggle. While it is on, the backend logs a warning on every startup saying so.
-- **Anyone who can read the backend's logs can read the traced message text.** That is a wider audience than the WeCom chat it came from: your `docker logs` / journald / log shipper, and whoever administers them. The smart-bot secret is never read, and `token=` / `access_token=` / `code=` parameters are redacted out of message text — but user message content is not, and **an attachment's `Content-Disposition` and the filename read out of it are written verbatim**, up to 2048 runes and past the redactor. That line exists to show exactly how the storage backend encoded a name, and a redacted or truncated copy of it answers nothing; it also means an attachment's filename reaches your logs as sent.
-- **Retention is your log stack's, not the application's.** The backend writes to stderr and keeps nothing itself, so how long the traced text survives is whatever your Docker logging driver or shipper is set to. If that is "forever", decide about it before enabling rather than after.
-
-Each outbound frame produces two lines that share a `seq`: `dir=out` when it is
-about to be written, and `dir=out.done` with `ok=true` / `ok=false` once the
-socket has answered. `seq` is the frame's position in the write order, so the
-pair tells you what this backend sent and in which order; an attempt with no
-matching outcome is a write that never returned.
-
-`ok=true` means the frame reached the socket, not that WeCom accepted it. For
-the platform's verdict, match the frame's `req_id` against the `dir=in` line
-answering it and read that line's `errcode` — a frame can be written
-successfully and still be rejected there.
-
 ### CLI / Daemon
 
 These are configured on each user's machine, not on the server:
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `MULTICA_SERVER_URL` | `ws://localhost:8080/ws` | WebSocket URL for daemon → server connection |
-| `MULTICA_APP_URL` | `http://localhost:3000` | Frontend URL for CLI login flow |
-| `MULTICA_DAEMON_POLL_INTERVAL` | `3s` | How often the daemon polls for tasks |
-| `MULTICA_DAEMON_HEARTBEAT_INTERVAL` | `15s` | Heartbeat frequency |
+| `LIEXIU_SERVER_URL` | `ws://localhost:8080/ws` | WebSocket URL for daemon → server connection |
+| `LIEXIU_APP_URL` | `http://localhost:3000` | Frontend URL for CLI login flow |
+| `LIEXIU_DAEMON_POLL_INTERVAL` | `3s` | How often the daemon polls for tasks |
+| `LIEXIU_DAEMON_HEARTBEAT_INTERVAL` | `15s` | Heartbeat frequency |
 
 Agent-specific overrides:
 
 | Variable | Description |
 |----------|-------------|
-| `MULTICA_CLAUDE_PATH` | Custom path to the `claude` binary |
-| `MULTICA_CLAUDE_MODEL` | Override the Claude model used |
-| `MULTICA_CODEX_PATH` | Custom path to the `codex` binary |
-| `MULTICA_CODEX_MODEL` | Override the Codex model used |
-| `MULTICA_COPILOT_PATH` | Custom path to the `copilot` (GitHub Copilot CLI) binary |
-| `MULTICA_COPILOT_MODEL` | Override the Copilot model used (note: GitHub Copilot routes models through your account entitlement, so this may not be honoured) |
-| `MULTICA_OPENCODE_PATH` | Custom path to the `opencode` binary |
-| `MULTICA_OPENCODE_MODEL` | Override the OpenCode model used |
-| `MULTICA_OPENCLAW_PATH` | Custom path to the `openclaw` binary |
-| `MULTICA_OPENCLAW_MODEL` | Override the OpenClaw model used |
-| `MULTICA_HERMES_PATH` | Custom path to the `hermes` binary |
-| `MULTICA_HERMES_MODEL` | Override the Hermes model used |
-| `MULTICA_PI_PATH` | Custom path to the `pi` binary |
-| `MULTICA_PI_MODEL` | Override the Pi model used |
-| `MULTICA_CURSOR_PATH` | Custom path to the `cursor-agent` binary |
-| `MULTICA_CURSOR_MODEL` | Override the Cursor Agent model used |
-| `MULTICA_GROK_PATH` | Custom path to the `grok` binary |
-| `MULTICA_GROK_MODEL` | Override the Grok model used (e.g. `grok-4.5`) |
+| `LIEXIU_CLAUDE_PATH` | Custom path to the `claude` binary |
+| `LIEXIU_CLAUDE_MODEL` | Override the Claude model used |
+| `LIEXIU_CODEX_PATH` | Custom path to the `codex` binary |
+| `LIEXIU_CODEX_MODEL` | Override the Codex model used |
+| `LIEXIU_COPILOT_PATH` | Custom path to the `copilot` (GitHub Copilot CLI) binary |
+| `LIEXIU_COPILOT_MODEL` | Override the Copilot model used (note: GitHub Copilot routes models through your account entitlement, so this may not be honoured) |
+| `LIEXIU_OPENCODE_PATH` | Custom path to the `opencode` binary |
+| `LIEXIU_OPENCODE_MODEL` | Override the OpenCode model used |
+| `LIEXIU_OPENCLAW_PATH` | Custom path to the `openclaw` binary |
+| `LIEXIU_OPENCLAW_MODEL` | Override the OpenClaw model used |
+| `LIEXIU_HERMES_PATH` | Custom path to the `hermes` binary |
+| `LIEXIU_HERMES_MODEL` | Override the Hermes model used |
+| `LIEXIU_PI_PATH` | Custom path to the `pi` binary |
+| `LIEXIU_PI_MODEL` | Override the Pi model used |
+| `LIEXIU_CURSOR_PATH` | Custom path to the `cursor-agent` binary |
+| `LIEXIU_CURSOR_MODEL` | Override the Cursor Agent model used |
+| `LIEXIU_GROK_PATH` | Custom path to the `grok` binary |
+| `LIEXIU_GROK_MODEL` | Override the Grok model used (e.g. `grok-4.5`) |
 
 ## Database Setup
 
-Multica requires PostgreSQL 17 with the pgvector extension.
+LieXiu requires PostgreSQL 17 with the pgvector extension.
 
 ### Using Docker Compose (Recommended)
 
@@ -276,19 +208,14 @@ SELECT cron.unschedule('rollup_task_usage_hourly')
   FROM cron.job WHERE jobname = 'rollup_task_usage_hourly';
 ```
 
-External cron / systemd / Kubernetes `CronJob` setups that call `SELECT rollup_task_usage_hourly()` directly are also still valid — they were the only option before MUL-2957 and remain a supported compatibility path. They are no longer the recommended setup; new deployments should rely on the in-process scheduler.
+External cron / systemd timer setups that call `SELECT rollup_task_usage_hourly()` directly are also still valid — they were the only option before MUL-2957 and remain a supported compatibility path. They are no longer the recommended setup; new deployments should rely on the in-process scheduler.
 
 ### Standalone backfill command
 
 `rollup_task_usage_hourly()` only processes new buckets after it starts running. If you already have `task_usage` rows from before the rollup was claimed for the first time — most commonly when upgrading from `v0.3.4` to `v0.3.5+` on a database that already has months of usage — you can run `backfill_task_usage_hourly` to seed historical buckets:
 
 ```bash
-# Docker Compose
 docker compose -f docker-compose.selfhost.yml exec backend \
-  ./backfill_task_usage_hourly --sleep-between-slices=2s
-
-# Kubernetes
-kubectl -n multica exec deploy/multica-backend -- \
   ./backfill_task_usage_hourly --sleep-between-slices=2s
 ```
 
@@ -347,10 +274,10 @@ In production, put a reverse proxy in front of both the backend and frontend to 
 **Single-domain layout** — frontend and backend served on the same hostname (this is what `docker-compose.selfhost.yml` defaults to):
 
 ```
-multica.example.com {
+liexiu.example.com {
     # WebSocket route — must come before the catch-all
-    @multica_ws path /ws /ws/*
-    handle @multica_ws {
+    @liexiu_ws path /ws /ws/*
+    handle @liexiu_ws {
         reverse_proxy localhost:8080 {
             flush_interval -1
         }
@@ -361,7 +288,7 @@ multica.example.com {
 }
 ```
 
-> Even on a single domain, set `FRONTEND_ORIGIN` / `CORS_ALLOWED_ORIGINS` to that public origin (e.g. `https://multica.example.com`) on the backend. The backend's default origin allowlist is `localhost` only, so without this it rejects the WebSocket upgrade from the public URL with `403` and real-time updates silently stop working. See [LAN / Non-localhost Access](#lan--non-localhost-access).
+> Even on a single domain, set `FRONTEND_ORIGIN` / `CORS_ALLOWED_ORIGINS` to that public origin (e.g. `https://liexiu.example.com`) on the backend. The backend's default origin allowlist is `localhost` only, so without this it rejects the WebSocket upgrade from the public URL with `403` and real-time updates silently stop working. See [LAN / Non-localhost Access](#lan--non-localhost-access).
 
 **Separate-domain layout** — frontend and backend on different hostnames:
 
@@ -371,8 +298,8 @@ app.example.com {
 }
 
 api.example.com {
-    @multica_ws path /ws /ws/*
-    handle @multica_ws {
+    @liexiu_ws path /ws /ws/*
+    handle @liexiu_ws {
         reverse_proxy localhost:8080 {
             flush_interval -1
         }
@@ -453,11 +380,11 @@ NEXT_PUBLIC_WS_URL=wss://api.example.com/ws
 >
 > This bites on upgrade: before v0.4.10 `NEXT_PUBLIC_API_URL` was inert in the published images, so a wrong value sat in `.env` doing nothing. v0.4.10 wired it through, and the stale value took effect. If you upgraded and the UI loads but nothing else does, check this variable first, then recreate the frontend container (`docker compose ... up -d --force-recreate frontend`) so the new value is picked up.
 
-> **`COOKIE_DOMAIN` is required in this setup — omitting it breaks every write.** The web app authenticates with an HttpOnly `multica_auth` cookie plus a JS-readable `multica_csrf` cookie, and sends the CSRF value as an `X-CSRF-Token` header on every non-GET request. Both cookies are host-only unless `COOKIE_DOMAIN` is set, so a frontend on `app.example.com` cannot read a cookie issued by `api.example.com`. The header is then never sent and the backend rejects the request with `403 {"error":"CSRF validation failed"}` — while GET requests keep working, so the app renders but nothing can be created or edited.
+> **`COOKIE_DOMAIN` is required in this setup — omitting it breaks every write.** The web app authenticates with an HttpOnly `liexiu_auth` cookie plus a JS-readable `liexiu_csrf` cookie, and sends the CSRF value as an `X-CSRF-Token` header on every non-GET request. Both cookies are host-only unless `COOKIE_DOMAIN` is set, so a frontend on `app.example.com` cannot read a cookie issued by `api.example.com`. The header is then never sent and the backend rejects the request with `403 {"error":"CSRF validation failed"}` — while GET requests keep working, so the app renders but nothing can be created or edited.
 >
-> After changing `COOKIE_DOMAIN`, delete the existing `multica_auth` / `multica_csrf` cookies on **both** hosts and log in again. Stale host-only cookies otherwise sit alongside the new domain-scoped ones and the browser sends both.
+> After changing `COOKIE_DOMAIN`, delete the existing `liexiu_auth` / `liexiu_csrf` cookies on **both** hosts and log in again. Stale host-only cookies otherwise sit alongside the new domain-scoped ones and the browser sends both.
 
-> **Scope `COOKIE_DOMAIN` as narrowly as possible.** The same value also scopes `multica_auth`, the session JWT, and the browser then sends it to **every** host under that domain. `HttpOnly` only stops page scripts from reading the cookie — it does not stop the server behind a sibling subdomain from receiving it on every request. Use the narrowest parent that still covers both hosts: for `agent.example.com` + `api.agent.example.com` that is `.agent.example.com`, **not** `.example.com`, which would also hand your users' session cookie to unrelated hosts such as a separately deployed `docs.example.com`.
+> **Scope `COOKIE_DOMAIN` as narrowly as possible.** The same value also scopes `liexiu_auth`, the session JWT, and the browser then sends it to **every** host under that domain. `HttpOnly` only stops page scripts from reading the cookie — it does not stop the server behind a sibling subdomain from receiving it on every request. Use the narrowest parent that still covers both hosts: for `agent.example.com` + `api.agent.example.com` that is `.agent.example.com`, **not** `.example.com`, which would also hand your users' session cookie to unrelated hosts such as a separately deployed `docs.example.com`.
 
 Both of these must hold, or this layout is not safe to use:
 
@@ -502,7 +429,7 @@ This keeps cookies, CORS, and the WebSocket origin check on a single origin. It 
 
 ## LAN / Non-localhost Access
 
-By default, Multica works on `localhost`. If you access it from another machine on the LAN (e.g. `http://192.168.1.100:3000`), you need to tell the backend to accept that origin:
+By default, LieXiu works on `localhost`. If you access it from another machine on the LAN (e.g. `http://192.168.1.100:3000`), you need to tell the backend to accept that origin:
 
 ```bash
 # .env — replace with your server's LAN IP
@@ -534,7 +461,7 @@ HTTP requests (issues, comments, uploads) work on LAN out of the box — Next.js
 
    `NEXT_PUBLIC_WS_URL` is a build-time variable (see `Dockerfile.web`), so setting it only in `environment:` on the pre-built image has no effect — you must use the `selfhost.build.yml` override that rebuilds the image.
 
-**Also required: allowlist the browser origin.** The two options above fix the WebSocket *upgrade proxying*, but a second, independent setting gates the connection: the backend validates the WebSocket `Origin` header against an allowlist that defaults to `localhost` only. When you open Multica from any other origin — a LAN IP **or a public domain behind a reverse proxy** — set `CORS_ALLOWED_ORIGINS` (or `FRONTEND_ORIGIN`) on the backend to that exact origin and restart, exactly as shown under [LAN / Non-localhost Access](#lan--non-localhost-access) above. Otherwise the upgrade is refused with `403`: the backend logs `websocket: request origin not allowed by Upgrader.CheckOrigin` and the browser console loops `disconnected, reconnecting in 3s`, while HTTP requests (and manual page refreshes) keep working because they are same-origin to the page. The single value covers both HTTP CORS and the WebSocket origin check.
+**Also required: allowlist the browser origin.** The two options above fix the WebSocket *upgrade proxying*, but a second, independent setting gates the connection: the backend validates the WebSocket `Origin` header against an allowlist that defaults to `localhost` only. When you open LieXiu from any other origin — a LAN IP **or a public domain behind a reverse proxy** — set `CORS_ALLOWED_ORIGINS` (or `FRONTEND_ORIGIN`) on the backend to that exact origin and restart, exactly as shown under [LAN / Non-localhost Access](#lan--non-localhost-access) above. Otherwise the upgrade is refused with `403`: the backend logs `websocket: request origin not allowed by Upgrader.CheckOrigin` and the browser console loops `disconnected, reconnecting in 3s`, while HTTP requests (and manual page refreshes) keep working because they are same-origin to the page. The single value covers both HTTP CORS and the WebSocket origin check.
 
 > **Note:** If you need to hard-code a different public API / WebSocket endpoint into the web image for any other reason, use the same source-build override: `docker compose -f docker-compose.selfhost.yml -f docker-compose.selfhost.build.yml up -d --build`.
 
@@ -573,7 +500,7 @@ deployments. HTTP request metrics start accumulating only after the metrics
 listener is enabled. Metrics can reveal internal routes, traffic volume,
 dependency state, and runtime health.
 
-For Docker or Kubernetes deployments, prefer a private scrape path: bind the
+For Docker deployments, prefer a private scrape path: bind the
 metrics listener to an internal interface and protect it with private
 networking, allowlists, NetworkPolicy, or proxy authentication. If you bind
 `METRICS_ADDR=0.0.0.0:9090` inside a container, only publish that port to a
@@ -587,5 +514,5 @@ docker compose -f docker-compose.selfhost.yml pull
 docker compose -f docker-compose.selfhost.yml up -d
 ```
 
-Pin `MULTICA_IMAGE_TAG` in `.env` to an exact release like `v0.2.4` if you want to stay on a specific version. Migrations run automatically on backend startup. They are idempotent — running them multiple times has no effect.
+Pin `LIEXIU_IMAGE_TAG` in `.env` to an exact release like `v0.2.4` if you want to stay on a specific version. Migrations run automatically on backend startup. They are idempotent — running them multiple times has no effect.
 If the selected GHCR tag has not been published yet, fall back to `docker compose -f docker-compose.selfhost.yml -f docker-compose.selfhost.build.yml up -d --build`.

@@ -1,5 +1,5 @@
 /**
- * Public surface for @multica/core/feature-flags.
+ * Public surface for @liexiu/core/feature-flags.
  *
  * Keep this list minimal — every new export becomes a contract we have to
  * preserve across the monorepo. Add to it only when a real caller appears.
@@ -17,12 +17,6 @@ export type {
 export { FeatureFlagService } from "./service";
 export { StaticProvider } from "./static-provider";
 export { ChainProvider } from "./chain-provider";
-export {
-  BILLING_WORKSPACE_SUBSCRIPTIONS_FLAG,
-  COMPOSIO_MCP_APPS_FLAG,
-  PLUGINS_V1_FLAG,
-  PRIVATE_PLUGINS_V1_FLAG,
-} from "./keys";
 export {
   FeatureFlagsProvider,
   useFeatureFlagService,

@@ -15,8 +15,6 @@ function makeAttachment(id: string): Attachment {
     workspace_id: "ws-1",
     issue_id: "issue-1",
     comment_id: null,
-    chat_session_id: null,
-    chat_message_id: null,
     uploader_type: "member",
     uploader_id: "alice",
     filename: `${id}.png`,
@@ -99,12 +97,12 @@ describe("upload coordinator", () => {
       clientUploadId: "c1",
       file: file(),
       api,
-      ctx: { commentId: "cmt-9", chatSessionId: "sess-3" },
+      ctx: { issueId: "issue-1", commentId: "cmt-9" },
       onSettled: () => {},
     });
     expect(api.uploadFile).toHaveBeenCalledWith(
       expect.any(File),
-      { issueId: undefined, commentId: "cmt-9", chatSessionId: "sess-3" },
+      { issueId: "issue-1", commentId: "cmt-9" },
       expect.any(AbortSignal),
     );
   });

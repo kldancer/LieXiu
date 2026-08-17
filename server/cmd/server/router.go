@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"crypto/sha256"
 	"log/slog"
 	"net/http"
 	"net/netip"
@@ -17,30 +16,22 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
 
-	"github.com/multica-ai/multica/server/internal/analytics"
-	"github.com/multica-ai/multica/server/internal/auth"
-	"github.com/multica-ai/multica/server/internal/cloudruntime"
-	"github.com/multica-ai/multica/server/internal/daemonws"
-	"github.com/multica-ai/multica/server/internal/events"
-	"github.com/multica-ai/multica/server/internal/featureflags"
-	"github.com/multica-ai/multica/server/internal/handler"
-	"github.com/multica-ai/multica/server/internal/integrations/channel"
-	"github.com/multica-ai/multica/server/internal/integrations/channel/engine"
-	composiointeg "github.com/multica-ai/multica/server/internal/integrations/composio"
-	"github.com/multica-ai/multica/server/internal/integrations/dingtalk"
-	"github.com/multica-ai/multica/server/internal/integrations/lark"
-	"github.com/multica-ai/multica/server/internal/integrations/slack"
-	"github.com/multica-ai/multica/server/internal/integrations/wecom"
-	obsmetrics "github.com/multica-ai/multica/server/internal/metrics"
-	"github.com/multica-ai/multica/server/internal/middleware"
-	"github.com/multica-ai/multica/server/internal/realtime"
-	"github.com/multica-ai/multica/server/internal/service"
-	"github.com/multica-ai/multica/server/internal/storage"
-	"github.com/multica-ai/multica/server/internal/util"
-	"github.com/multica-ai/multica/server/internal/util/secretbox"
-	composiosdk "github.com/multica-ai/multica/server/pkg/composio"
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
-	"github.com/multica-ai/multica/server/pkg/featureflag"
+	"github.com/kailonyang/liexiu/server/internal/analytics"
+	"github.com/kailonyang/liexiu/server/internal/auth"
+	"github.com/kailonyang/liexiu/server/internal/cloudruntime"
+	"github.com/kailonyang/liexiu/server/internal/daemonws"
+	"github.com/kailonyang/liexiu/server/internal/events"
+	"github.com/kailonyang/liexiu/server/internal/handler"
+	obsmetrics "github.com/kailonyang/liexiu/server/internal/metrics"
+	"github.com/kailonyang/liexiu/server/internal/middleware"
+	"github.com/kailonyang/liexiu/server/internal/realtime"
+	"github.com/kailonyang/liexiu/server/internal/service"
+	"github.com/kailonyang/liexiu/server/internal/service/orchestration"
+	"github.com/kailonyang/liexiu/server/internal/storage"
+	"github.com/kailonyang/liexiu/server/internal/util"
+	"github.com/kailonyang/liexiu/server/internal/util/secretbox"
+	db "github.com/kailonyang/liexiu/server/pkg/db/generated"
+	"github.com/kailonyang/liexiu/server/pkg/featureflag"
 )
 
 var defaultOrigins = []string{
@@ -108,19 +99,8 @@ func allowedOrigins() []string {
 	return origins
 }
 
-// appURLFromEnv resolves the user-facing web app URL. It prefers
-// MULTICA_APP_URL and falls back to FRONTEND_ORIGIN, matching how the backend
-// resolves the app URL elsewhere (handler.daemonSetupURLsFromEnv) and the CLI
-// login flow (cmd/multica tryResolveAppURL). Empty when neither is set.
-func appURLFromEnv() string {
-	if v := strings.TrimRight(strings.TrimSpace(os.Getenv("MULTICA_APP_URL")), "/"); v != "" {
-		return v
-	}
-	return strings.TrimRight(strings.TrimSpace(os.Getenv("FRONTEND_ORIGIN")), "/")
-}
-
 // parseTrustedProxies parses a comma-separated list of CIDR prefixes from the
-// MULTICA_TRUSTED_PROXIES env var. Invalid entries are dropped with a single
+// LIEXIU_TRUSTED_PROXIES env var. Invalid entries are dropped with a single
 // warn-line per entry rather than crashing the server — a typo in one CIDR
 // shouldn't take the whole API down. Returns nil for empty input, which the
 // rate limiter treats as "trust no proxy headers, use RemoteAddr only".
@@ -137,7 +117,7 @@ func parseTrustedProxies(raw string) []netip.Prefix {
 		}
 		p, err := netip.ParsePrefix(s)
 		if err != nil {
-			slog.Warn("MULTICA_TRUSTED_PROXIES: ignoring invalid CIDR",
+			slog.Warn("LIEXIU_TRUSTED_PROXIES: ignoring invalid CIDR",
 				"value", s, "error", err)
 			continue
 		}
@@ -175,12 +155,9 @@ func NewRouter(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus, analytics
 type RouterOptions struct {
 	HTTPMetrics     *obsmetrics.HTTPMetrics
 	BusinessMetrics *obsmetrics.BusinessMetrics
-	// WecomMetrics is the WeCom adapter's health sink. Nil discards every
-	// counter, which is what a deployment with /metrics turned off gets.
-	WecomMetrics *obsmetrics.WecomMetrics
-	DaemonHub    *daemonws.Hub
-	DaemonWakeup service.TaskWakeupNotifier
-	FeatureFlags *featureflag.Service
+	DaemonHub       *daemonws.Hub
+	DaemonWakeup    service.TaskWakeupNotifier
+	FeatureFlags    *featureflag.Service
 	// HeartbeatScheduler, when non-nil, replaces the default synchronous
 	// passthrough scheduler on the constructed Handler. main.go injects a
 	// BatchedHeartbeatScheduler here so the caller can also drive Run/Stop;
@@ -190,14 +167,12 @@ type RouterOptions struct {
 
 // NewRouterWithOptions builds the fully-configured Chi router and
 // returns the *handler.Handler it was constructed from. Callers that
-// need to drive background lifecycle on services attached to the
-// handler (e.g. starting the Lark inbound Hub under a long-running
-// context, calling Wait on shutdown) use the returned handler;
+// need to drive background lifecycle on services attached to the handler use
+// the returned handler;
 // callers that only need the HTTP handler (tests, the simple
 // NewRouter shim) discard the second value.
 func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus, analyticsClient analytics.Client, rdb *redis.Client, opts RouterOptions) (chi.Router, *handler.Handler) {
 	queries := db.New(pool)
-	emailSvc := service.NewEmailService()
 	daemonHub := opts.DaemonHub
 	if daemonHub == nil {
 		daemonHub = daemonws.NewHub()
@@ -218,25 +193,29 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 	cfSigner := auth.NewCloudFrontSignerFromEnv()
 	origins := allowedOrigins()
 
-	signupConfig := handler.Config{
-		AllowSignup:              os.Getenv("ALLOW_SIGNUP") != "false",
-		AllowedEmails:            splitAndTrim(os.Getenv("ALLOWED_EMAILS")),
-		AllowedEmailDomains:      splitAndTrim(os.Getenv("ALLOWED_EMAIL_DOMAINS")),
-		DisableWorkspaceCreation: os.Getenv("DISABLE_WORKSPACE_CREATION") == "true",
-		VCSIntegrationEnabled:    os.Getenv("MULTICA_VCS_INTEGRATION_ENABLED") == "true",
-		PublicURL:                strings.TrimRight(strings.TrimSpace(os.Getenv("MULTICA_PUBLIC_URL")), "/"),
-		TrustedProxies:           parseTrustedProxies(os.Getenv("MULTICA_TRUSTED_PROXIES")),
+	instanceConfig := handler.Config{
+		OwnerBootstrapSecret:     strings.TrimSpace(os.Getenv("LIEXIU_OWNER_BOOTSTRAP_SECRET")),
+		VCSIntegrationEnabled:    os.Getenv("LIEXIU_VCS_INTEGRATION_ENABLED") == "true",
+		PublicURL:                strings.TrimRight(strings.TrimSpace(os.Getenv("LIEXIU_PUBLIC_URL")), "/"),
+		TrustedProxies:           parseTrustedProxies(os.Getenv("LIEXIU_TRUSTED_PROXIES")),
 		CloudRuntimeFleetURL:     cloudRuntimeFleetURLFromEnv(),
-		CloudRuntimeFleetTimeout: envDuration("MULTICA_CLOUD_FLEET_TIMEOUT", 35*time.Second),
+		CloudRuntimeFleetTimeout: envDuration("LIEXIU_CLOUD_FLEET_TIMEOUT", 35*time.Second),
 		AttachmentDownloadMode:   os.Getenv("ATTACHMENT_DOWNLOAD_MODE"),
 		AttachmentDownloadURLTTL: envDuration("ATTACHMENT_DOWNLOAD_URL_TTL", 30*time.Minute),
 		AttachmentFrameAncestors: origins,
-		LLMAPIKey:                strings.TrimSpace(os.Getenv("MULTICA_LLM_API_KEY")),
-		LLMBaseURL:               strings.TrimSpace(os.Getenv("MULTICA_LLM_BASE_URL")),
-		LLMDefaultModel:          strings.TrimSpace(os.Getenv("MULTICA_LLM_DEFAULT_MODEL")),
+		LLMAPIKey:                strings.TrimSpace(os.Getenv("LIEXIU_LLM_API_KEY")),
+		LLMBaseURL:               strings.TrimSpace(os.Getenv("LIEXIU_LLM_BASE_URL")),
+		LLMDefaultModel:          strings.TrimSpace(os.Getenv("LIEXIU_LLM_DEFAULT_MODEL")),
 		ServerVersion:            normalizeServerVersion(version),
 	}
-	h := handler.New(queries, pool, hub, bus, emailSvc, store, cfSigner, analyticsClient, signupConfig, daemonHub)
+	h := handler.New(queries, pool, hub, bus, store, cfSigner, analyticsClient, instanceConfig, daemonHub)
+	orchestrationRepository := orchestration.NewRepository(queries, pool)
+	h.Orchestration = orchestration.NewService(
+		queries,
+		orchestrationRepository,
+		service.NewTaskExecutionGateway(h.TaskService),
+		orchestration.DefaultPlanHardLimits(),
+	)
 	h.Metrics = opts.BusinessMetrics
 	h.FeatureFlags = opts.FeatureFlags
 	h.TaskService.FeatureFlags = opts.FeatureFlags
@@ -245,7 +224,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 	if opts.BusinessMetrics != nil {
 		// Wire the BusinessMetrics receiver into the cloud runtime client
 		// so every outbound Fleet/Gateway request feeds the
-		// multica_cloudruntime_request_* histograms.
+		// liexiu_cloudruntime_request_* histograms.
 		if client, ok := h.CloudRuntime.(*cloudruntime.Client); ok {
 			client.SetRecorder(opts.BusinessMetrics)
 		}
@@ -274,585 +253,11 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 		h.WebhookAbsoluteIPRateLimiter = handler.NewRedisWebhookAbsoluteIPRateLimiter(rdb, handler.DefaultWebhookAbsoluteIPRateLimit())
 	}
 
-	// Channel engine (MUL-3620): the platform-agnostic inbound runtime.
-	// Built UNCONDITIONALLY — it drives any channel.Channel, not just
-	// Feishu, so it must not depend on the Lark master key (a future
-	// Slack-only deployment has no Lark key). Platform adapters register a
-	// Factory + ResolverSet into it below; the Supervisor enumerates active
-	// installations across ALL channel types and routes each to its
-	// registered platform's Factory. Installations whose channel_type has no
-	// registered Factory are skipped by the Supervisor — either no platform is
-	// configured, or (Slack/B2) the platform drives ONE deployment-level
-	// connection of its own outside the per-installation supervisor. The Router
-	// is the single shared inbound handler injected into every Channel.
-	channelRegistry := channel.NewRegistry()
-	channelRouter := engine.NewRouter(h.IssueService, h.TaskService, queries, engine.RouterConfig{Logger: slog.Default()})
-	// Debounce the per-session run trigger so a burst of messages collapses
-	// into one agent run instead of one per message (MUL-2968).
-	channelRouter.EnableRunBatching(engine.DefaultChatRunBatchWindow)
-	h.ChannelRouter = channelRouter
-	// Media intent-ledger reconciler: settles uploaded-but-unbound objects.
-	// Built ONLY when a storage backend exists — store is nil when S3 is not
-	// configured and the local upload dir failed to initialize, and a
-	// reconciler with nil Storage would panic the worker goroutine on the
-	// first unreferenced row (ledger rows can pre-exist from a boot where
-	// storage WAS configured). Without storage the resolver skips every
-	// upload, so no new rows appear and the ledger simply waits for a boot
-	// with working storage. Started from main.go as its own worker.
-	if store != nil {
-		h.ChannelMediaReconciler = &service.ChannelMediaReconciler{
-			Queries: queries,
-			Storage: store,
-			Logger:  slog.Default(),
-		}
-	}
-	h.ChannelSupervisor = engine.NewSupervisor(
-		lark.NewChannelInstallationStore(queries),
-		channelRegistry,
-		channelRouter.Handle,
-		engine.Config{},
-	)
-
-	// Lark integration. Only wired when MULTICA_LARK_SECRET_KEY is set:
-	// the InstallationService refuses to fall back to plaintext storage
-	// for app_secret, and the BindingTokenService cannot mint usable
-	// tokens without it either. When the key is absent the Lark
-	// handlers return 503 with a clear message; the rest of the server
-	// continues to start so self-host deployments that have not opted
-	// in to Lark are unaffected. Feishu registers its Factory + ResolverSet
-	// into the channel engine above.
-	if larkKey, err := secretbox.LoadKey("MULTICA_LARK_SECRET_KEY"); err == nil {
-		box, err := secretbox.New(larkKey)
-		if err != nil {
-			slog.Error("lark: secretbox.New failed; lark integration disabled", "error", err)
-		} else {
-			installSvc, err := lark.NewInstallationService(queries, box)
-			if err != nil {
-				slog.Error("lark: InstallationService init failed; lark integration disabled", "error", err)
-			} else {
-				h.LarkInstallations = installSvc
-				h.LarkBindingTokens = lark.NewBindingTokenService(queries, pool)
-				slog.Info("lark integration enabled")
-
-				// APIClient: wire the real Lark Open Platform HTTP client
-				// (IM v1 send/patch + binding-prompt + bot info). Setting
-				// MULTICA_LARK_SECRET_KEY is the operator's opt-in for
-				// the integration as a whole; we don't expose a separate
-				// "HTTP enabled" knob because the inbound dispatcher
-				// without outbound replies is not a useful production
-				// state, and CI / integration tests that want to avoid
-				// real Lark traffic can point MULTICA_LARK_HTTP_BASE_URL
-				// at a mock server.
-				//
-				// MULTICA_LARK_HTTP_BASE_URL is an OPTIONAL deployment-wide
-				// override. Normal operation leaves it empty: each call then
-				// resolves its open-platform host from the installation's
-				// region (open.feishu.cn vs open.larksuite.com), so one
-				// deployment serves both clouds. Set it only to force every
-				// installation onto one host — a proxy, a mock for tests, or
-				// a single-cloud staging setup.
-				larkClient := lark.NewHTTPAPIClient(lark.HTTPClientConfig{
-					BaseURL: strings.TrimSpace(os.Getenv("MULTICA_LARK_HTTP_BASE_URL")),
-					Logger:  slog.Default(),
-				})
-				h.LarkAPIClient = larkClient
-
-				// Channel-backed store: routes the lark package's DB seams
-				// onto the channel_* tables (MUL-3515). Interface-wired
-				// consumers (patcher, typing indicator, dispatcher, hub,
-				// backfills) take it directly; the constructor-based services
-				// wrap *db.Queries internally, so they keep taking queries.
-				cs := lark.NewChannelStore(queries)
-				patcher := lark.NewPatcher(cs, installSvc, larkClient, lark.PatcherConfig{})
-				patcher.Register(bus)
-
-				// Typing indicator: shows a "processing" reaction on the user's
-				// message while the agent is working, then removes it before the
-				// reply is sent. Best-effort; failures are logged only.
-				typingIndicator := lark.NewTypingIndicatorManager(larkClient, installSvc, cs, slog.Default())
-				patcher.SetTypingIndicatorManager(typingIndicator)
-
-				// Inbound pipeline seams: lark_inbound_audit logger and the
-				// shared channel-agnostic chat-session service. They back the
-				// Feishu ResolverSet that the engine.Router runs through,
-				// sharing the same IssueService + TaskService that back HTTP, so
-				// /issue-created issues share counter, dup guard, project
-				// boundary, broadcast, analytics and agent-enqueue with the rest
-				// of the product. Feishu is just another consumer of the shared
-				// engine.ChatSession (channel_type-keyed); the Lark session
-				// titles preserve the pre-cutover wording.
-				auditLogger := lark.NewAuditLogger(queries)
-				feishuSession := engine.NewChatSession(queries, pool, channel.TypeFeishu, engine.SessionTitles{
-					Group:    "Lark group chat",
-					Direct:   "Lark direct message",
-					Fallback: "Lark chat",
-				})
-
-				// OutcomeReplier wires the outbound side: NeedsBinding /
-				// AgentOffline / AgentArchived / issue-created translate to a
-				// Lark-side reply card. Requires the real APIClient and the
-				// binding token service; otherwise it falls back to the noop
-				// replier (outcomes logged, not delivered). We only register
-				// it on the ResolverSet when it can actually deliver, so a
-				// pre-outbound deployment pays no reply-goroutine cost.
-				replier := lark.NewLarkOutcomeReplier(lark.OutcomeReplierConfig{
-					APIClient:   larkClient,
-					BindingSvc:  h.LarkBindingTokens,
-					Credentials: installSvc,
-					Queries:     queries,
-					AppURL:      appURLFromEnv(),
-					Logger:      slog.Default(),
-				})
-				var resolverReplier lark.OutcomeReplier
-				if larkClient.IsConfigured() {
-					resolverReplier = replier
-				}
-
-				// Feishu adapter (MUL-3620): the WSLongConnConnector talks
-				// Lark's long-conn protocol over gorilla/websocket and wraps
-				// every read with a ctx-cancel watchdog so lease loss /
-				// shutdown breaks the blocking ReadMessage in bounded time —
-				// the invariant §4.4 leans on. If the endpoint fetcher fails
-				// to initialize (bad MULTICA_LARK_CALLBACK_BASE_URL or
-				// similar), buildLarkConnector logs and falls back to the
-				// NoopConnector so the lease / supervisor lifecycle still runs
-				// against real DB rows — inbound messages are silently dropped
-				// until the config is fixed, with the boot log labelling the
-				// mode "noop".
-				//
-				// Registering the Factory (connect/send) + ResolverSet
-				// (inbound pipeline seams) is all it takes to add the platform
-				// to the engine — no engine edit.
-				connector, connectorLabel := buildLarkConnector(installSvc, larkClient)
-				lark.RegisterFeishu(channelRegistry, lark.FeishuChannelDeps{
-					Connector:   connector,
-					APIClient:   larkClient,
-					Credentials: installSvc,
-					Logger:      slog.Default(),
-				})
-				mediaResolver := lark.NewFeishuMediaResolver(larkClient, installSvc, store, engine.NewDBMediaIntentLedger(queries), slog.Default())
-				channelRouter.Register(channel.TypeFeishu, lark.NewFeishuResolverSet(
-					cs, feishuSession, auditLogger, resolverReplier, typingIndicator, mediaResolver,
-				))
-				slog.Info("lark inbound pipeline wired", "connector", connectorLabel)
-
-				// One-shot union_id backfill for installations created
-				// before migration 112 added bot_union_id. Runs off the
-				// hot startup path so a slow Lark round-trip cannot block
-				// HTTP listener boot. New installs already write
-				// bot_union_id during the device-flow finalize, so this
-				// is bridge code — it will simply find no rows to update
-				// on a fresh deployment and exit. MUL-2671.
-				go lark.BackfillBotUnionIDs(context.Background(), cs, larkClient, installSvc, slog.Default())
-
-				// Upgrade repair for deployments that ran the whole
-				// integration against Lark international via the deployment-
-				// wide base-URL override before per-installation region
-				// existed: migration 116 backfilled their rows to 'feishu',
-				// so relabel them to 'lark' (their true cloud) before the
-				// operator clears the override. No-op on mainland / fresh
-				// deployments. Off the hot startup path like the union_id
-				// backfill. MUL-3083.
-				go lark.BackfillRegionFromLegacyOverride(context.Background(), cs,
-					strings.TrimSpace(os.Getenv("MULTICA_LARK_HTTP_BASE_URL")),
-					strings.TrimSpace(os.Getenv("MULTICA_LARK_CALLBACK_BASE_URL")),
-					slog.Default())
-
-				// Device-flow registration service: end-to-end install
-				// pipeline that talks to accounts.feishu.cn (RFC 8628)
-				// for the QR-scan handshake and then commits the
-				// resulting Bot credentials + the installer's
-				// lark_user_binding in one DB transaction. The optional
-				// MULTICA_LARK_REGISTRATION_DOMAIN / _LARK_DOMAIN env
-				// vars override the protocol hosts for staging / dev.
-				regCfg := lark.RegistrationConfig{
-					Domain:     strings.TrimSpace(os.Getenv("MULTICA_LARK_REGISTRATION_DOMAIN")),
-					LarkDomain: strings.TrimSpace(os.Getenv("MULTICA_LARK_REGISTRATION_LARK_DOMAIN")),
-				}
-				regClient := lark.NewRegistrationClient(regCfg)
-				regSvc, rerr := lark.NewRegistrationService(
-					lark.RegistrationServiceConfig{Logger: slog.Default()},
-					regClient,
-					larkClient,
-					queries,
-					pool,
-					installSvc,
-					h.LarkBindingTokens,
-				)
-				if rerr != nil {
-					slog.Error("lark: RegistrationService init failed; install disabled", "error", rerr)
-				} else {
-					// Publish lark_installation:created at row-commit time so the
-					// connection badge refreshes on every workspace client, not just
-					// the tab that polls the install status to success.
-					regSvc.SetEventBus(bus)
-					h.LarkRegistration = regSvc
-					slog.Info("lark device-flow install enabled")
-				}
-			}
-		}
-	} else {
-		slog.Info("lark integration disabled (MULTICA_LARK_SECRET_KEY not set)")
-	}
-
-	// Slack integration. Multi-tenant B2 model (MUL-3666): Multica hosts ONE
-	// Slack app, workspaces self-install via OAuth, and inbound runs on a single
-	// deployment-level Socket Mode connection routed by team_id — replacing the
-	// stage-3 per-installation connection model (MUL-3516).
-	//
-	// Two deployment-level env vars gate the two halves:
-	//   - MULTICA_SLACK_SECRET_KEY decrypts the per-installation bot token
-	//     (xoxb-) stored on the channel_installation row. It gates the inbound
-	//     ResolverSet + the outbound reply subscriber, so without it there is no
-	//     Slack at all.
-	//   - MULTICA_SLACK_APP_TOKEN is the app-level token (xapp-) authorizing the
-	//     single Socket Mode connection. It cannot be obtained via OAuth, so it
-	//     is a one-time operator config. Without it, inbound is disabled (the
-	//     ResolverSet + outbound are still wired so an existing install's replies
-	//     keep flowing, but no new events are received).
-	//
-	// The ResolverSet/Outbound share the same engine.ChatSession, channel_*
-	// tables, IssueService and TaskService as Feishu, so /issue, dedup, and
-	// run-triggering behave identically. Feishu is untouched. Each Slack
-	// installation is a bring-your-own-app (BYO) install carrying its OWN
-	// app-level token, so a per-installation Slack Factory is registered and the
-	// Supervisor drives one Socket Mode connection per installation (like Feishu).
-	if slackKey, err := secretbox.LoadKey("MULTICA_SLACK_SECRET_KEY"); err == nil {
-		box, err := secretbox.New(slackKey)
-		if err != nil {
-			slog.Error("slack: secretbox.New failed; slack integration disabled", "error", err)
-		} else {
-			// Outbound replier (MUL-3666): delivers NeedsBinding prompt /
-			// AgentOffline / AgentArchived / issue-created notices. The binding
-			// token service mints the single-use token embedded in the prompt's
-			// redeem link; the redeem endpoint (registered below, public) binds
-			// the Slack user to their Multica account.
-			slackBindingSvc := slack.NewBindingTokenService(queries, pool)
-			h.SlackBindingTokens = slackBindingSvc
-			slackReplier := slack.NewOutboundReplier(slack.OutboundReplierConfig{
-				Binding: slackBindingSvc,
-				Decrypt: box.Open,
-				// The bind link (/slack/bind) is a web-app page, so it must use the
-				// app URL (MULTICA_APP_URL ?? FRONTEND_ORIGIN), NOT MULTICA_PUBLIC_URL
-				// (the backend/API URL). Mirrors the Lark replier (appURLFromEnv).
-				AppURL: appURLFromEnv(),
-				Logger: slog.Default(),
-			})
-			// Typing indicator (MUL-3874): a 👀 reaction on the user's message
-			// while the agent works, cleared when the run finishes or fails.
-			// Best-effort; failures are logged only. Registered before the
-			// outbound reply subscriber so, on EventChatDone, the reaction clears
-			// ahead of the reply (bus delivery is synchronous, in subscription
-			// order). Subscribing here is also the only path that clears the
-			// reaction on a failed run, which the outbound replier does not handle.
-			slackTyping := slack.NewTypingIndicatorManager(queries, box.Open, slog.Default())
-			slackTyping.Register(bus)
-			channelRouter.Register(slack.TypeSlack, slack.NewSlackResolverSet(queries, pool, slackReplier, slackTyping))
-			slack.NewOutbound(queries, box.Open, slog.Default()).Register(bus)
-
-			// On-demand history reader behind the unified `multica chat history`
-			// command (MUL-3871): pull the session's Slack conversation when the
-			// agent asks, instead of force-assembling it on every inbound.
-			h.SlackHistory = slack.NewHistory(queries, box.Open, slog.Default())
-
-			// `/issue` slash command (MUL-3908): a real Slack slash command,
-			// delivered over the same Socket Mode connection. It is a quick-create
-			// entry point — the invoker's natural-language description is enqueued as
-			// a quick-create task (no chat session or chat run) and the agent authors
-			// the well-formed issue in the background — reusing the shared TaskService
-			// + binding service. The invoker gets a private ephemeral acknowledgement
-			// and a Multica notification when the issue lands.
-			slackSlash := slack.NewSlashCommandProcessor(slack.SlashCommandConfig{
-				Queries: queries,
-				Tasks:   h.TaskService,
-				Binding: slackBindingSvc,
-				AppURL:  appURLFromEnv(),
-				Logger:  slog.Default(),
-			})
-
-			// Per-installation inbound: the Supervisor builds + supervises one
-			// Socket Mode connection per active Slack installation, authenticated
-			// with that installation's OWN app-level token (xapp-, pasted at BYO
-			// install) — no deployment-level app token, no single connection.
-			slack.RegisterSlack(channelRegistry, slack.ChannelDeps{Decrypt: box.Open, Logger: slog.Default(), Slash: slackSlash})
-
-			// BYO self-serve install (paste bot token + app-level token). The
-			// InstallService needs only the at-rest encryption key — there is no
-			// hosted OAuth client credential.
-			installSvc, ierr := slack.NewInstallService(queries, pool, box, slog.Default())
-			if ierr != nil {
-				slog.Error("slack: InstallService init failed; install disabled", "error", ierr)
-			} else {
-				h.SlackInstall = installSvc
-			}
-			slog.Info("slack integration enabled (BYO per-installation socket mode)")
-		}
-	} else {
-		slog.Info("slack integration disabled (MULTICA_SLACK_SECRET_KEY not set)")
-	}
-
-	// DingTalk uses one outbound Stream connection per BYO installation. The
-	// AppSecret is encrypted at rest and the integration is inert unless its
-	// dedicated deployment key is configured.
-	if dingtalkKey, err := secretbox.LoadKey("MULTICA_DINGTALK_SECRET_KEY"); err == nil {
-		box, err := secretbox.New(dingtalkKey)
-		if err != nil {
-			slog.Error("dingtalk: secretbox.New failed; integration disabled", "error", err)
-		} else {
-			dingtalkClient := dingtalk.NewClient(nil, "")
-			bindingSvc := dingtalk.NewBindingTokenService(queries, pool)
-			h.DingTalkBindingTokens = bindingSvc
-			replier := dingtalk.NewOutboundReplier(dingtalk.OutboundReplierConfig{
-				Binding: bindingSvc,
-				Decrypt: box.Open,
-				Client:  dingtalkClient,
-				AppURL:  appURLFromEnv(),
-				Logger:  slog.Default(),
-			})
-			ack := dingtalk.NewAckNotifier(dingtalkClient, box.Open, slog.Default())
-			var media engine.MediaResolver
-			if store != nil {
-				media = dingtalk.NewMediaResolver(
-					dingtalkClient,
-					box.Open,
-					store,
-					engine.NewDBMediaIntentLedger(queries),
-					slog.Default(),
-				)
-			}
-			channelRouter.Register(dingtalk.TypeDingTalk, dingtalk.NewDingTalkResolverSet(queries, pool, replier, ack, media))
-			dingtalk.NewOutbound(queries, box.Open, dingtalkClient, slog.Default()).Register(bus)
-			dingtalk.RegisterDingTalk(channelRegistry, dingtalk.ChannelDeps{
-				Decrypt: box.Open,
-				Client:  dingtalkClient,
-				Logger:  slog.Default(),
-			})
-			installSvc, installErr := dingtalk.NewInstallService(queries, pool, box, slog.Default())
-			if installErr != nil {
-				slog.Error("dingtalk: InstallService init failed; install disabled", "error", installErr)
-			} else {
-				h.DingTalkInstall = installSvc
-			}
-			slog.Info("dingtalk integration enabled (BYO per-installation stream mode)")
-		}
-	} else {
-		slog.Info("dingtalk integration disabled (MULTICA_DINGTALK_SECRET_KEY not set)")
-	}
-
-	// WeCom smart-bot integration ("智能机器人" / aibot). Per-installation
-	// WebSocket long connection to wss://openws.work.weixin.qq.com; the
-	// Supervisor drives one connection per active wecom installation, gated
-	// by the shared ws_lease_token so multi-replica deployments still hold
-	// at most one active socket per bot (WeCom itself only permits one).
-	//
-	// Gated by MULTICA_WECOM_SECRET_KEY. Without it, the whole block is
-	// skipped and the wecom Web-UI endpoints return 503; existing deployments
-	// are unaffected. The smart-bot flow does NOT require any public HTTP
-	// callback, so nothing else needs to be exposed to the internet.
-	if wecomKey, err := secretbox.LoadKey("MULTICA_WECOM_SECRET_KEY"); err == nil {
-		box, err := secretbox.New(wecomKey)
-		if err != nil {
-			slog.Error("wecom: secretbox.New failed; wecom integration disabled", "error", err)
-		} else {
-			credsResolver, err := wecom.NewSecretboxCredentialsResolver(box)
-			if err != nil {
-				slog.Error("wecom: credentials resolver init failed; wecom integration disabled", "error", err)
-			} else {
-				wecomStore := wecom.NewStore(queries)
-				h.WecomStore = wecomStore
-				h.WecomCredentials = credsResolver
-
-				// Binding tokens back the per-user "link your Multica account"
-				// prompt sent to first-time WeCom senders. aibot userids are
-				// anonymized T-prefixed ids with no relation to real userids
-				// or emails, so an explicit binding table is the only correct
-				// answer — see wecom/binding.go for the rationale.
-				wecomBinding := wecom.NewBindingTokenService(queries, pool)
-				h.WecomBindingTokens = wecomBinding
-
-				// Senders registry: the wecom OutboundReplier is created here
-				// at boot, but the live wsSender it needs to push
-				// aibot_send_msg only exists inside a running wecomChannel.
-				// wecom.NewSendersRegistry mints a shared map; the
-				// ChannelDeps write side and the Replier read side both
-				// receive it, and each Channel.Connect self-registers on
-				// entry and clears on exit.
-				wecomSenders := wecom.NewSendersRegistry()
-
-				wecomReplier := wecom.NewOutboundReplier(wecom.OutboundReplierConfig{
-					Binding: wecomBinding,
-					Senders: wecomSenders,
-					AppURL:  appURLFromEnv(),
-					Logger:  slog.Default(),
-				})
-
-				// Wecom shares the engine.ChatSession (channel_type-keyed) so
-				// /issue, dedup, and run-triggering behave identically across
-				// platforms. Session titles use the wecom-flavored wording
-				// (Chinese product voice — wecom deployments are China-only).
-				wecomSession := engine.NewChatSession(queries, pool, wecom.TypeWecom, engine.SessionTitles{
-					Group:    "企业微信群聊",
-					Direct:   "企业微信单聊",
-					Fallback: "企业微信会话",
-				})
-
-				wecom.RegisterWecom(channelRegistry, wecom.ChannelDeps{
-					Credentials: credsResolver,
-					Senders:     wecomSenders,
-					Metrics:     wecomMetricsOrNil(opts.WecomMetrics),
-					Logger:      slog.Default(),
-				})
-				// Inbound media: a callback carries a pre-signed COS url and
-				// a per-url key, so the resolver needs no WeCom credential —
-				// only somewhere durable to put the bytes. Without an object
-				// store there is nothing to point an attachment at, so the
-				// resolver is left nil and attachments stay as their
-				// placeholder text. Same nil-guard as DingTalk above.
-				var wecomMedia engine.MediaResolver
-				if store != nil {
-					wecomMedia = wecom.NewMediaResolver(
-						store,
-						engine.NewDBMediaIntentLedger(queries),
-						wecomSenders,
-						slog.Default(),
-					)
-				}
-				channelRouter.Register(wecom.TypeWecom, wecom.NewResolverSet(
-					wecomStore, wecomSession, wecomReplier, wecomMedia,
-				))
-
-				// EventChatDone subscriber: pushes the agent's chat reply
-				// back over the same aibot WebSocket the inbound loop owns.
-				// Mirrors slack.NewOutbound(...).Register(bus). Without it
-				// the agent's reply lands only in Multica's web UI — the
-				// user in WeCom sees no response.
-				//
-				// WithAttachments adds the second hop: the files the agent
-				// bound to that reply are read back out of object storage and
-				// sent into the chat behind it. Passed only when this
-				// deployment configured storage — with none there is nothing
-				// to read an attachment out of, and the option is what the
-				// delivery path checks for.
-				//
-				// DeclareChannelFileDelivery is the same condition said to the
-				// agent: a run only gets told it can send a file where this
-				// branch actually built the hop that sends it. The two lines
-				// sit together on purpose — a deployment that has the storage
-				// and a deployment whose agents are promised delivery must be
-				// the same deployment, and the only way to keep that true is
-				// for one `if` to decide both.
-				wecomOutboundOpts := []wecom.OutboundOption{}
-				if store != nil {
-					wecomOutboundOpts = append(wecomOutboundOpts, wecom.WithAttachments(store))
-					h.DeclareChannelFileDelivery(string(wecom.TypeWecom))
-				}
-				wecom.NewOutbound(queries, wecomSenders, slog.Default(), wecomOutboundOpts...).Register(bus)
-
-				// Ranges the media fetcher may dial despite looking reserved.
-				// Empty by default, which leaves the SSRF guard exactly as
-				// strict as it ships. A deployment behind a fake-IP proxy
-				// needs it: there, every public hostname resolves into the
-				// proxy's pool (198.18.0.0/15 is the common one), so WeCom's
-				// own COS host is indistinguishable from a metadata endpoint
-				// by address alone and every attachment is refused.
-				if raw := strings.TrimSpace(os.Getenv("MULTICA_WECOM_MEDIA_ALLOW_CIDRS")); raw != "" {
-					for _, err := range wecom.SetMediaAllowedPrefixes(strings.Split(raw, ",")) {
-						slog.Error("wecom: ignoring malformed media allow cidr", "error", err)
-					}
-					slog.Warn("wecom: media guard has an operator allow-list; those ranges are reachable by a URL WeCom supplies",
-						"cidrs", raw)
-				}
-
-				// Frame tracing: off unless an operator asks for it. It
-				// records a bounded prefix of message text, so the fact that
-				// it is on has to be visible in the log it is writing into —
-				// otherwise a session gets left switched on and nobody
-				// notices message content accumulating.
-				if wecom.SetTrace(os.Getenv("MULTICA_WECOM_TRACE") == "1") {
-					slog.Warn("wecom: frame tracing ON — records message text; unset MULTICA_WECOM_TRACE when done")
-				}
-
-				slog.Info("wecom integration enabled (smart bot, long connection)")
-				// SINGLE-REPLICA CONSTRAINT: WeCom outbound (agent replies +
-				// inbox pushes) is delivered only by the replica holding each
-				// bot's in-process WebSocket lease. On a multi-replica
-				// deployment, an EventChatDone/EventInboxNew published on another
-				// replica cannot reach the lease holder, so those replies are
-				// dropped. This is stated conditionally rather than gated on a
-				// replica-count signal: the server has no reliable count here,
-				// and REDIS_URL means "Redis configured" (it also gates rate
-				// limiting), not "more than one replica". See wecom/outbound.go
-				// and SELF_HOSTING.md. Remove once outbound routes to the lease
-				// holder.
-				slog.Warn("wecom integration: WeCom agent replies and inbox pushes are delivered only by the replica holding each bot's WebSocket lease. If you run more than one backend replica, responses produced on a replica that does not hold the lease will be dropped — run the WeCom-enabled backend as a single replica until cross-replica outbound routing is implemented.")
-			}
-		}
-	} else {
-		slog.Info("wecom integration disabled (MULTICA_WECOM_SECRET_KEY not set)")
-	}
-
-	// Composio integration (MUL-3720). Gated by COMPOSIO_API_KEY plus the
-	// composio_mcp_apps feature flag. The env var is the project-scoped key the
-	// standalone SDK authenticates Composio with (sent as x-api-key; the project
-	// is resolved from the key, so NO project id is configured). When unset or
-	// flag-disabled the whole block is skipped and the composio HTTP handlers
-	// return 503; existing deployments are unaffected. An operator opts in by
-	// setting COMPOSIO_API_KEY plus a callback base
-	// (COMPOSIO_CALLBACK_BASE_URL, falling back to MULTICA_PUBLIC_URL). The
-	// toolkit→auth-config mapping is NOT configured here — it is resolved
-	// dynamically from the project's /auth_configs at request time, so enabling
-	// a toolkit is a dashboard action, not a redeploy. State signing uses
-	// COMPOSIO_STATE_SECRET, or a key derived from JWT_SECRET when that is unset.
-	if composioAPIKey := strings.TrimSpace(os.Getenv("COMPOSIO_API_KEY")); composioAPIKey != "" {
-		if !featureflags.ComposioMCPAppsEnabled(context.Background(), opts.FeatureFlags) {
-			slog.Info("composio integration disabled (feature flag off)")
-		} else {
-			sdkClient, err := composiosdk.NewClient(composiosdk.Options{APIKey: composioAPIKey})
-			if err != nil {
-				slog.Error("composio: SDK client init failed; composio integration disabled", "error", err)
-			} else {
-				stateSecret := composioStateSecret()
-				callbackBase := composioCallbackBaseURL(signupConfig.PublicURL)
-				switch {
-				case len(stateSecret) == 0:
-					slog.Error("composio: no state secret (set COMPOSIO_STATE_SECRET or JWT_SECRET); composio integration disabled")
-				case callbackBase == "":
-					slog.Error("composio: no callback base url (set COMPOSIO_CALLBACK_BASE_URL or MULTICA_PUBLIC_URL); composio integration disabled")
-				default:
-					svc, serr := composiointeg.NewService(sdkClient, queries, composiointeg.Config{
-						StateSecret:     stateSecret,
-						CallbackBaseURL: callbackBase,
-						FrontendBaseURL: appURLFromEnv(),
-					})
-					if serr != nil {
-						slog.Error("composio: service init failed; composio integration disabled", "error", serr)
-					} else {
-						h.Composio = svc
-						// Stage 3 (MUL-3721) hook: feed the per-task MCP
-						// overlay builder into TaskService so every Enqueue*
-						// path attaches the initiator user's Composio session
-						// URL to the task row before the daemon claims it.
-						// taskSvc already exists by this point — it was
-						// constructed inside NewHandler — and exposes its
-						// Composio field for exactly this kind of late wiring,
-						// so no Handler-level mutation is needed.
-						if h.TaskService != nil {
-							h.TaskService.Composio = svc
-						}
-						slog.Info("composio integration enabled")
-					}
-				}
-			}
-		}
-	} else {
-		slog.Info("composio integration disabled (COMPOSIO_API_KEY not set)")
-	}
-
 	// VCS at-rest encryption: the box encrypts per-workspace access tokens and
 	// webhook secrets for token-based providers (Forgejo / Gitea / GitLab).
 	// Without it, connect/webhook handlers return 503 (so a misconfigured
 	// self-host never stores plaintext secrets).
-	if vcsKey, err := secretbox.LoadKey("MULTICA_VCS_SECRET_KEY"); err == nil {
+	if vcsKey, err := secretbox.LoadKey("LIEXIU_VCS_SECRET_KEY"); err == nil {
 		box, err := secretbox.New(vcsKey)
 		if err != nil {
 			slog.Error("vcs: secretbox.New failed; vcs integration disabled", "error", err)
@@ -861,7 +266,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 			slog.Info("vcs integration enabled")
 		}
 	} else {
-		slog.Info("vcs integration disabled (MULTICA_VCS_SECRET_KEY not set)")
+		slog.Info("vcs integration disabled (LIEXIU_VCS_SECRET_KEY not set)")
 	}
 
 	if opts.HeartbeatScheduler != nil {
@@ -878,14 +283,14 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 	h.DaemonTokenCache = daemonTokenCache
 	h.MembershipCache = auth.NewMembershipCache(rdb)
 
-	// Cloud PAT verifier: validates mcn_ tokens against Multica Cloud
+	// Cloud PAT verifier: validates mcn_ tokens against LieXiu Cloud
 	// Fleet. Returns nil when no Fleet URL is configured — the Auth /
 	// DaemonAuth middlewares treat nil as "mcn_ not supported" and
 	// reject with 401, instead of falling through to mul_/JWT paths.
-	// Reuses MULTICA_CLOUD_FLEET_URL (the same URL the cloud-runtime
+	// Reuses LIEXIU_CLOUD_FLEET_URL (the same URL the cloud-runtime
 	// proxy uses) so a deployment doesn't need a second config knob.
 	cloudPATVerifier := auth.NewCloudPATVerifier(auth.CloudPATVerifierConfig{
-		FleetBaseURL: signupConfig.CloudRuntimeFleetURL,
+		FleetBaseURL: instanceConfig.CloudRuntimeFleetURL,
 		Redis:        rdb,
 	})
 
@@ -918,10 +323,10 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 	// Share allowed origins with WebSocket origin checker.
 	realtime.SetAllowedOrigins(origins)
 
-	// Share the same trusted-proxy CIDRs (MULTICA_TRUSTED_PROXIES) so the
+	// Share the same trusted-proxy CIDRs (LIEXIU_TRUSTED_PROXIES) so the
 	// WebSocket origin check honors X-Forwarded-Host only from trusted proxies,
 	// using one config source instead of a parallel one.
-	realtime.SetTrustedProxies(signupConfig.TrustedProxies)
+	realtime.SetTrustedProxies(instanceConfig.TrustedProxies)
 
 	r.Use(cors.Handler(cors.Options{
 		AllowedOrigins:   origins,
@@ -998,52 +403,22 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 	}
 	trustedProxies := middleware.ParseTrustedProxies(os.Getenv("RATE_LIMIT_TRUSTED_PROXIES"))
 	authRL := middleware.RateLimit(rdb, envPositiveInt("RATE_LIMIT_AUTH", 5), time.Minute, trustedProxies)
-	authVerifyRL := middleware.RateLimit(rdb, envPositiveInt("RATE_LIMIT_AUTH_VERIFY", 20), time.Minute, trustedProxies)
-	contactSalesRL := middleware.RateLimit(rdb, envPositiveInt("RATE_LIMIT_CONTACT_SALES", 5), time.Hour, trustedProxies)
-	r.With(authRL).Post("/auth/send-code", h.SendCode)
-	r.With(authVerifyRL).Post("/auth/verify-code", h.VerifyCode)
-	r.With(authRL).Post("/auth/google", h.GoogleLogin)
 	r.Post("/auth/logout", h.Logout)
+	r.Get("/api/bootstrap/status", h.GetLocalBootstrapStatus)
+	r.With(authRL).Post("/api/bootstrap", h.BootstrapLocalOwner)
 
 	// Public API
 	r.Get("/api/config", h.GetConfig)
-	r.With(contactSalesRL).Post("/api/contact-sales", h.CreateContactSales)
 
-	// Webhook ingress for autopilots. Outside the authenticated group on
-	// purpose: the bearer token in the URL path IS the credential. Workspace
-	// context is derived from the trigger row, never from request headers.
-	r.Post("/api/webhooks/autopilots/{token}", h.HandleAutopilotWebhook)
-	// GitHub App webhook (no Multica auth — requests are authenticated via
+	// GitHub App webhook (no LieXiu auth — requests are authenticated via
 	// HMAC-SHA256 signature in the handler) and post-install setup callback.
 	r.Post("/api/webhooks/github", h.HandleGitHubWebhook)
 	r.Get("/api/github/setup", h.GitHubSetupCallback)
-	// Slack OAuth callback (no Multica auth in the path — it is hit by Slack's
-	// browser redirect; the workspace/agent/initiator are recovered from the
-	// sealed state). It exchanges the code, upserts the install, then bounces
-	// the browser back to Settings → Integrations.
-	// VCS webhook for token-based providers (Forgejo / Gitea / GitLab). No Multica
+	// VCS webhook for token-based providers (Forgejo / Gitea / GitLab). No LieXiu
 	// auth — authenticated per-connection by the provider's signature scheme;
 	// the connection id in the path selects the workspace, provider, and
 	// decryption secret.
 	r.Post("/api/webhooks/vcs/{connectionId}", h.HandleVCSWebhook)
-	// Stripe webhook (no Multica auth — Stripe signs the raw body
-	// with a shared secret, the multica-cloud upstream verifies. We
-	// only forward the bytes + the Stripe-Signature header; see
-	// HandleCloudBillingStripeWebhook for the rationale).
-	r.Post("/api/webhooks/stripe", h.HandleCloudBillingStripeWebhook)
-
-	// Composio OAuth callback (MUL-3843). NOT under the Auth group on purpose:
-	// Composio 302-redirects the user's browser here at the end of the OAuth
-	// flow, and the cookie session is frequently absent (expired session,
-	// SameSite=Strict / Safari ITP stripping cross-site cookies, private
-	// windows, self-hosted callbacks on a different subdomain). Identity is NOT
-	// taken from the session — it comes from the HMAC-signed `state` query
-	// param, which CompleteCallback verifies (signature, expiry, replay) before
-	// doing anything. h.Composio == nil still returns 503. Keeping it inside the
-	// Auth group made a missing cookie a hard 401, breaking the flow for exactly
-	// the browsers above; the other four composio endpoints stay session-gated.
-	r.Get("/api/integrations/composio/callback", h.ComposioCallback)
-
 	// Daemon API routes (require daemon token or valid user token)
 	r.Route("/api/daemon", func(r chi.Router) {
 		r.Use(middleware.DaemonAuth(queries, patCache, daemonTokenCache, cloudPATVerifier))
@@ -1083,8 +458,6 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 
 		r.Post("/workspaces/{workspaceId}/issues/gc-check", h.BatchIssueGCCheck)
 		r.Get("/issues/{issueId}/gc-check", h.GetIssueGCCheck)
-		r.Get("/chat-sessions/{sessionId}/gc-check", h.GetChatSessionGCCheck)
-		r.Get("/autopilot-runs/{runId}/gc-check", h.GetAutopilotRunGCCheck)
 		r.Get("/tasks/{taskId}/gc-check", h.GetTaskGCCheck)
 
 		r.Post("/runtimes/{runtimeId}/recover-orphans", h.RecoverOrphanedTasks)
@@ -1099,20 +472,8 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 		// --- User-scoped routes (no workspace context required) ---
 		r.Get("/api/me", h.GetMe)
 		r.Patch("/api/me", h.UpdateMe)
-		r.Patch("/api/me/onboarding", h.PatchOnboarding)
-		r.Post("/api/me/onboarding/complete", h.CompleteOnboarding)
-		r.Post("/api/me/onboarding/cloud-waitlist", h.JoinCloudWaitlist)
-		// DEPRECATED — shim routes for desktop < v3 during the rollout
-		// window. v3 frontend creates the Helper agent + starter issue
-		// via generic CreateAgent / CreateIssue and only calls /complete
-		// here. Remove once X-Client-Version telemetry confirms zero
-		// pre-v3 desktops are still calling these. Handlers live in
-		// server/internal/handler/onboarding_shim.go.
-		r.Post("/api/me/onboarding/runtime-bootstrap", h.BootstrapOnboardingRuntime)
-		r.Post("/api/me/onboarding/no-runtime-bootstrap", h.BootstrapOnboardingNoRuntime)
 		r.Post("/api/cli-token", h.IssueCliToken)
 		r.Post("/api/upload-file", h.UploadFile)
-		r.Post("/api/feedback", h.CreateFeedback)
 		r.With(handler.RequireHumanActor).Post("/api/client-usage", h.UpsertClientUsage)
 
 		// Note (MUL-4309): the generic OpenAI-compatible passthrough endpoints
@@ -1136,16 +497,13 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 		r.Get("/api/attachments/{id}/download", h.DownloadAttachment)
 
 		r.Route("/api/workspaces", func(r chi.Router) {
-			r.Get("/", h.ListWorkspaces)
-			r.Post("/", h.CreateWorkspace)
+			r.Get("/canonical", h.GetCanonicalWorkspace)
 			r.Route("/{id}", func(r chi.Router) {
 				// Member-level access
 				r.Group(func(r chi.Router) {
 					r.Use(middleware.RequireWorkspaceMemberFromURL(queries, "id"))
 					r.Get("/", h.GetWorkspace)
 					r.Get("/members", h.ListMembersWithUser)
-					r.Post("/leave", h.LeaveWorkspace)
-					r.Get("/invitations", h.ListWorkspaceInvitations)
 					// Listing GitHub installations is member-visible so the
 					// integrations tab no longer renders blank for non-admins;
 					// the handler strips the management handle and adds a
@@ -1160,39 +518,18 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 					// are admin-gated below).
 					r.Get("/runtime-profiles", h.ListRuntimeProfiles)
 					r.Get("/runtime-profiles/{profileId}", h.GetRuntimeProfile)
-					r.Get("/plugins", h.ListPlugins)
-					r.Get("/plugins/private", h.ListPrivatePlugins)
-					r.Get("/plugins/private/{pluginRef}", h.GetPrivatePluginStatus)
-					r.Get("/plugins/catalog", h.ListPluginCatalog)
-					r.Get("/plugins/catalog/{pluginKey}", h.GetPluginCatalogRelease)
 				})
 				// Admin-level access
 				r.Group(func(r chi.Router) {
 					r.Use(middleware.RequireWorkspaceRoleFromURL(queries, "id", "owner", "admin"))
 					r.Put("/", h.UpdateWorkspace)
 					r.Patch("/", h.UpdateWorkspace)
-					r.Post("/members", h.CreateInvitation)
-					r.Route("/members/{memberId}", func(r chi.Router) {
-						r.Patch("/", h.UpdateMember)
-						r.Delete("/", h.DeleteMember)
-					})
-					r.Delete("/invitations/{invitationId}", h.RevokeInvitation)
 					// Custom runtime profile mutations (admin-only).
 					r.Post("/runtime-profiles", h.CreateRuntimeProfile)
 					r.Patch("/runtime-profiles/{profileId}", h.UpdateRuntimeProfile)
 					r.Put("/runtime-profiles/{profileId}", h.UpdateRuntimeProfile)
 					r.Delete("/runtime-profiles/{profileId}", h.DeleteRuntimeProfile)
-					r.Post("/plugins/install", h.InstallPlugin)
-					r.Post("/plugins/private/install", h.InstallPrivatePlugin)
-					r.Post("/plugins/{installationId}/upgrade", h.UpgradePlugin)
-					r.Post("/plugins/{installationId}/enable", h.EnablePlugin)
-					r.Post("/plugins/{installationId}/disable", h.DisablePlugin)
-					r.Post("/plugins/{installationId}/rollback", h.RollbackPlugin)
-					r.Delete("/plugins/{installationId}", h.UninstallPlugin)
 				})
-				// Owner-only access
-				r.With(middleware.RequireWorkspaceRoleFromURL(queries, "id", "owner")).Delete("/", h.DeleteWorkspace)
-
 				// GitHub integration — connect / disconnect remain admin-only;
 				// the read-only list endpoint lives in the member-level group
 				// above so non-admins can see the workspace's connection state.
@@ -1207,104 +544,8 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 					r.Delete("/vcs/connections/{connectionId}", h.DeleteVCSConnection)
 				})
 
-				// Lark integration. Every endpoint here only requires
-				// workspace membership at the router; the real authorization
-				// is per-agent and enforced inside each handler via
-				// canManageAgent (agent owner OR workspace owner/admin), so an
-				// agent's owner can bind/manage their own agent's Bot without
-				// being a workspace admin (MUL-4213). The router can't make
-				// that call itself: begin identifies the agent by an
-				// `agent_id` query param and revoke by an installation id,
-				// neither of which is a URL param the role middleware sees.
-				//   - Listing stays member-visible (same rationale as GitHub:
-				//     the Integrations tab must render for non-admins so they
-				//     see "wired up by whom").
-				//   - Begin / status / revoke each load the target agent and
-				//     run canManageAgent (status gates on the session
-				//     initiator or an admin) before doing anything.
-				r.Group(func(r chi.Router) {
-					r.Use(middleware.RequireWorkspaceMemberFromURL(queries, "id"))
-					r.Get("/lark/installations", h.ListLarkInstallations)
-					r.Delete("/lark/installations/{installationId}", h.RevokeLarkInstallation)
-					// Device-flow scan-to-install. Begin opens a new
-					// registration session against Lark and returns
-					// the QR-code URL; the frontend dialog then polls
-					// /install/{sessionId}/status until success or
-					// terminal failure.
-					r.Post("/lark/install/begin", h.BeginLarkInstall)
-					r.Get("/lark/install/{sessionId}/status", h.GetLarkInstallStatus)
-				})
-
-				// Slack integration (MUL-3666). Same admin/member split as
-				// Lark: listing is member-visible; OAuth begin + revoke are
-				// admin-only. The OAuth callback itself is a public route (it is
-				// hit by Slack's browser redirect with no workspace in the path)
-				// and is registered outside this workspace group.
-				r.Group(func(r chi.Router) {
-					r.Use(middleware.RequireWorkspaceMemberFromURL(queries, "id"))
-					r.Get("/slack/installations", h.ListSlackInstallations)
-					r.Get("/wecom/installations", h.ListWecomInstallations)
-				})
-				r.Group(func(r chi.Router) {
-					r.Use(middleware.RequireWorkspaceRoleFromURL(queries, "id", "owner", "admin"))
-					r.Delete("/slack/installations/{installationId}", h.RevokeSlackInstallation)
-					r.Post("/slack/install/byo", h.RegisterSlackBYO)
-					r.Delete("/wecom/installations/{installationId}", h.RevokeWecomInstallation)
-					r.Post("/wecom/install/byo", h.RegisterWecomBYO)
-				})
-
-				r.Group(func(r chi.Router) {
-					r.Use(middleware.RequireWorkspaceMemberFromURL(queries, "id"))
-					r.Get("/dingtalk/installations", h.ListDingTalkInstallations)
-					r.Get("/dingtalk/group-routes", h.ListDingTalkGroupRoutes)
-				})
-				r.Group(func(r chi.Router) {
-					r.Use(middleware.RequireWorkspaceRoleFromURL(queries, "id", "owner", "admin"))
-					r.Delete("/dingtalk/installations/{installationId}", h.RevokeDingTalkInstallation)
-					r.Post("/dingtalk/install/byo", h.RegisterDingTalkBYO)
-					r.Patch("/dingtalk/group-routes/{routeId}", h.UpdateDingTalkGroupRoute)
-				})
 			})
 		})
-
-		// Lark binding-token redemption. NOT workspace-scoped because
-		// the redeemer hits this BEFORE they have any workspace
-		// context — the redemption itself is what mints their
-		// lark_user_binding row. Identity comes from the session;
-		// the token only proves "this open_id requested binding," and
-		// is combined with the logged-in user to create the mapping.
-		r.Post("/api/lark/binding/redeem", h.RedeemLarkBindingToken)
-		// Slack binding-token redemption. Same rationale as Lark: NOT
-		// workspace-scoped because the redeemer hits this before they have any
-		// workspace context — the redemption itself mints their binding row. The
-		// logged-in user (from the session) is bound to the Slack id the token
-		// carries.
-		r.Post("/api/slack/binding/redeem", h.RedeemSlackBindingToken)
-		// DingTalk binding redemption is user-scoped for the same reason as
-		// Slack: the token is redeemed before workspace context is selected.
-		r.Post("/api/dingtalk/binding/redeem", h.RedeemDingTalkBindingToken)
-		// WeCom smart-bot binding-token redemption. Same rationale as
-		// Lark/Slack: the session is the source of truth for the redeemer's
-		// Multica identity; the token only carries the WeCom userid to bind.
-		r.Post("/api/wecom/binding/redeem", h.RedeemWecomBindingToken)
-
-		// Composio integration (MUL-3720). User-scoped (no workspace context):
-		// a connection belongs to a user. These four require a logged-in
-		// session; the OAuth callback is the outlier and lives outside the Auth
-		// group (registered above with the other public OAuth/webhook routes —
-		// see MUL-3843). All return 503 when COMPOSIO_API_KEY is unset.
-		r.Route("/api/integrations/composio", func(r chi.Router) {
-			r.Post("/connect/init", h.ComposioConnectInit)
-			r.Get("/toolkits", h.ListComposioToolkits)
-			r.Get("/connections", h.ListComposioConnections)
-			r.Delete("/connections/{id}", h.DeleteComposioConnection)
-		})
-
-		// User-scoped invitation routes (no workspace context required)
-		r.Get("/api/invitations", h.ListMyInvitations)
-		r.Get("/api/invitations/{id}", h.GetMyInvitation)
-		r.Post("/api/invitations/{id}/accept", h.AcceptInvitation)
-		r.Post("/api/invitations/{id}/decline", h.DeclineInvitation)
 
 		r.Route("/api/tokens", func(r chi.Router) {
 			r.Get("/", h.ListPersonalAccessTokens)
@@ -1313,70 +554,21 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 			r.Delete("/{id}", h.RevokePersonalAccessToken)
 		})
 
-		// Cloud Billing proxy. Same upstream service / port as
-		// cloud-runtime — multica-cloud's Fleet and Billing share
-		// :8080 and the same chi router. All routes here forward
-		// to /api/v1/billing/* with X-User-ID stamped from the
-		// authenticated context.
-		//
-		// User-scoped (account-level), NOT workspace-scoped — sits
-		// outside the RequireWorkspaceMember group so a user can
-		// inspect their balance, top up, and open the Billing Portal
-		// without an active workspace selected. The upstream owner
-		// model is single-user; X-Workspace-ID would be ignored even
-		// if we sent it. The Stripe webhook is the public outlier
-		// and lives outside the entire Auth group (see above).
-		//
-		// IMPORTANT — task-token actors are blocked here. The Auth
-		// middleware happily turns an mat_ task token into a normal
-		// X-User-ID stamp (so agents can comment, claim issues, etc.
-		// as their owner), but billing is account-level and a running
-		// agent reading its owner's balance / opening a checkout
-		// session is the kind of lateral-movement we're explicitly
-		// trying to prevent. handler.RequireHumanActor checks the
-		// authoritative server-set X-Actor-Source header and 403s
-		// any task-token request. See actor_guards.go for the full
-		// rationale.
-		r.Route("/api/cloud-billing", func(r chi.Router) {
-			r.Use(handler.RequireHumanActor)
-
-			r.Get("/balance", h.GetCloudBillingBalance)
-			r.Get("/transactions", h.ListCloudBillingTransactions)
-			r.Get("/batches", h.ListCloudBillingBatches)
-			r.Get("/topups", h.ListCloudBillingTopups)
-			r.Get("/price-tiers", h.ListCloudBillingPriceTiers)
-			r.Post("/checkout-sessions", h.CreateCloudBillingCheckoutSession)
-			r.Get("/checkout-sessions/{sessionId}", h.GetCloudBillingCheckoutSession)
-			r.Post("/portal-sessions", h.CreateCloudBillingPortalSession)
-		})
-
-		// Workspace subscriptions use the same cloud transport and Stripe
-		// webhook as the existing owner-credit billing surface, but every request
-		// is workspace-scoped. Entitlements, summary and prices are
-		// member-readable; Checkout, seat reconcile, and Portal mutations require
-		// owner/admin. The handlers also enforce
-		// billing_workspace_subscriptions so a route refactor cannot
-		// accidentally bypass the rollout flag.
-		r.Route("/api/cloud-subscriptions", func(r chi.Router) {
-			r.Use(handler.RequireHumanActor)
-
-			r.Group(func(r chi.Router) {
-				r.Use(middleware.RequireWorkspaceMember(queries))
-				r.Get("/entitlements", h.GetCloudWorkspaceEntitlements)
-				r.Get("/summary", h.GetCloudWorkspaceSubscriptionSummary)
-				r.Get("/prices", h.GetCloudWorkspaceSubscriptionPrices)
-			})
-			r.Group(func(r chi.Router) {
-				r.Use(middleware.RequireWorkspaceRole(queries, "owner", "admin"))
-				r.Post("/checkout-sessions", h.CreateCloudWorkspaceSubscriptionCheckout)
-				r.Post("/seats/reconcile", h.ReconcileCloudWorkspaceSubscriptionSeats)
-				r.Post("/portal-sessions", h.CreateCloudWorkspaceSubscriptionPortal)
-			})
-		})
-
 		// --- Workspace-scoped routes (all require workspace membership) ---
 		r.Group(func(r chi.Router) {
 			r.Use(middleware.RequireWorkspaceMember(queries))
+
+			// Mission orchestration read model. All three visualization surfaces
+			// consume these workspace-scoped projections.
+			r.Route("/api/missions/{id}", func(r chi.Router) {
+				r.Get("/", h.GetMissionProjection)
+				r.Post("/start", h.StartMission)
+				r.Post("/cancel", h.CancelMission)
+				r.Get("/activities", h.ListMissionActivities)
+				r.Get("/runs/{runID}", h.GetMissionRunDetail)
+				r.Post("/budget/approve", h.ApproveMissionBudget)
+				r.Post("/tasks/{taskNodeID}/retry", h.RetryMissionTask)
+			})
 
 			// Assignee frequency
 			r.Get("/api/assignee-frequency", h.GetAssigneeFrequency)
@@ -1395,8 +587,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 				// (agents-working ids facet) — see QueryIssues.
 				r.Post("/query", h.QueryIssues)
 				r.Post("/", h.CreateIssue)
-				r.Post("/quick-create", h.QuickCreateIssue)
-				r.Post("/preview-trigger", h.PreviewIssueTrigger)
+				r.Post("/quick-create", h.QuickCreateMission)
 				r.Post("/batch-update", h.BatchUpdateIssues)
 				r.Post("/batch-delete", h.BatchDeleteIssues)
 				r.Route("/{id}", func(r chi.Router) {
@@ -1408,10 +599,6 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 					r.Post("/comments", h.CreateComment)
 					r.Get("/comments", h.ListComments)
 					r.Get("/timeline", h.ListTimeline)
-					r.Get("/subscribers", h.ListIssueSubscribers)
-					r.Post("/subscribe", h.SubscribeToIssue)
-					r.Post("/unsubscribe", h.UnsubscribeFromIssue)
-					r.Post("/unsubscribe/subtree", h.UnsubscribeFromIssueSubtree)
 					r.Get("/active-task", h.GetActiveTaskForIssue)
 					r.Post("/tasks/{taskId}/cancel", h.CancelTask)
 					r.Post("/rerun", h.RerunIssue)
@@ -1419,8 +606,6 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 					r.Post("/quick-actions/{quickActionId}/render", h.RenderQuickAction)
 					r.Get("/task-runs", h.ListTasksByIssue)
 					r.Get("/usage", h.GetIssueUsage)
-					r.Post("/reactions", h.AddIssueReaction)
-					r.Delete("/reactions", h.RemoveIssueReaction)
 					r.Get("/attachments", h.ListAttachments)
 					r.Get("/children", h.ListChildIssues)
 					r.Get("/labels", h.ListLabelsForIssue)
@@ -1429,8 +614,6 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 					r.Get("/metadata", h.ListIssueMetadata)
 					r.Put("/metadata/{key}", h.SetIssueMetadataKey)
 					r.Delete("/metadata/{key}", h.DeleteIssueMetadataKey)
-					r.Put("/properties/{propertyId}", h.SetIssueProperty)
-					r.Delete("/properties/{propertyId}", h.DeleteIssueProperty)
 					r.Get("/pull-requests", h.ListPullRequestsForIssue)
 				})
 			})
@@ -1446,16 +629,6 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 				r.Route("/{id}", func(r chi.Router) {
 					r.Patch("/", h.UpdateQuickAction)
 					r.Delete("/", h.DeleteQuickAction)
-				})
-			})
-
-			// Custom issue properties (definitions; values live under /api/issues/{id}/properties)
-			r.Route("/api/properties", func(r chi.Router) {
-				r.Get("/", h.ListProperties)
-				r.Post("/", h.CreateProperty)
-				r.Route("/{id}", func(r chi.Router) {
-					r.Get("/", h.GetProperty)
-					r.Patch("/", h.UpdateProperty)
 				})
 			})
 
@@ -1486,73 +659,6 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 				})
 			})
 
-			// Squads
-			r.Route("/api/squads", func(r chi.Router) {
-				r.Get("/", h.ListSquads)
-				r.Post("/", h.CreateSquad)
-				r.Route("/{id}", func(r chi.Router) {
-					r.Get("/", h.GetSquad)
-					r.Put("/", h.UpdateSquad)
-					r.Delete("/", h.DeleteSquad)
-					r.Get("/members", h.ListSquadMembers)
-					r.Get("/members/status", h.ListSquadMemberStatus)
-					r.Post("/members", h.AddSquadMember)
-					r.Delete("/members", h.RemoveSquadMember)
-					r.Patch("/members/role", h.UpdateSquadMemberRole)
-				})
-			})
-
-			// Squad leader evaluation (writes to activity_log)
-			r.Post("/api/issues/{id}/squad-evaluated", h.RecordSquadLeaderEvaluation)
-
-			// Autopilots
-			r.Route("/api/autopilots", func(r chi.Router) {
-				r.Get("/", h.ListAutopilots)
-				r.Post("/", h.CreateAutopilot)
-				r.Get("/cron-preview", h.CronPreview)
-				r.Route("/{id}", func(r chi.Router) {
-					r.Get("/", h.GetAutopilot)
-					r.Patch("/", h.UpdateAutopilot)
-					r.Delete("/", h.DeleteAutopilot)
-					r.Post("/trigger", h.TriggerAutopilot)
-					r.Get("/runs", h.ListAutopilotRuns)
-					r.Get("/runs/{runId}", h.GetAutopilotRun)
-					r.Get("/deliveries", h.ListAutopilotDeliveries)
-					r.Get("/deliveries/{deliveryId}", h.GetAutopilotDelivery)
-					r.Post("/deliveries/{deliveryId}/replay", h.ReplayAutopilotDelivery)
-					r.Post("/triggers", h.CreateAutopilotTrigger)
-					r.Route("/triggers/{triggerId}", func(r chi.Router) {
-						r.Patch("/", h.UpdateAutopilotTrigger)
-						r.Delete("/", h.DeleteAutopilotTrigger)
-						r.Post("/rotate-webhook-token", h.RotateAutopilotTriggerWebhookToken)
-						r.Put("/signing-secret", h.SetAutopilotTriggerSigningSecret)
-					})
-					r.Post("/collaborators", h.AddAutopilotCollaborator)
-					r.Delete("/collaborators/{userId}", h.RemoveAutopilotCollaborator)
-				})
-			})
-
-			// Pins
-			r.Route("/api/pins", func(r chi.Router) {
-				r.Get("/", h.ListPins)
-				r.Post("/", h.CreatePin)
-				r.Put("/reorder", h.ReorderPins)
-				r.Delete("/{itemType}/{itemId}", h.DeletePin)
-			})
-
-			// Saved issue views (MUL-4796).
-			r.Get("/api/issue-view-preferences", h.GetIssueViewPreference)
-			r.Put("/api/issue-view-preferences", h.PutIssueViewPreference)
-			r.Route("/api/issue-views", func(r chi.Router) {
-				r.Get("/", h.ListIssueViews)
-				r.Post("/", h.CreateIssueView)
-				r.Route("/{id}", func(r chi.Router) {
-					r.Get("/", h.GetIssueViewByID)
-					r.Patch("/", h.UpdateIssueView)
-					r.Delete("/", h.DeleteIssueView)
-				})
-			})
-
 			// Attachments
 			r.Get("/api/attachments/{id}", h.GetAttachmentByID)
 			// /api/attachments/{id}/download is registered in the
@@ -1569,19 +675,12 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 				r.Delete("/", h.DeleteComment)
 				r.Post("/resolve", h.ResolveComment)
 				r.Delete("/resolve", h.UnresolveComment)
-				r.Post("/reactions", h.AddReaction)
-				r.Delete("/reactions", h.RemoveReaction)
 			})
 
 			// Agents
 			r.Route("/api/agents", func(r chi.Router) {
 				r.Get("/", h.ListAgents)
 				r.Post("/", h.CreateAgent)
-				// The workspace's built-in Chief of Staff. Server-owned: the
-				// caller supplies only a runtime and a language, so a client
-				// cannot mint an agent carrying `system_key` and thereby claim
-				// the system instruction layer. Idempotent per workspace.
-				r.Post("/mika", h.CreateMikaAgent)
 				r.Route("/{id}", func(r chi.Router) {
 					r.Get("/", h.GetAgent)
 					r.Put("/", h.UpdateAgent)
@@ -1606,18 +705,6 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 					r.Get("/env", h.GetAgentEnv)
 					r.Put("/env", h.UpdateAgentEnv)
 				})
-			})
-
-			r.Route("/api/agent-builder/sessions", func(r chi.Router) {
-				// The creation studio's unfinished drafts. Builder sessions are
-				// invisible to every chat list (their carrier is kind='system'),
-				// so this is the only route back to one.
-				r.Get("/", h.ListAgentBuilderSessions)
-				r.Post("/", h.CreateAgentBuilderSession)
-				r.Patch("/{sessionId}/runtime", h.SwitchAgentBuilderRuntime)
-				// Autosaved configuration, including edits the user has typed
-				// but not sent. Read back through the list above.
-				r.Put("/{sessionId}/draft", h.SaveAgentBuilderDraft)
 			})
 
 			// Skills
@@ -1720,149 +807,10 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 			// Workspace-wide 30-day run counts per agent for the Agents-list RUNS column.
 			r.Get("/api/agent-run-counts", h.GetWorkspaceAgentRunCounts)
 
-			r.Route("/api/chat/sessions", func(r chi.Router) {
-				r.Post("/", h.CreateChatSession)
-				r.Get("/", h.ListChatSessions)
-				r.Route("/{sessionId}", func(r chi.Router) {
-					r.Get("/", h.GetChatSession)
-					r.Patch("/", h.UpdateChatSession)
-					r.Patch("/pin", h.SetChatSessionPinned)
-					r.Patch("/archive", h.SetChatSessionArchived)
-					r.Delete("/", h.DeleteChatSession)
-					r.Post("/messages", h.SendChatMessage)
-					r.Post("/onboarding", h.StartMikaOnboarding)
-					// Explicit "refresh" of a turn's quick actions: re-runs the
-					// daemon suggestion pass for the latest assistant reply (MUL-5149).
-					r.Post("/quick-actions/regenerate", h.RegenerateChatQuickActions)
-					r.Get("/messages", h.ListChatMessages)
-					r.Get("/messages/page", h.ListChatMessagesPage)
-					r.Get("/pending-task", h.GetPendingChatTask)
-					r.Delete("/queued-tasks", h.ClearQueuedChatTasks)
-					r.Post("/queued-tasks/{taskId}/prioritize", h.PrioritizeQueuedChatTask)
-					r.Post("/read", h.MarkChatSessionRead)
-					// Deferred-cancellation draft restores (#5219):
-					// creator-only fetch + idempotent consume.
-					r.Get("/draft-restores", h.ListChatDraftRestores)
-					r.Delete("/draft-restores/{restoreId}", h.ConsumeChatDraftRestore)
-				})
-			})
-			r.Get("/api/chat/pending-tasks", h.ListPendingChatTasks)
-			r.Get("/api/chat/pending-tasks/has-any", h.HasPendingChatTasks)
-
-			// Quick-agent bar: per-user pinned agents for one-tap new chats.
-			r.Get("/api/chat/pinned-agents", h.ListChatPinnedAgents)
-			r.Post("/api/chat/pinned-agents", h.PinChatAgent)
-			r.Delete("/api/chat/pinned-agents/{agentId}", h.UnpinChatAgent)
-
-			// Agent-facing channel reads (MUL-3871). The caller's task-scoped token
-			// resolves to its own chat session; no session/channel id is passed, so
-			// an agent can only read its own conversation. `history` is the channel
-			// overview (top-level messages + thread metadata); `thread` reads one
-			// thread (?id for a specific one, else the thread the session is in).
-			r.Get("/api/chat/history", h.GetChatChannelHistory)
-			r.Get("/api/chat/thread", h.GetChatThread)
-
-			// Inbox
-			r.Route("/api/inbox", func(r chi.Router) {
-				r.Get("/", h.ListInbox)
-				// Archived notifications, for the inbox's "Archived" sub-view.
-				// Separate from "/" so the main list keeps its contract and
-				// never carries the unbounded archive.
-				r.Get("/archived", h.ListArchivedInbox)
-				r.Get("/unread-count", h.CountUnreadInbox)
-				// Cross-workspace unread summary: account-level, keyed on the
-				// user. Backs the workspace-switcher dot for OTHER workspaces.
-				r.Get("/unread-summary", h.UnreadInboxSummary)
-				r.Post("/mark-all-read", h.MarkAllInboxRead)
-				r.Post("/archive-all", h.ArchiveAllInbox)
-				r.Post("/archive-all-read", h.ArchiveAllReadInbox)
-				r.Post("/archive-completed", h.ArchiveCompletedInbox)
-				r.Post("/{id}/read", h.MarkInboxRead)
-				r.Post("/{id}/unread", h.MarkInboxUnread)
-				r.Post("/{id}/archive", h.ArchiveInboxItem)
-				r.Post("/{id}/unarchive", h.UnarchiveInboxItem)
-			})
-
-			// Notification preferences
-			r.Route("/api/notification-preferences", func(r chi.Router) {
-				r.Get("/", h.GetNotificationPreferences)
-				r.Patch("/", h.PatchNotificationPreferences)
-				r.Put("/", h.UpdateNotificationPreferences)
-			})
 		})
 	})
 
 	return r, h
-}
-
-// buildLarkConnector wires the real WS long-conn connector that talks
-// to /callback/ws/endpoint directly with app_id/app_secret. The
-// connector wraps every read with a ctx-cancel watchdog so lease loss /
-// shutdown breaks the blocking ReadMessage in bounded time — the
-// invariant §4.4 leans on. A single connector instance serves every
-// installation; its Run is parameterized by the installation, so the
-// feishuChannel hands it the per-installation row.
-//
-// If the endpoint fetcher fails to initialize (typically a malformed
-// MULTICA_LARK_CALLBACK_BASE_URL), we log and fall back to the
-// NoopConnector so the lease / supervisor lifecycle still exercises
-// against real DB rows. Inbound messages are silently dropped until
-// the config is fixed; the boot log labels the mode "noop" so the
-// degraded state is visible.
-//
-// Returns the connector plus a short label for the boot log:
-// "ws-long-conn" in the healthy case, "noop" in the fallback case.
-func buildLarkConnector(installSvc *lark.InstallationService, apiClient lark.APIClient) (lark.EventConnector, string) {
-	endpointFetcher, err := lark.NewHTTPConnectionTokenFetcher(lark.HTTPConnectionTokenConfig{
-		BaseURL: strings.TrimSpace(os.Getenv("MULTICA_LARK_CALLBACK_BASE_URL")),
-		Logger:  slog.Default(),
-	})
-	if err != nil {
-		slog.Error("lark ws: endpoint fetcher init failed; falling back to noop", "error", err)
-		return lark.NewNoopConnector(slog.Default()), "noop"
-	}
-	decoder := lark.NewLarkJSONFrameDecoder()
-	dialer := lark.NewGorillaDialer()
-	if proxyURL := strings.TrimSpace(os.Getenv("MULTICA_LARK_WS_PROXY_URL")); proxyURL != "" {
-		dialer.ProxyURL = proxyURL
-	}
-	credsProvider := lark.CredentialsProviderFunc(func(ctx context.Context, inst lark.Installation) (lark.InstallationCredentials, error) {
-		secret, err := installSvc.DecryptAppSecret(inst)
-		if err != nil {
-			return lark.InstallationCredentials{}, err
-		}
-		creds := lark.InstallationCredentials{
-			AppID:     inst.AppID,
-			AppSecret: secret,
-			Region:    lark.RegionOrDefault(inst.Region),
-		}
-		if inst.TenantKey.Valid {
-			creds.TenantKey = inst.TenantKey.String
-		}
-		return creds, nil
-	})
-	// Inbound enricher: expands quoted replies / forwarded bundles AND
-	// prefetches a window of surrounding group history (MUL-3084) into the
-	// agent's body via the IM API before dispatch. It shares the
-	// connector's resolved credentials and runs under the connector's
-	// EnrichTimeout so it cannot overrun the Lark long-conn ACK budget.
-	enricher := lark.NewInboundEnricher(apiClient, lark.InboundEnricherConfig{
-		RecentContextSize: lark.DefaultRecentContextSize,
-		Logger:            slog.Default(),
-	})
-	conn, err := lark.NewWSLongConnConnector(lark.WSConnectorConfig{
-		Dialer:              dialer,
-		EndpointFetcher:     endpointFetcher,
-		FrameDecoder:        decoder,
-		Enricher:            enricher,
-		CredentialsProvider: credsProvider,
-		Logger:              slog.Default(),
-	})
-	if err != nil {
-		slog.Error("lark ws: connector init failed; falling back to noop", "error", err)
-		return lark.NewNoopConnector(slog.Default()), "noop"
-	}
-	return conn, "ws-long-conn"
 }
 
 // membershipChecker implements realtime.MembershipChecker using database queries.
@@ -1924,8 +872,8 @@ func parseUUID(s string) pgtype.UUID {
 // optionalUUID returns a NULL pgtype.UUID for an empty string and otherwise
 // behaves like parseUUID. Use this for actor IDs on events where the producer
 // may legitimately be a "system" actor with no member/agent attribution
-// (e.g. GitHub webhook auto-status sync) — the activity_log and inbox_item
-// tables both allow actor_id to be NULL.
+// (e.g. GitHub webhook auto-status sync) — activity_log allows actor_id to be
+// NULL.
 func optionalUUID(s string) pgtype.UUID {
 	if s == "" {
 		return pgtype.UUID{}
@@ -1949,47 +897,8 @@ func splitAndTrim(s string) []string {
 }
 
 func cloudRuntimeFleetURLFromEnv() string {
-	if url := strings.TrimSpace(os.Getenv("MULTICA_CLOUD_FLEET_URL")); url != "" {
+	if url := strings.TrimSpace(os.Getenv("LIEXIU_CLOUD_FLEET_URL")); url != "" {
 		return url
 	}
-	return strings.TrimSpace(os.Getenv("MULTICA_FLEET_URL"))
-}
-
-// composioStateSecret resolves the HMAC key for the connect-state. Prefers an
-// explicit COMPOSIO_STATE_SECRET; otherwise derives a composio-specific key
-// from JWT_SECRET via SHA-256 so the two signing domains never share an
-// identical key. Returns nil when neither is set (composio stays disabled).
-func composioStateSecret() []byte {
-	if v := strings.TrimSpace(os.Getenv("COMPOSIO_STATE_SECRET")); v != "" {
-		return []byte(v)
-	}
-	if v := strings.TrimSpace(os.Getenv("JWT_SECRET")); v != "" {
-		sum := sha256.Sum256([]byte("composio-state:" + v))
-		return sum[:]
-	}
-	return nil
-}
-
-// composioCallbackBaseURL resolves the public API base used to build the
-// Composio callback URL. Prefers COMPOSIO_CALLBACK_BASE_URL, then the
-// already-resolved MULTICA_PUBLIC_URL, then the app URL.
-func composioCallbackBaseURL(publicURL string) string {
-	if v := strings.TrimRight(strings.TrimSpace(os.Getenv("COMPOSIO_CALLBACK_BASE_URL")), "/"); v != "" {
-		return v
-	}
-	if publicURL != "" {
-		return publicURL
-	}
-	return appURLFromEnv()
-}
-
-// wecomMetricsOrNil keeps a typed nil out of the adapter's interface field.
-// A *WecomMetrics that is nil still satisfies wecom.Metrics, so assigning it
-// directly would give the adapter a non-nil interface holding a nil pointer —
-// and the first counter call would panic on a deployment with /metrics off.
-func wecomMetricsOrNil(m *obsmetrics.WecomMetrics) wecom.Metrics {
-	if m == nil {
-		return nil
-	}
-	return m
+	return strings.TrimSpace(os.Getenv("LIEXIU_FLEET_URL"))
 }

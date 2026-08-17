@@ -8,10 +8,10 @@ import type {
   AgentPermissionMode,
   AgentVisibility,
   MemberWithUser,
-} from "@multica/core/types";
-import { effectiveAccessScope } from "@multica/core/agents";
-import { Button } from "@multica/ui/components/ui/button";
-import { Checkbox } from "@multica/ui/components/ui/checkbox";
+} from "@liexiu/core/types";
+import { effectiveAccessScope } from "@liexiu/core/agents";
+import { Button } from "@liexiu/ui/components/ui/button";
+import { Checkbox } from "@liexiu/ui/components/ui/checkbox";
 import { ActorAvatar } from "../../../common/actor-avatar";
 import { useT } from "../../../i18n";
 
@@ -46,7 +46,6 @@ export function AccessPicker({
   members,
   ownerId,
   canEdit = true,
-  hasComposioAllowlist = false,
   onDirtyChange,
   onReadyChange,
   onChange,
@@ -58,7 +57,6 @@ export function AccessPicker({
   members: MemberWithUser[];
   ownerId?: string | null;
   canEdit?: boolean;
-  hasComposioAllowlist?: boolean;
   onDirtyChange?: (dirty: boolean) => void;
   /** Notified when the draft becomes committable / non-committable.
    *  The optional second argument is the current AccessChange when the draft
@@ -314,14 +312,6 @@ export function AccessPicker({
               {t(($) => $.access.shared_target_required)}
             </p>
           ) : null}
-        </div>
-      ) : null}
-
-      {hasComposioAllowlist && persistedPrivate && draftScope !== "private" ? (
-        <div className="border-t border-surface-border bg-muted/20 px-4 py-4 sm:px-6">
-          <p className="border-l-2 border-warning pl-3 text-caption leading-5 text-muted-foreground">
-            {t(($) => $.access.composio_switch_hint)}
-          </p>
         </div>
       ) : null}
 

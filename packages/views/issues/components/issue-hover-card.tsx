@@ -2,15 +2,15 @@
 
 import type { ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { childIssueProgressOptions, issueDetailOptions } from "@multica/core/issues/queries";
-import { useWorkspaceId } from "@multica/core/hooks";
-import { useActorName } from "@multica/core/workspace/hooks";
+import { childIssueProgressOptions, issueDetailOptions } from "@liexiu/core/issues/queries";
+import { useWorkspaceId } from "@liexiu/core/hooks";
+import { useActorName } from "@liexiu/core/workspace/hooks";
 import {
   HoverCard,
   HoverCardTrigger,
   HoverCardContent,
-} from "@multica/ui/components/ui/hover-card";
-import { Skeleton } from "@multica/ui/components/ui/skeleton";
+} from "@liexiu/ui/components/ui/hover-card";
+import { Skeleton } from "@liexiu/ui/components/ui/skeleton";
 import { useT } from "../../i18n";
 import { ActorAvatar } from "../../common/actor-avatar";
 import { descriptionPreview } from "./description-preview";

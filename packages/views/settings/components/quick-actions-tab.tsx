@@ -14,27 +14,29 @@ import {
   Search,
   Trash2,
   TriangleAlert,
+  Bot,
   Zap,
 } from "lucide-react";
 import { toast } from "sonner";
-import { useWorkspaceId } from "@multica/core/hooks";
+import { useWorkspaceId } from "@liexiu/core/hooks";
+import { isAgentRuntimeBound } from "@liexiu/core/agents";
 import {
   quickActionListOptions,
   useCreateQuickAction,
   useDeleteQuickAction,
   useUpdateQuickAction,
-} from "@multica/core/quick-actions";
+} from "@liexiu/core/quick-actions";
+import { agentListOptions } from "@liexiu/core/workspace/queries";
 import type {
   QuickAction,
-  QuickActionAssigneeType,
   QuickActionVisibility,
-} from "@multica/core/types";
-import { findQuickActionTemplateToken } from "@multica/core/types";
-import { Button } from "@multica/ui/components/ui/button";
-import { Badge } from "@multica/ui/components/ui/badge";
-import { Input } from "@multica/ui/components/ui/input";
-import { Textarea } from "@multica/ui/components/ui/textarea";
-import { Label as FieldLabel } from "@multica/ui/components/ui/label";
+} from "@liexiu/core/types";
+import { findQuickActionTemplateToken } from "@liexiu/core/types";
+import { Button } from "@liexiu/ui/components/ui/button";
+import { Badge } from "@liexiu/ui/components/ui/badge";
+import { Input } from "@liexiu/ui/components/ui/input";
+import { Textarea } from "@liexiu/ui/components/ui/textarea";
+import { Label as FieldLabel } from "@liexiu/ui/components/ui/label";
 import {
   Dialog,
   DialogContent,
@@ -42,7 +44,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@multica/ui/components/ui/dialog";
+} from "@liexiu/ui/components/ui/dialog";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -52,15 +54,22 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "@multica/ui/components/ui/alert-dialog";
+} from "@liexiu/ui/components/ui/alert-dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-} from "@multica/ui/components/ui/dropdown-menu";
-import { cn } from "@multica/ui/lib/utils";
-import { AgentPicker } from "../../autopilots/components/pickers/agent-picker";
+} from "@liexiu/ui/components/ui/dropdown-menu";
+import { cn } from "@liexiu/ui/lib/utils";
+import { ActorAvatar } from "../../common/actor-avatar";
+import {
+  PickerEmpty,
+  PickerItem,
+  PickerSection,
+  PropertyPicker,
+} from "../../issues/components/pickers/property-picker";
+import { matchesPinyin } from "../../editor/extensions/pinyin-match";
 import { useT } from "../../i18n";
 import { SettingsTab } from "./settings-layout";
 
@@ -159,7 +168,7 @@ function TargetLine({ action, t }: { action: QuickAction; t: QuickActionsT }) {
 interface FormState {
   name: string;
   description: string;
-  assigneeType: QuickActionAssigneeType;
+  assigneeType: "agent";
   assigneeId: string;
   prompt: string;
   visibility: QuickActionVisibility;
@@ -178,11 +187,83 @@ function toFormState(action: QuickAction): FormState {
   return {
     name: action.name,
     description: action.description,
-    assigneeType: action.assignee_type === "squad" ? "squad" : "agent",
+    assigneeType: "agent",
     assigneeId: action.assignee_id,
     prompt: action.prompt,
     visibility: action.visibility === "private" ? "private" : "public",
   };
+}
+
+function QuickActionAgentPicker({
+  assigneeId,
+  onChange,
+}: {
+  assigneeId: string;
+  onChange: (id: string) => void;
+}) {
+  const wsId = useWorkspaceId();
+  const { data: agents = [] } = useQuery(agentListOptions(wsId));
+  const [open, setOpen] = useState(false);
+  const [filter, setFilter] = useState("");
+  const activeAgents = useMemo(() => agents.filter((agent) => !agent.archived_at), [agents]);
+  const selected = activeAgents.find((agent) => agent.id === assigneeId);
+  const query = filter.trim().toLowerCase();
+  const filtered = activeAgents.filter(
+    (agent) =>
+      !query ||
+      agent.name.toLowerCase().includes(query) ||
+      matchesPinyin(agent.name, query),
+  );
+
+  return (
+    <PropertyPicker
+      open={open}
+      onOpenChange={setOpen}
+      width="w-56"
+      searchable
+      searchPlaceholder="Filter agents"
+      onSearchChange={setFilter}
+      trigger={
+        selected ? (
+          <>
+            <ActorAvatar actorType="agent" actorId={selected.id} size="sm" showStatusDot />
+            <span className="truncate">{selected.name}</span>
+          </>
+        ) : (
+          <>
+            <Bot className="size-3" />
+            <span>Select agent</span>
+          </>
+        )
+      }
+    >
+      {filtered.length === 0 ? (
+        <PickerEmpty />
+      ) : (
+        <PickerSection label="Agents">
+          {filtered.map((agent) => {
+            const runtimeBound = isAgentRuntimeBound(agent);
+            return (
+              <PickerItem
+                key={agent.id}
+                selected={agent.id === assigneeId}
+                disabled={!runtimeBound}
+                tooltip={runtimeBound ? undefined : "Runtime required"}
+                onClick={() => {
+                  if (!runtimeBound) return;
+                  onChange(agent.id);
+                  setOpen(false);
+                }}
+              >
+                <ActorAvatar actorType="agent" actorId={agent.id} size="sm" showStatusDot />
+                <span className="truncate">{agent.name}</span>
+              </PickerItem>
+            );
+          })}
+        </PickerSection>
+      )}
+    </PropertyPicker>
+  );
 }
 
 export function QuickActionsTab() {
@@ -545,11 +626,9 @@ function QuickActionDialog({
 
           <div className="space-y-1.5">
             <FieldLabel>{t(($) => $.quick_actions.field_target)}</FieldLabel>
-            <AgentPicker
-              assignee={form.assigneeId ? { type: form.assigneeType, id: form.assigneeId } : null}
-              onChange={(next) =>
-                setForm((f) => ({ ...f, assigneeType: next.type, assigneeId: next.id }))
-              }
+            <QuickActionAgentPicker
+              assigneeId={form.assigneeId}
+              onChange={(id) => setForm((f) => ({ ...f, assigneeId: id }))}
             />
             {/* Public promises "everyone can run this", so the server refuses a
                 target the team cannot invoke. Saying so here turns a 400 into

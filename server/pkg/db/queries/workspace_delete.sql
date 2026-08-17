@@ -5,7 +5,7 @@
 -- name: SetWorkspaceTeardownMode :exec
 -- The setting is transaction-local. Migration 242 makes only the three DELETE
 -- dirty triggers skip their per-row work while this flag is on.
-SELECT set_config('multica.workspace_teardown', 'on', true);
+SELECT set_config('liexiu.workspace_teardown', 'on', true);
 
 -- name: LockTaskUsageRollupForWorkspaceDelete :exec
 -- Advisory lock 4246 is the hourly rollup family's key: the rollup function
@@ -27,8 +27,7 @@ SELECT pg_advisory_xact_lock(4246);
 -- FOR UPDATE. Holding these locks for the rest of the teardown transaction
 -- therefore blocks any enqueue (or reassignment) that would add a task to this
 -- workspace after we have swept it, which row locks on the tasks alone cannot
--- do. Same technique the handler already uses on the workspace row to keep
--- CreateChatSession out of the delete window.
+-- do. The handler holds the workspace row lock for the full delete window.
 --
 -- This fence is defence in depth, not the only guarantee: deleteWorkspaceTasks
 -- re-verifies every owner after sweeping it and fails closed if tasks keep
@@ -176,20 +175,8 @@ LIMIT $3
 FOR UPDATE;
 
 -- name: DetachTaskBatchReferences :exec
--- Break inbound references to a task batch before deleting it, in the
--- application layer rather than through the FKs' ON DELETE SET NULL. Both
--- referencing columns are indexed (idx_agent_task_queue_parent from migration
--- 055, idx_autopilot_run_task_id from migration 277) so this stays a per-batch
--- index scan instead of the per-row full scan the FK action would do.
---
--- Kept separate from DeleteTaskBatch: a task can be both a member of the batch
--- and the parent of another member, and updating plus deleting the same row
--- inside one statement is not well defined.
-WITH detached_runs AS (
-    UPDATE autopilot_run
-    SET task_id = NULL
-    WHERE task_id = ANY(@task_ids::uuid[])
-)
+-- Break inbound task parent references before deleting the batch in the
+-- application layer rather than through the FK's ON DELETE SET NULL.
 UPDATE agent_task_queue
 SET parent_task_id = NULL
 WHERE parent_task_id = ANY(@task_ids::uuid[]);
@@ -211,15 +198,6 @@ deleted_task_messages AS (
 ),
 deleted_task_tokens AS (
     DELETE FROM task_token WHERE task_id IN (SELECT id FROM batch)
-),
-deleted_channel_outbound_cards AS (
-    DELETE FROM channel_outbound_card_message WHERE task_id IN (SELECT id FROM batch)
-),
-deleted_lark_outbound_cards AS (
-    DELETE FROM lark_outbound_card_message WHERE task_id IN (SELECT id FROM batch)
-),
-deleted_draft_restores AS (
-    DELETE FROM chat_draft_restore WHERE task_id IN (SELECT id FROM batch)
 )
 DELETE FROM agent_task_queue WHERE id IN (SELECT id FROM batch);
 
@@ -245,58 +223,40 @@ detached_comments AS (
     SET parent_id = NULL
     WHERE comment.workspace_id = $1
       AND parent_id IS NOT NULL
-),
-detached_issues AS (
-    UPDATE issue
-    SET parent_issue_id = NULL
-    WHERE issue.workspace_id = $1
-      AND parent_issue_id IS NOT NULL
 )
-UPDATE webhook_delivery
-SET replayed_from_delivery_id = NULL
-WHERE webhook_delivery.workspace_id = $1
-  AND replayed_from_delivery_id IS NOT NULL;
+UPDATE issue
+SET parent_issue_id = NULL
+WHERE issue.workspace_id = $1
+  AND parent_issue_id IS NOT NULL;
 
 -- name: DeleteWorkspaceLeafData :exec
 -- Everything task-keyed moved to DeleteTaskBatch, which runs in bounded batches
 -- before this step; what is left is keyed by the workspace or by one of the
 -- workspace-scoped id sets below.
 WITH
+delete_target AS (
+    SELECT $1::uuid AS target_id
+),
 ws_agents AS MATERIALIZED (
-    SELECT id FROM agent WHERE workspace_id = $1
+    SELECT id FROM agent WHERE workspace_id = (SELECT target_id FROM delete_target)
 ),
 ws_issues AS MATERIALIZED (
-    SELECT id FROM issue WHERE workspace_id = $1
+    SELECT id FROM issue WHERE workspace_id = (SELECT target_id FROM delete_target)
 ),
 ws_labels AS MATERIALIZED (
-    SELECT id FROM issue_label WHERE workspace_id = $1
+    SELECT id FROM issue_label WHERE workspace_id = (SELECT target_id FROM delete_target)
 ),
 ws_skills AS MATERIALIZED (
-    SELECT id FROM skill WHERE workspace_id = $1
-),
-ws_squads AS MATERIALIZED (
-    SELECT id FROM squad WHERE workspace_id = $1
-),
-ws_sessions AS MATERIALIZED (
-    SELECT id FROM chat_session WHERE workspace_id = $1
-),
-ws_autopilots AS MATERIALIZED (
-    SELECT id FROM autopilot WHERE workspace_id = $1
+    SELECT id FROM skill WHERE workspace_id = (SELECT target_id FROM delete_target)
 ),
 ws_github_prs AS MATERIALIZED (
-    SELECT id FROM github_pull_request WHERE workspace_id = $1
+    SELECT id FROM github_pull_request WHERE workspace_id = (SELECT target_id FROM delete_target)
 ),
 ws_vcs_prs AS MATERIALIZED (
-    SELECT id FROM vcs_pull_request WHERE workspace_id = $1
+    SELECT id FROM vcs_pull_request WHERE workspace_id = (SELECT target_id FROM delete_target)
 ),
 ws_vcs_connections AS MATERIALIZED (
-    SELECT id FROM vcs_connection WHERE workspace_id = $1
-),
-ws_channel_installations AS MATERIALIZED (
-    SELECT id FROM channel_installation WHERE workspace_id = $1
-),
-ws_lark_installations AS MATERIALIZED (
-    SELECT id FROM lark_installation WHERE workspace_id = $1
+    SELECT id FROM vcs_connection WHERE workspace_id = (SELECT target_id FROM delete_target)
 ),
 -- One of three explicit task_token paths. This is the workspace-keyed one;
 -- DeleteTaskBatch covers task_id and DeleteTaskTokensByAgent covers agent_id, so
@@ -306,55 +266,24 @@ ws_lark_installations AS MATERIALIZED (
 -- task_token (MUL-5999); split, each path is an index scan.
 deleted_task_tokens AS (
     DELETE FROM task_token
-    WHERE workspace_id = $1
+    WHERE workspace_id = (SELECT target_id FROM delete_target)
 ),
 deleted_hourly_dirty AS (
-    DELETE FROM task_usage_hourly_dirty WHERE workspace_id = $1
+    DELETE FROM task_usage_hourly_dirty WHERE workspace_id = (SELECT target_id FROM delete_target)
 ),
 deleted_hourly AS (
-    DELETE FROM task_usage_hourly WHERE workspace_id = $1
+    DELETE FROM task_usage_hourly WHERE workspace_id = (SELECT target_id FROM delete_target)
 ),
 deleted_attachments AS (
-    DELETE FROM attachment WHERE workspace_id = $1
-),
-deleted_channel_outbound_cards AS (
-    DELETE FROM channel_outbound_card_message
-    WHERE chat_session_id IN (SELECT id FROM ws_sessions)
-),
-deleted_lark_outbound_cards AS (
-    DELETE FROM lark_outbound_card_message
-    WHERE chat_session_id IN (SELECT id FROM ws_sessions)
-),
-deleted_draft_restores AS (
-    DELETE FROM chat_draft_restore
-    WHERE chat_session_id IN (SELECT id FROM ws_sessions)
-),
--- Same no-FK chore as chat_draft_restore above. Matched on workspace_id rather
--- than the session set because that column exists precisely so this statement
--- does not have to join through chat_session, which it deletes in this same CTE.
-deleted_agent_builder_drafts AS (
-    DELETE FROM agent_builder_draft WHERE workspace_id = $1
-),
-deleted_comment_reactions AS (
-    DELETE FROM comment_reaction WHERE workspace_id = $1
-),
-deleted_issue_reactions AS (
-    DELETE FROM issue_reaction WHERE workspace_id = $1
+    DELETE FROM attachment WHERE workspace_id = (SELECT target_id FROM delete_target)
 ),
 deleted_activity AS (
-    DELETE FROM activity_log WHERE workspace_id = $1
-),
-deleted_inbox AS (
-    DELETE FROM inbox_item WHERE workspace_id = $1
+    DELETE FROM activity_log WHERE workspace_id = (SELECT target_id FROM delete_target)
 ),
 deleted_issue_dependencies AS (
     DELETE FROM issue_dependency
     WHERE issue_id IN (SELECT id FROM ws_issues)
        OR depends_on_issue_id IN (SELECT id FROM ws_issues)
-),
-deleted_issue_subscribers AS (
-    DELETE FROM issue_subscriber
-    WHERE issue_id IN (SELECT id FROM ws_issues)
 ),
 deleted_issue_labels AS (
     DELETE FROM issue_to_label
@@ -398,23 +327,8 @@ deleted_daemon_connections AS (
     DELETE FROM daemon_connection
     WHERE agent_id IN (SELECT id FROM ws_agents)
 ),
-deleted_squad_members AS (
-    DELETE FROM squad_member
-    WHERE squad_id IN (SELECT id FROM ws_squads)
-),
 deleted_project_resources AS (
-    DELETE FROM project_resource WHERE workspace_id = $1
-),
-deleted_autopilot_collaborators AS (
-    DELETE FROM autopilot_collaborator
-    WHERE autopilot_id IN (SELECT id FROM ws_autopilots)
-),
-deleted_autopilot_subscribers AS (
-    DELETE FROM autopilot_subscriber
-    WHERE autopilot_id IN (SELECT id FROM ws_autopilots)
-),
-deleted_webhook_deliveries AS (
-    DELETE FROM webhook_delivery WHERE workspace_id = $1
+    DELETE FROM project_resource WHERE workspace_id = (SELECT target_id FROM delete_target)
 ),
 deleted_github_check_runs AS (
     DELETE FROM github_pull_request_check_run
@@ -425,87 +339,41 @@ deleted_github_check_suites AS (
     WHERE pr_id IN (SELECT id FROM ws_github_prs)
 ),
 deleted_pending_github_suites AS (
-    DELETE FROM github_pending_check_suite WHERE workspace_id = $1
+    DELETE FROM github_pending_check_suite WHERE workspace_id = (SELECT target_id FROM delete_target)
 ),
 deleted_vcs_commit_statuses AS (
     DELETE FROM vcs_commit_status
     WHERE connection_id IN (SELECT id FROM ws_vcs_connections)
-),
-deleted_channel_chat_bindings AS (
-    DELETE FROM channel_chat_session_binding
-    WHERE installation_id IN (SELECT id FROM ws_channel_installations)
-       OR chat_session_id IN (SELECT id FROM ws_sessions)
-),
-deleted_dingtalk_group_routes AS (
-    DELETE FROM dingtalk_group_route WHERE workspace_id = $1
-),
-deleted_channel_inbound_dedup AS (
-    DELETE FROM channel_inbound_message_dedup
-    WHERE installation_id IN (SELECT id FROM ws_channel_installations)
-),
-deleted_channel_inbound_audit AS (
-    DELETE FROM channel_inbound_audit
-    WHERE installation_id IN (SELECT id FROM ws_channel_installations)
-),
-deleted_channel_user_bindings AS (
-    DELETE FROM channel_user_binding WHERE workspace_id = $1
-),
-deleted_channel_binding_tokens AS (
-    DELETE FROM channel_binding_token WHERE workspace_id = $1
-),
-deleted_lark_chat_bindings AS (
-    DELETE FROM lark_chat_session_binding
-    WHERE installation_id IN (SELECT id FROM ws_lark_installations)
-       OR chat_session_id IN (SELECT id FROM ws_sessions)
-),
-deleted_lark_inbound_dedup AS (
-    DELETE FROM lark_inbound_message_dedup
-    WHERE installation_id IN (SELECT id FROM ws_lark_installations)
-),
-deleted_lark_inbound_audit AS (
-    DELETE FROM lark_inbound_audit
-    WHERE installation_id IN (SELECT id FROM ws_lark_installations)
-),
-deleted_lark_user_bindings AS (
-    DELETE FROM lark_user_binding WHERE workspace_id = $1
-),
-deleted_lark_binding_tokens AS (
-    DELETE FROM lark_binding_token WHERE workspace_id = $1
 )
--- Keep the two-system cleanup ledger until object storage has been settled.
--- Moving every row out of pending also prevents a concurrent media bind from
--- attaching an object after the workspace teardown commits. The reconciler
--- performs the idempotent object delete and clears the row afterwards.
-UPDATE channel_media_pending_object
-SET state = CASE
-        WHEN state = 'tombstoned' THEN 'tombstoned'
-        ELSE 'deleting'
-    END,
-    lease_token = NULL,
-    lease_expires_at = NULL,
-    next_attempt_at = now(),
-    last_error = NULL
-WHERE channel_media_pending_object.workspace_id = $1;
-
--- name: DeleteWorkspaceChatMessages :exec
-DELETE FROM chat_message
-WHERE chat_session_id IN (
-    SELECT id FROM chat_session WHERE chat_session.workspace_id = $1
-);
-
--- name: DeleteWorkspaceCommunicationRoots :exec
-WITH
-deleted_sessions AS (
-    DELETE FROM chat_session WHERE chat_session.workspace_id = $1
-),
-deleted_channel_installations AS (
-    DELETE FROM channel_installation
-    WHERE channel_installation.workspace_id = $1
-)
-DELETE FROM lark_installation WHERE lark_installation.workspace_id = $1;
+SELECT 1;
 
 -- name: DeleteWorkspaceComments :exec
 DELETE FROM comment WHERE comment.workspace_id = $1;
+
+-- name: DeleteWorkspaceOrchestrationData :exec
+-- Orchestration tables intentionally have no database cascades. Remove the
+-- relationship graph before deleting the Issue rows that provide Mission and
+-- TaskNode identity, so workspace teardown cannot leave cross-domain history.
+WITH
+deleted_review_verdicts AS (
+    DELETE FROM review_verdict WHERE review_verdict.workspace_id = $1
+),
+deleted_artifacts AS (
+    DELETE FROM artifact WHERE artifact.workspace_id = $1
+),
+deleted_activities AS (
+    DELETE FROM orchestration_activity WHERE orchestration_activity.workspace_id = $1
+),
+deleted_runs AS (
+    DELETE FROM orchestration_run WHERE orchestration_run.workspace_id = $1
+),
+deleted_assignments AS (
+    DELETE FROM orchestration_assignment WHERE orchestration_assignment.workspace_id = $1
+),
+deleted_task_nodes AS (
+    DELETE FROM task_node WHERE task_node.workspace_id = $1
+)
+DELETE FROM mission WHERE mission.workspace_id = $1;
 
 -- name: DeleteWorkspaceIssueRoots :exec
 WITH
@@ -514,38 +382,8 @@ deleted_issues AS (
 ),
 deleted_labels AS (
     DELETE FROM issue_label WHERE issue_label.workspace_id = $1
-),
-deleted_properties AS (
-    DELETE FROM issue_property WHERE issue_property.workspace_id = $1
-),
-deleted_issue_views AS (
-    DELETE FROM issue_view WHERE issue_view.workspace_id = $1
-),
-deleted_issue_view_preferences AS (
-    DELETE FROM issue_view_preference
-    WHERE issue_view_preference.workspace_id = $1
 )
 DELETE FROM quick_action WHERE quick_action.workspace_id = $1;
-
--- name: DeleteWorkspaceAutopilotRuns :exec
-DELETE FROM autopilot_run
-WHERE autopilot_id IN (
-    SELECT id FROM autopilot WHERE autopilot.workspace_id = $1
-);
-
--- name: DeleteWorkspaceAutopilotChildren :exec
-WITH
-deleted_triggers AS (
-    DELETE FROM autopilot_trigger
-    WHERE autopilot_id IN (
-        SELECT id FROM autopilot WHERE autopilot.workspace_id = $1
-    )
-)
-DELETE FROM autopilot_rule_version
-WHERE autopilot_rule_version.workspace_id = $1;
-
--- name: DeleteWorkspaceAutopilots :exec
-DELETE FROM autopilot WHERE autopilot.workspace_id = $1;
 
 -- name: DeleteWorkspacePullRequests :exec
 WITH deleted_github_prs AS (
@@ -561,69 +399,8 @@ WITH deleted_github_installations AS (
 )
 DELETE FROM vcs_connection WHERE vcs_connection.workspace_id = $1;
 
--- name: DeleteWorkspaceSquadsAndSkills :exec
-WITH deleted_squads AS (
-    DELETE FROM squad WHERE squad.workspace_id = $1
-)
+-- name: DeleteWorkspaceSkills :exec
 DELETE FROM skill WHERE skill.workspace_id = $1;
-
--- name: DeleteWorkspacePluginData :exec
--- Plugin relationships have no foreign keys or cascades. Delete the append-only
--- grant/binding history first, then installation rows. Global identity, release,
--- contribution, and artifact rows survive. Workspace-owned private registry
--- rows are removed after their execution manifests have been removed.
-WITH installations AS MATERIALIZED (
-    SELECT plugin_installation.id
-    FROM plugin_installation
-    WHERE plugin_installation.workspace_id = $1
-),
-private_identities AS MATERIALIZED (
-    SELECT plugin_identity.id
-    FROM plugin_identity
-    WHERE plugin_identity.owner_workspace_id = $1
-),
-private_releases AS MATERIALIZED (
-    SELECT plugin_release.id
-    FROM plugin_release
-    WHERE plugin_release.plugin_id IN (SELECT id FROM private_identities)
-),
-deleted_health AS (
-    DELETE FROM plugin_health
-    WHERE workspace_id = $1
-),
-deleted_execution_manifests AS (
-    DELETE FROM plugin_execution_manifest
-    WHERE workspace_id = $1
-),
-deleted_snapshots AS (
-    DELETE FROM plugin_capability_snapshot
-    WHERE workspace_id = $1
-),
-deleted_workspace_state AS (
-    DELETE FROM plugin_workspace_capability_state
-    WHERE workspace_id = $1
-),
-deleted_bindings AS (
-    DELETE FROM plugin_binding
-    WHERE installation_id IN (SELECT id FROM installations)
-),
-deleted_grants AS (
-    DELETE FROM plugin_grant
-    WHERE installation_id IN (SELECT id FROM installations)
-),
-deleted_installations AS (
-    DELETE FROM plugin_installation WHERE id IN (SELECT id FROM installations)
-),
-deleted_private_artifacts AS (
-    DELETE FROM plugin_artifact_file WHERE release_id IN (SELECT id FROM private_releases)
-),
-deleted_private_contributions AS (
-    DELETE FROM plugin_contribution WHERE release_id IN (SELECT id FROM private_releases)
-),
-deleted_private_releases AS (
-    DELETE FROM plugin_release WHERE id IN (SELECT id FROM private_releases)
-)
-DELETE FROM plugin_identity WHERE id IN (SELECT id FROM private_identities);
 
 -- name: DeleteWorkspaceAgents :exec
 DELETE FROM agent WHERE agent.workspace_id = $1;
@@ -643,20 +420,8 @@ WITH
 deleted_members AS (
     DELETE FROM member WHERE member.workspace_id = $1
 ),
-deleted_notification_preferences AS (
-    DELETE FROM notification_preference
-    WHERE notification_preference.workspace_id = $1
-),
-deleted_pins AS (
-    DELETE FROM pinned_item WHERE pinned_item.workspace_id = $1
-),
 deleted_daemon_tokens AS (
     DELETE FROM daemon_token WHERE daemon_token.workspace_id = $1
-),
-detached_feedback AS (
-    UPDATE feedback
-    SET workspace_id = NULL
-    WHERE feedback.workspace_id = $1
 ),
 detached_client_usage AS (
     UPDATE client_usage_daily

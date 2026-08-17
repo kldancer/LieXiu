@@ -25,24 +25,7 @@ const (
 	// Gated so only daemons+servers that both support it route claim over WS;
 	// everyone else keeps using the HTTP claim endpoint.
 	DaemonCapabilityRPCV1 = "rpc-v1"
-
-	// AppCapabilityChatDraftRestoreV1 is advertised (X-Client-Capabilities) by
-	// app clients that understand the durable draft-restore recovery path:
-	// chat:cancel_finalized as an invalidation hint plus the draft-restores
-	// endpoint. Cancelling a started-but-empty chat task defers the
-	// empty/non-empty judgment (#5219), so its cancel response carries no
-	// synchronous restore — a client without this capability would silently
-	// drop the user's prompt, and keeps the legacy synchronous restore instead.
-	AppCapabilityChatDraftRestoreV1 = "chat-draft-restore-v1"
 )
-
-// ChatQuickAction is a server-validated follow-up attached to one assistant
-// reply. Label is the concise chip text; Prompt is the full next user turn.
-type ChatQuickAction struct {
-	Label   string `json:"label"`
-	Prompt  string `json:"prompt"`
-	Primary bool   `json:"primary,omitempty"`
-}
 
 // RPCRequestPayload is the generic daemon→server request envelope carried in a
 // protocol.Message of type EventDaemonRPCRequest. RequestID correlates the
@@ -141,24 +124,6 @@ type TaskCompletedPayload struct {
 	Output string `json:"output,omitempty"`
 }
 
-// ChatQuickActionsPayload supplements one completed chat turn with the
-// sanitized follow-up actions from the daemon's suggestion pass. An empty
-// QuickActions list is a meaningful terminal state — it resolves the
-// pending skeleton with "no suggestions this turn".
-type ChatQuickActionsPayload struct {
-	ChatSessionID string            `json:"chat_session_id"`
-	TaskID        string            `json:"task_id"`
-	MessageID     string            `json:"message_id"`
-	QuickActions  []ChatQuickAction `json:"quick_actions"`
-	// Failed marks a supplement that resolves the client's refresh spinner
-	// because the regeneration FAILED (the provider pass or its delivery), not
-	// because it produced new suggestions. QuickActions then carries the turn's
-	// unchanged pills; the client shows a "couldn't refresh" notice instead of
-	// treating unchanged content as a silent success (MUL-5149). Omitted (false)
-	// on the normal success path and for the automatic best-effort pass.
-	Failed bool `json:"failed,omitempty"`
-}
-
 // TaskMessagePayload represents a single agent execution message (tool call, text, etc.)
 type TaskMessagePayload struct {
 	TaskID    string         `json:"task_id"`
@@ -184,136 +149,6 @@ type RuntimeInfo struct {
 	Type    string `json:"type"`
 	Version string `json:"version"`
 	Status  string `json:"status"`
-}
-
-// ChatMessagePayload is broadcast when a new chat message is created.
-type ChatMessagePayload struct {
-	ChatSessionID string `json:"chat_session_id"`
-	MessageID     string `json:"message_id"`
-	Role          string `json:"role"`
-	Content       string `json:"content"`
-	TaskID        string `json:"task_id,omitempty"`
-	CreatedAt     string `json:"created_at"`
-}
-
-// Chat message kinds (chat_message.message_kind). Additive: unknown values
-// degrade to ChatMessageKindMessage on older readers.
-const (
-	// ChatMessageKindMessage is an ordinary user/assistant message.
-	ChatMessageKindMessage = "message"
-	// ChatMessageKindNoResponse marks a direct-chat turn the agent completed
-	// without any text reply — a visible, deliberate terminal outcome rather
-	// than a silently-dropped turn (MUL-4351).
-	ChatMessageKindNoResponse = "no_response"
-	// ChatMessageKindOnboardingKickoff is the server-authored, hidden first
-	// turn used to start Mika's onboarding conversation. It is persisted so
-	// the runtime receives a normal immutable chat input batch. User-facing
-	// APIs filter it out; clients also ignore the kind defensively.
-	ChatMessageKindOnboardingKickoff = "onboarding_kickoff"
-	// ChatMessageKindOnboardingOpening marks the assistant reply produced by
-	// the onboarding kickoff. The kickoff row itself never reaches clients, so
-	// the opening self-describes: chat renders the starter cards under this
-	// kind instead of quick-action chips (MUL-5765).
-	ChatMessageKindOnboardingOpening = "onboarding_opening"
-)
-
-// ChatDonePayload is broadcast when an agent finishes responding to a chat
-// message. Carries the freshly-persisted assistant ChatMessage so the client
-// can write it into the messages cache inline — avoids a refetch round-trip
-// during the live-timeline → AssistantMessage handoff that previously caused
-// a visible flicker (#2123).
-//
-// MessageKind is additive (MUL-4351): older clients ignore it and fall back to
-// the non-empty Content the server always sends, so a no_response turn still
-// renders a real bubble instead of an empty one. Because direct-chat completion
-// now always writes exactly one assistant row (message or no_response),
-// MessageID/Content/CreatedAt/ElapsedMs are always populated for direct chat —
-// the omitempty tags only elide fields for the legacy paths that broadcast
-// without a row.
-type ChatDonePayload struct {
-	ChatSessionID string            `json:"chat_session_id"`
-	TaskID        string            `json:"task_id"`
-	MessageID     string            `json:"message_id,omitempty"`
-	Content       string            `json:"content,omitempty"`
-	ElapsedMs     int64             `json:"elapsed_ms,omitempty"`
-	CreatedAt     string            `json:"created_at,omitempty"`
-	MessageKind   string            `json:"message_kind,omitempty"`
-	QuickActions  []ChatQuickAction `json:"quick_actions,omitempty"`
-	// QuickActionsPending tells clients a chat:quick_actions supplement will
-	// follow for this turn (render a placeholder). Never true when
-	// QuickActions is already populated.
-	QuickActionsPending bool `json:"quick_actions_pending,omitempty"`
-}
-
-// Outcome values carried by ChatCancelFinalizedPayload.
-const (
-	// ChatCancelOutcomeStopped: the transcript turned out non-empty, so a
-	// "Stopped." assistant message was persisted.
-	ChatCancelOutcomeStopped = "stopped"
-	// ChatCancelOutcomeRestored: the transcript stayed empty, so the
-	// triggering user message was deleted and its content should be
-	// restored into the composer as a draft.
-	ChatCancelOutcomeRestored = "restored"
-)
-
-// ChatCancelFinalizedPayload is broadcast when a cancelled chat task's
-// deferred finalization settles (#5219). The cancel HTTP response cannot
-// carry this outcome — it is only known after the daemon's transcript flush —
-// so clients react to this event instead: outcome "stopped" inserts the
-// assistant message (MessageID/Content/... describe the new row, shaped like
-// ChatDonePayload), outcome "restored" removes the deleted user message from
-// caches and prompts the initiator's client to fetch the durable draft
-// restore from the creator-authorized endpoint. The restored prompt's content
-// and attachments deliberately never ride this workspace-wide broadcast.
-type ChatCancelFinalizedPayload struct {
-	Outcome       string `json:"outcome"`
-	ChatSessionID string `json:"chat_session_id"`
-	TaskID        string `json:"task_id"`
-	// InitiatorUserID is the human who triggered the cancelled task. Only
-	// this user's client needs to fetch the draft restore (the endpoint is
-	// creator-authorized regardless); clients treat a missing value as
-	// "not me".
-	InitiatorUserID string `json:"initiator_user_id,omitempty"`
-	MessageID       string `json:"message_id,omitempty"`
-	// Content/MessageKind/CreatedAt/ElapsedMs describe the persisted
-	// "Stopped." assistant row and are set only for outcome "stopped" —
-	// the same exposure surface as chat:done.
-	Content     string `json:"content,omitempty"`
-	MessageKind string `json:"message_kind,omitempty"`
-	CreatedAt   string `json:"created_at,omitempty"`
-	ElapsedMs   int64  `json:"elapsed_ms,omitempty"`
-}
-
-// ChatSessionReadPayload is broadcast when the creator marks a session as read.
-// Fires to other devices so their unread counts stay in sync.
-type ChatSessionReadPayload struct {
-	ChatSessionID string `json:"chat_session_id"`
-}
-
-// ChatSessionDeletedPayload is broadcast when a chat session is hard-deleted
-// so other tabs/devices drop it from their session lists and reset the active
-// pointer if it referenced the deleted session.
-type ChatSessionDeletedPayload struct {
-	ChatSessionID string `json:"chat_session_id"`
-}
-
-// ChatSessionUpdatedPayload is broadcast when a user-editable field on a
-// chat session changes (today: title via inline rename). Other tabs/devices
-// patch the session row in their cached list so the dropdown stays in sync
-// without a full refetch.
-type ChatSessionUpdatedPayload struct {
-	ChatSessionID string `json:"chat_session_id"`
-	Title         string `json:"title"`
-	// ProjectID is set only by the project-context update path. The double
-	// pointer distinguishes an omitted field from an explicit JSON null.
-	ProjectID **string `json:"project_id,omitempty"`
-	// Pinned is set only by the pin/unpin path; nil on a plain rename so a
-	// receiver leaves the existing pin state untouched.
-	Pinned *bool `json:"pinned,omitempty"`
-	// Status is set only by the archive/unarchive path ("active"/"archived");
-	// nil on rename/pin so a receiver leaves the existing status untouched.
-	Status    *string `json:"status,omitempty"`
-	UpdatedAt string  `json:"updated_at"`
 }
 
 // DaemonHeartbeatRequestPayload is sent from daemon to server over WebSocket

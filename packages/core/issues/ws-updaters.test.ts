@@ -11,10 +11,8 @@ import {
   onIssueDeleted,
   onIssueLabelsChanged,
   onIssueMetadataChanged,
-  onIssuePropertiesChanged,
   onIssueUpdated,
   patchIssueLabels,
-  patchIssueProperties,
 } from "./ws-updaters";
 import { issueKeys } from "./queries";
 import { labelKeys } from "../labels/queries";
@@ -25,10 +23,8 @@ import type {
   AgentTask,
   Attachment,
   Issue,
-  IssueReaction,
   IssueLabelsResponse,
   IssueTableRowsResponse,
-  IssueSubscriber,
   IssueUsageSummary,
   Label,
   ListIssuesCache,
@@ -80,7 +76,6 @@ const baseIssue: Issue = {
   start_date: null,
   due_date: null,
   metadata: {},
-  properties: {},
   labels: [labelA],
   created_at: "2025-01-01T00:00:00Z",
   updated_at: "2025-01-01T00:00:00Z",
@@ -334,106 +329,6 @@ describe("onIssueMetadataChanged", () => {
     qc.setQueryData<ListIssuesCache>(boardPositionKey, makeListCache(baseIssue));
 
     onIssueMetadataChanged(qc, WS_ID, ISSUE_ID, { foo: "bar" });
-
-    expectInvalidated(qc, boardUpdatedKey);
-    expect(qc.getQueryState(boardPositionKey)?.isInvalidated).toBe(false);
-  });
-});
-
-describe("issue property snapshots", () => {
-  it("patches per-parent children and invalidates every children projection on commit", () => {
-    const qc = new QueryClient();
-    const childrenKey = issueKeys.children(WS_ID, PARENT_ISSUE_ID);
-    const unrelatedKey = issueKeys.children(WS_ID, "parent-9");
-    const batchedKey = issueKeys.childrenByParents(WS_ID, [PARENT_ISSUE_ID]);
-    const child = {
-      ...parentedIssue,
-      properties: { estimate: 1, environment: "staging" },
-    };
-    const unrelated = [otherIssue];
-    qc.setQueryData<Issue[]>(childrenKey, [child, otherIssue]);
-    qc.setQueryData<Issue[]>(unrelatedKey, unrelated);
-    qc.setQueryData(batchedKey, new Map([[PARENT_ISSUE_ID, [child]]]));
-
-    // The optimistic leg is deterministic: patch immediately without a
-    // premature refetch that could still return the pre-mutation value.
-    patchIssueProperties(qc, WS_ID, ISSUE_ID, {
-      estimate: 2,
-      environment: "staging",
-    });
-
-    expect(
-      qc.getQueryData<Issue[]>(childrenKey)?.find((candidate) => candidate.id === ISSUE_ID)
-        ?.properties,
-    ).toEqual({ estimate: 2, environment: "staging" });
-    expect(qc.getQueryState(childrenKey)?.isInvalidated).toBe(false);
-    expect(qc.getQueryData<Issue[]>(unrelatedKey)).toBe(unrelated);
-
-    // The committed response/event keeps the immediate patch, then marks both
-    // per-parent and batched projections stale for authoritative convergence.
-    onIssuePropertiesChanged(qc, WS_ID, ISSUE_ID, {
-      estimate: 3,
-      environment: "staging",
-    });
-
-    expect(
-      qc.getQueryData<Issue[]>(childrenKey)?.find((candidate) => candidate.id === ISSUE_ID)
-        ?.properties,
-    ).toEqual({ estimate: 3, environment: "staging" });
-    expectInvalidated(qc, childrenKey);
-    expectInvalidated(qc, batchedKey);
-    expect(qc.getQueryData<Issue[]>(unrelatedKey)).toBe(unrelated);
-  });
-
-  it("keeps optimistic patches local, then invalidates property windows after commit", () => {
-    const qc = new QueryClient();
-    const flatKey = issueKeys.flat(
-      WS_ID,
-      "workspace:all",
-      {},
-      { sort_by: "property:estimate", properties: { estimate: ["3"] } },
-    );
-    qc.setQueryData(flatKey, {
-      pages: [{ issues: [baseIssue], total: 1 }],
-      pageParams: [0],
-    });
-    seedTableRow(qc);
-
-    patchIssueProperties(qc, WS_ID, ISSUE_ID, { estimate: 3 });
-
-    expect(qc.getQueryState(flatKey)?.isInvalidated).toBe(false);
-    expect(
-      qc.getQueryData<{ pages: { issues: Issue[] }[] }>(flatKey)?.pages[0]
-        ?.issues[0]?.properties,
-    ).toEqual({ estimate: 3 });
-    expect(
-      qc.getQueryData<IssueTableRowsResponse>(tableRowKey)?.rows[0]?.issue
-        .properties,
-    ).toEqual({ estimate: 3 });
-
-    onIssuePropertiesChanged(qc, WS_ID, ISSUE_ID, { estimate: 4 });
-
-    expectInvalidated(qc, flatKey);
-  });
-
-  it("re-sorts an updated_at-sorted board but not a position-sorted one after commit", () => {
-    // A property write also bumps updated_at server-side (MUL-5016), so a board
-    // sorted by "Updated date" (no property param) must refetch on commit while
-    // a position-sorted board stays put.
-    const qc = new QueryClient();
-    const boardUpdatedKey = issueKeys.listSorted(WS_ID, {
-      sort_by: "updated_at",
-      sort_direction: "desc",
-    });
-    const boardPositionKey = issueKeys.listSorted(WS_ID, { sort_by: "position" });
-    qc.setQueryData<ListIssuesCache>(boardUpdatedKey, makeListCache(baseIssue));
-    qc.setQueryData<ListIssuesCache>(boardPositionKey, makeListCache(baseIssue));
-
-    // Optimistic leg patches only — no premature refetch of either board.
-    patchIssueProperties(qc, WS_ID, ISSUE_ID, { estimate: 3 });
-    expect(qc.getQueryState(boardUpdatedKey)?.isInvalidated).toBe(false);
-
-    onIssuePropertiesChanged(qc, WS_ID, ISSUE_ID, { estimate: 4 });
 
     expectInvalidated(qc, boardUpdatedKey);
     expect(qc.getQueryState(boardPositionKey)?.isInvalidated).toBe(false);
@@ -785,25 +680,6 @@ describe("onIssueDeleted", () => {
         created_at: "2025-01-01T00:00:00Z",
       },
     ]);
-    qc.setQueryData<IssueReaction[]>(issueKeys.reactions(ISSUE_ID), [
-      {
-        id: "reaction-1",
-        issue_id: ISSUE_ID,
-        actor_type: "member",
-        actor_id: "user-1",
-        emoji: "+1",
-        created_at: "2025-01-01T00:00:00Z",
-      },
-    ]);
-    qc.setQueryData<IssueSubscriber[]>(issueKeys.subscribers(ISSUE_ID), [
-      {
-        issue_id: ISSUE_ID,
-        user_type: "member",
-        user_id: "user-1",
-        reason: "manual",
-        created_at: "2025-01-01T00:00:00Z",
-      },
-    ]);
     qc.setQueryData<IssueUsageSummary>(issueKeys.usage(ISSUE_ID), {
       total_input_tokens: 10,
       total_output_tokens: 20,
@@ -817,8 +693,6 @@ describe("onIssueDeleted", () => {
         workspace_id: WS_ID,
         issue_id: ISSUE_ID,
         comment_id: null,
-        chat_session_id: null,
-        chat_message_id: null,
         uploader_type: "member",
         uploader_id: "user-1",
         filename: "evidence.png",
@@ -847,8 +721,6 @@ describe("onIssueDeleted", () => {
 
     expect(qc.getQueryData(issueKeys.detail(WS_ID, ISSUE_ID))).toBeUndefined();
     expect(qc.getQueryData(issueKeys.timeline(ISSUE_ID))).toBeUndefined();
-    expect(qc.getQueryData(issueKeys.reactions(ISSUE_ID))).toBeUndefined();
-    expect(qc.getQueryData(issueKeys.subscribers(ISSUE_ID))).toBeUndefined();
     expect(qc.getQueryData(issueKeys.usage(ISSUE_ID))).toBeUndefined();
     expect(qc.getQueryData(issueKeys.attachments(ISSUE_ID))).toBeUndefined();
     expect(qc.getQueryData(issueKeys.tasks(ISSUE_ID))).toBeUndefined();

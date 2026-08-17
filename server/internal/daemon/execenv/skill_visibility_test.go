@@ -91,7 +91,6 @@ func TestRenderedSkillListsHideDisableModelInvocationSkills(t *testing.T) {
 	ctx := TaskContextForEnv{
 		IssueID:           "issue-1",
 		QuickCreatePrompt: "create something",
-		AutopilotRunID:    "run-1",
 		AgentName:         "Eve",
 		AgentID:           "eve-1",
 		AgentSkills: []SkillContextForEnv{
@@ -117,12 +116,10 @@ Hidden body.`,
 		},
 	}
 
-	// The brief is now the only Multica-rendered skill listing, for every kind.
+	// The brief is now the only LieXiu-rendered skill listing, for every kind.
 	for _, kind := range []TaskContextForEnv{
 		{IssueID: ctx.IssueID, AgentName: ctx.AgentName, AgentID: ctx.AgentID, AgentSkills: ctx.AgentSkills},
 		{QuickCreatePrompt: ctx.QuickCreatePrompt, AgentName: ctx.AgentName, AgentID: ctx.AgentID, AgentSkills: ctx.AgentSkills},
-		{AutopilotRunID: ctx.AutopilotRunID, AgentName: ctx.AgentName, AgentID: ctx.AgentID, AgentSkills: ctx.AgentSkills},
-		{ChatSessionID: "c-1", AgentName: ctx.AgentName, AgentID: ctx.AgentID, AgentSkills: ctx.AgentSkills},
 	} {
 		out := buildMetaSkillContent("codex", kind)
 		// Listings carry the on-disk slug, not the display name (MUL-5529).
@@ -137,12 +134,11 @@ Hidden body.`,
 		}
 	}
 
-	// issue_context.md and its quick-create / autopilot variants no longer
+	// issue_context.md and its quick-create variant no longer
 	// carry a skill list at all; nothing read that copy.
 	for name, out := range map[string]string{
 		"issue context": renderIssueContext("codex", TaskContextForEnv{IssueID: ctx.IssueID, AgentSkills: ctx.AgentSkills}),
 		"quick create":  renderQuickCreateContext(TaskContextForEnv{QuickCreatePrompt: ctx.QuickCreatePrompt, AgentSkills: ctx.AgentSkills}),
-		"autopilot":     renderAutopilotContext(TaskContextForEnv{AutopilotRunID: ctx.AutopilotRunID, AgentSkills: ctx.AgentSkills}),
 	} {
 		if strings.Contains(out, "## Agent Skills") || strings.Contains(out, "visible-skill") {
 			t.Errorf("%s still renders a skill list:\n%s", name, out)
@@ -152,7 +148,7 @@ Hidden body.`,
 
 // sanitizeSkillName is not injective — "A B" and "A-B" both reduce to "a-b" —
 // so a listing built from it alone names two skills identically while
-// writeSkillFiles puts the second in `a-b-multica`. The second skill then has
+// writeSkillFiles puts the second in `a-b-liexiu`. The second skill then has
 // no invocable name and the model is silently pointed at the first. This needs
 // no user-installed skill and no local_directory: an ordinary task with two
 // such skills bound reproduces it in a clean workdir.
@@ -229,11 +225,11 @@ func TestBatchSlugAllocationCountsHiddenSkills(t *testing.T) {
 		t.Fatalf("expected 1 visible skill, got %d", len(visible))
 	}
 	// The hidden skill took `a-b`, so the visible one must be listed — and
-	// written — as `a-b-multica`.
-	if visible[0].Name != "a-b-multica" {
-		t.Errorf("visible skill listed as %q, want %q", visible[0].Name, "a-b-multica")
+	// written — as `a-b-liexiu`.
+	if visible[0].Name != "a-b-liexiu" {
+		t.Errorf("visible skill listed as %q, want %q", visible[0].Name, "a-b-liexiu")
 	}
-	if _, err := os.Stat(filepath.Join(dir, "a-b-multica", "SKILL.md")); err != nil {
+	if _, err := os.Stat(filepath.Join(dir, "a-b-liexiu", "SKILL.md")); err != nil {
 		t.Errorf("listed name has no matching directory: %v", err)
 	}
 }

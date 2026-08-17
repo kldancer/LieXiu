@@ -1,10 +1,9 @@
 "use client";
 
 import { useMemo } from "react";
-import { CoreProvider } from "@multica/core/platform";
-import { createBrowserCookieLocaleAdapter } from "@multica/core/i18n/browser";
-import type { LocaleResources, SupportedLocale } from "@multica/core/i18n";
-import { useWelcomeStore } from "@multica/core/onboarding";
+import { CoreProvider } from "@liexiu/core/platform";
+import { createBrowserCookieLocaleAdapter } from "@liexiu/core/i18n/browser";
+import type { LocaleResources, SupportedLocale } from "@liexiu/core/i18n";
 import packageJson from "../package.json";
 import { WebNavigationProvider } from "@/platform/navigation";
 import { WebScrollRestorationProvider } from "@/platform/scroll-restoration";
@@ -16,14 +15,14 @@ import { detectWebOS } from "@/platform/client-os";
 
 // Legacy token in localStorage → keep this session in token mode so users who
 // logged in before the cookie-auth migration stay authed. They migrate to
-// cookie mode on their next logout/login cycle (logout clears multica_token).
-// Sunset: once telemetry shows <1% of sessions still carry multica_token,
+// cookie mode on their next logout/login cycle (logout clears liexiu_token).
+// Sunset: once telemetry shows <1% of sessions still carry liexiu_token,
 // delete this branch and hard-code `cookieAuth` — the localStorage token is
 // XSS-exposed and is the exact thing the cookie migration exists to remove.
 function hasLegacyToken(): boolean {
   if (typeof window === "undefined") return false;
   try {
-    return Boolean(window.localStorage.getItem("multica_token"));
+    return Boolean(window.localStorage.getItem("liexiu_token"));
   } catch {
     return false;
   }
@@ -72,13 +71,6 @@ export function WebProviders({
       cookieAuth={cookieAuth}
       onLogin={setLoggedInCookie}
       onLogout={() => {
-        // welcome-store holds the transient post-onboarding signal. Must
-        // clear on logout so user B logging into the same browser doesn't
-        // inherit user A's signal and have <WelcomeAfterOnboarding /> fire
-        // listAgents / createIssue against a workspace user B doesn't even
-        // belong to. The store's own docstring promises this reset; this
-        // is where it gets wired.
-        useWelcomeStore.getState().reset();
         clearLoggedInCookie();
       }}
       identity={identity}

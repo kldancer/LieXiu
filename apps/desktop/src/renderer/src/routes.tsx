@@ -3,34 +3,25 @@ import { createMemoryRouter, Outlet, useMatches } from "react-router-dom";
 import type { RouteObject } from "react-router-dom";
 import { IssueDetailPage } from "./pages/issue-detail-page";
 import { ProjectDetailPage } from "./pages/project-detail-page";
-import { AutopilotDetailPage } from "./pages/autopilot-detail-page";
 import { SkillDetailPage } from "./pages/skill-detail-page";
 import { AgentDetailPage } from "./pages/agent-detail-page";
-import { AiBuilderSessionPage } from "./pages/ai-builder-session-page";
-import { MemberDetailPage } from "./pages/member-detail-page";
 import {
   RuntimeDetailPage,
   RuntimeSettingsPage,
 } from "./pages/runtime-detail-page";
 import { AttachmentPreviewRoute } from "./pages/attachment-preview-page";
-import { IssuesPage } from "@multica/views/issues/components";
-import { ProjectsPage } from "@multica/views/projects/components";
-import { DashboardPage } from "@multica/views/dashboard";
-import { AutopilotsPage } from "@multica/views/autopilots/components";
-import { MyIssuesPage } from "@multica/views/my-issues";
-import { SkillsPage } from "@multica/views/skills";
+import { IssuesPage } from "@liexiu/views/issues/components";
+import { ProjectsPage } from "@liexiu/views/projects/components";
+import { DashboardPage } from "@liexiu/views/dashboard";
+import { MyIssuesPage } from "@liexiu/views/my-issues";
+import { SkillsPage } from "@liexiu/views/skills";
 import { DesktopRuntimesPage } from "./components/desktop-runtimes-page";
 import { DesktopAgentsPage } from "./components/desktop-agents-page";
 import {
-  AiCreateAgentPage,
-  ChooseCreateMethodPage,
   ManualCreateAgentPage,
-} from "@multica/views/agents";
-import { SquadsPage, SquadDetailPage as SquadDetailPageView } from "@multica/views/squads/components";
-import { InboxPage } from "@multica/views/inbox";
-import { ChatPage } from "@multica/views/chat";
-import { SettingsPage } from "@multica/views/settings";
-import { useT } from "@multica/views/i18n";
+} from "@liexiu/views/agents";
+import { SettingsPage } from "@liexiu/views/settings";
+import { useT } from "@liexiu/views/i18n";
 import { Download, Server } from "lucide-react";
 import { DaemonSettingsTab } from "./components/daemon-settings-tab";
 import { UpdatesSettingsTab } from "./components/updates-settings-tab";
@@ -97,12 +88,10 @@ function PageShell() {
 /**
  * Route definitions shared by all tabs.
  *
- * Every tab path is workspace-scoped: `/{slug}/{route}/...`. Pre-workspace
- * flows (create workspace, accept invite) are NOT routes — they render as a
- * window-level overlay via `WindowOverlay`, dispatched by the navigation
- * adapter's transition-path interception. The `activeWorkspaceSlug` in the
- * tab store decides which workspace's tabs are visible in the TabBar;
- * workspace-less state (zero-workspace user) shows the overlay instead.
+ * Every tab path is workspace-scoped: `/{slug}/{route}/...`. The remaining
+ * pre-workspace onboarding flow is not a route — it renders as a
+ * window-level overlay. The `activeWorkspaceSlug` in the tab store decides
+ * which workspace's tabs are visible in the TabBar.
  *
  * The root index route stays as a harmless safety net. With per-workspace
  * tabs, nothing should construct a tab at `/` — but if one ever slips
@@ -148,16 +137,6 @@ export const appRoutes: RouteObject[] = [
             handle: { title: "Project" },
           },
           {
-            path: "autopilots",
-            element: <AutopilotsPage />,
-            handle: { title: "Autopilot" },
-          },
-          {
-            path: "autopilots/:id",
-            element: <AutopilotDetailPage />,
-            handle: { title: "Autopilot" },
-          },
-          {
             path: "my-issues",
             element: <MyIssuesPage />,
             handle: { title: "My Issues" },
@@ -186,7 +165,7 @@ export const appRoutes: RouteObject[] = [
           { path: "agents", element: <DesktopAgentsPage />, handle: { title: "Agents" } },
           {
             path: "agents/new",
-            element: <ChooseCreateMethodPage />,
+            element: <ManualCreateAgentPage />,
             handle: { title: "Create Agent" },
           },
           {
@@ -195,33 +174,10 @@ export const appRoutes: RouteObject[] = [
             handle: { title: "Create Agent" },
           },
           {
-            path: "agents/new/ai",
-            element: <AiCreateAgentPage />,
-            handle: { title: "Create Agent" },
-          },
-          {
-            path: "agents/new/ai/:sessionId",
-            element: <AiBuilderSessionPage />,
-            handle: { title: "Create Agent" },
-          },
-          {
             path: "agents/:id",
             element: <AgentDetailPage />,
             handle: { title: "Agent" },
           },
-          {
-            path: "members/:id",
-            element: <MemberDetailPage />,
-            handle: { title: "Member" },
-          },
-          { path: "squads", element: <SquadsPage />, handle: { title: "Squads" } },
-          {
-            path: "squads/:id",
-            element: <SquadDetailPageView />,
-            handle: { title: "Squad" },
-          },
-          { path: "inbox", element: <InboxPage />, handle: { title: "Inbox" } },
-          { path: "chat", element: <ChatPage />, handle: { title: "Chat" } },
           {
             path: "attachments/:id/preview",
             element: <AttachmentPreviewRoute />,

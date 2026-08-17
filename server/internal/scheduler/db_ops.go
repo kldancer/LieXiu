@@ -319,10 +319,8 @@ func encodeResult(in map[string]any) (string, error) {
 // is still claimable at the same plan_time (FAILED-with-retry) or
 // finished and the next plan_time should advance past it.
 //
-// Exported so a JobSpec.PlansForScope hook can inspect the same view
-// the built-in Cadence planner uses — in particular Found / PlanTime
-// to know where to resume plan enumeration, and RetryEligible to keep
-// the cursor on a FAILED-with-retry plan_time.
+// Used by the Cadence catch-up planner to decide where plan enumeration resumes
+// and whether a failed plan_time is still retryable.
 type LatestPlanInfo struct {
 	Found       bool
 	PlanTime    time.Time

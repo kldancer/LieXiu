@@ -48,7 +48,6 @@ function makeIssue(idx: number, overrides: Partial<Issue> = {}): Issue {
     due_date: null,
     labels: [],
     metadata: {},
-  properties: {},
     created_at: "2025-01-01T00:00:00Z",
     updated_at: "2025-01-01T00:00:00Z",
     ...overrides,
@@ -397,7 +396,6 @@ describe("projectGanttIssuesOptions", () => {
 
     const agentsTab = projectGanttIssuesOptions(WS_ID, PROJECT_ID, [
       "agent",
-      "squad",
     ]);
     await qc.fetchQuery(agentsTab);
 
@@ -405,7 +403,7 @@ describe("projectGanttIssuesOptions", () => {
       expect.objectContaining({
         project_id: PROJECT_ID,
         scheduled: true,
-        assignee_types: ["agent", "squad"],
+        assignee_types: ["agent"],
       }),
     );
     // Distinct tabs must not share a cache entry.

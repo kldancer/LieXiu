@@ -4,10 +4,8 @@ import type {
   IssueStatus,
   IssuePriority,
   IssueAssigneeType,
-  IssuePropertyValues,
 } from "../../types";
 import type { CreateMode } from "./create-mode-store";
-import type { QuickCreateActorType } from "./quick-create-store";
 import { createWorkspaceAwareStorage, registerForWorkspaceRehydration } from "../../platform/workspace-storage";
 import { defaultStorage } from "../../platform/storage";
 import { registerDraftCleanup } from "../../drafts/cleanup-registry";
@@ -19,9 +17,8 @@ import { normalizeStoredUploads, type DraftUpload } from "../../drafts/draft-upl
 //   shared  — belongs to the issue no matter how it is filed: project,
 //             priority, due date, attachments.
 //   manual  — the manual form's own state: title, description, status, start
-//             date, assignee, labels, custom properties.
-//   agent   — the agent form's own state: the free-text prompt and the picked
-//             actor (agent or squad).
+//             date, assignee, labels.
+//   agent   — the agent form's own state: the free-text prompt.
 //   activeMode — which form the draft is currently being edited in.
 //
 // Before this split, `switchToAgent` concatenated title + description into the
@@ -55,13 +52,10 @@ export interface IssueCreateManual {
    *  it is created (the create endpoint takes no labels), so they are kept as
    *  a plain id list rather than full Label objects. */
   labelIds: string[];
-  propertyValues: IssuePropertyValues;
 }
 
 export interface IssueCreateAgent {
   prompt: string;
-  actorType?: QuickCreateActorType;
-  actorId?: string;
 }
 
 export interface IssueCreateDraft {
@@ -86,14 +80,37 @@ const emptyManual = (): IssueCreateManual => ({
   assigneeType: undefined,
   assigneeId: undefined,
   labelIds: [],
-  propertyValues: {},
 });
 
 const emptyAgent = (): IssueCreateAgent => ({
   prompt: "",
-  actorType: undefined,
-  actorId: undefined,
 });
+
+function writableAssigneeType(value: unknown): IssueAssigneeType | undefined {
+  return value === "member" || value === "agent" ? value : undefined;
+}
+
+function migrateManualDraft(raw: Record<string, unknown>): IssueCreateManual {
+  const assigneeType = writableAssigneeType(raw.assigneeType);
+  return {
+    ...emptyManual(),
+    title: typeof raw.title === "string" ? raw.title : "",
+    description: typeof raw.description === "string" ? raw.description : "",
+    status: (raw.status as IssueStatus) ?? "todo",
+    startDate: (raw.startDate as string | null) ?? null,
+    assigneeType,
+    assigneeId:
+      assigneeType && typeof raw.assigneeId === "string" ? raw.assigneeId : undefined,
+    labelIds: Array.isArray(raw.labelIds) ? (raw.labelIds as string[]) : [],
+  };
+}
+
+function migrateAgentDraft(raw: Record<string, unknown>): IssueCreateAgent {
+  return {
+    ...emptyAgent(),
+    prompt: typeof raw.prompt === "string" ? raw.prompt : "",
+  };
+}
 
 interface IssueDraftStore {
   draft: IssueCreateDraft;
@@ -123,7 +140,7 @@ function isLegacyFlatDraft(d: Record<string, unknown>): boolean {
 // use the pre-MUL-5181 flat shape. Backfill defaults so every read site can
 // rely on the declared IssueCreateDraft shape instead of re-defending, and lift
 // a legacy flat draft into the manual/shared slots (there was no agent prompt
-// in that store — it lived in `multica_quick_create` and is not carried over).
+// in that store — it lived in `liexiu_quick_create` and is not carried over).
 function migrateDraft(raw: unknown): IssueCreateDraft {
   const d = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
 
@@ -138,20 +155,7 @@ function migrateDraft(raw: unknown): IssueCreateDraft {
         // as `uploaded` placeholders (and drops stale `uploading` ones).
         attachments: normalizeStoredUploads(d.attachments),
       },
-      manual: {
-        ...emptyManual(),
-        title: (d.title as string) ?? "",
-        description: (d.description as string) ?? "",
-        status: (d.status as IssueStatus) ?? "todo",
-        startDate: (d.startDate as string | null) ?? null,
-        assigneeType: d.assigneeType as IssueAssigneeType | undefined,
-        assigneeId: d.assigneeId as string | undefined,
-        labelIds: Array.isArray(d.labelIds) ? (d.labelIds as string[]) : [],
-        propertyValues:
-          d.propertyValues && typeof d.propertyValues === "object"
-            ? (d.propertyValues as IssuePropertyValues)
-            : {},
-      },
+      manual: migrateManualDraft(d),
       agent: emptyAgent(),
       activeMode: "manual",
     };
@@ -166,8 +170,8 @@ function migrateDraft(raw: unknown): IssueCreateDraft {
       // drops `uploading` placeholders (bytes are gone).
       attachments: normalizeStoredUploads(sharedRaw.attachments),
     },
-    manual: { ...emptyManual(), ...((d.manual as Partial<IssueCreateManual>) ?? {}) },
-    agent: { ...emptyAgent(), ...((d.agent as Partial<IssueCreateAgent>) ?? {}) },
+    manual: migrateManualDraft((d.manual as Record<string, unknown>) ?? {}),
+    agent: migrateAgentDraft((d.agent as Record<string, unknown>) ?? {}),
     activeMode: d.activeMode === "agent" ? "agent" : "manual",
   };
 }
@@ -207,7 +211,6 @@ export const useIssueDraftStore = create<IssueDraftStore>()(
           manual.title ||
           manual.description ||
           agent.prompt ||
-          Object.keys(manual.propertyValues).length > 0 ||
           // Recoverable uploads only: a failed/interrupted remnant the user
           // never dismissed must not pin the sidebar's draft dot forever.
           shared.attachments.some((u) => u.status === "uploaded" || u.status === "uploading")
@@ -215,7 +218,7 @@ export const useIssueDraftStore = create<IssueDraftStore>()(
       },
     }),
     {
-      name: "multica_issue_draft",
+      name: "liexiu_issue_draft",
       storage: createJSONStorage(() => createWorkspaceAwareStorage(defaultStorage)),
       merge: (persistedState, currentState) => {
         const persisted = (persistedState ?? {}) as Partial<IssueDraftStore> & {
@@ -225,6 +228,12 @@ export const useIssueDraftStore = create<IssueDraftStore>()(
           ...currentState,
           ...persisted,
           draft: migrateDraft(persisted.draft),
+          lastAssigneeType: writableAssigneeType(persisted.lastAssigneeType),
+          lastAssigneeId:
+            writableAssigneeType(persisted.lastAssigneeType) &&
+            typeof persisted.lastAssigneeId === "string"
+              ? persisted.lastAssigneeId
+              : undefined,
         };
       },
     },
@@ -234,7 +243,7 @@ export const useIssueDraftStore = create<IssueDraftStore>()(
 registerForWorkspaceRehydration(() => useIssueDraftStore.persist.rehydrate());
 
 registerDraftCleanup({
-  storageKey: "multica_issue_draft",
+  storageKey: "liexiu_issue_draft",
   workspaceScoped: true,
   // Full reset, NOT clearDraft(): clearDraft deliberately keeps the
   // last-assignee preference and re-seeds it into the fresh draft's manual

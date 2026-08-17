@@ -118,21 +118,21 @@ func TestPrepareDirectoryMode(t *testing.T) {
 	defer env.Cleanup(true)
 
 	// Verify directory structure.
-	for _, sub := range []string{"workdir", "output", "logs", "multica-config"} {
+	for _, sub := range []string{"workdir", "output", "logs", "liexiu-config"} {
 		path := filepath.Join(env.RootDir, sub)
 		if _, err := os.Stat(path); os.IsNotExist(err) {
 			t.Fatalf("expected %s to exist", path)
 		}
 	}
-	if env.MulticaConfigRoot != filepath.Join(env.RootDir, "multica-config") {
-		t.Fatalf("MulticaConfigRoot = %q, want task-local config directory", env.MulticaConfigRoot)
+	if env.LieXiuConfigRoot != filepath.Join(env.RootDir, "liexiu-config") {
+		t.Fatalf("LieXiuConfigRoot = %q, want task-local config directory", env.LieXiuConfigRoot)
 	}
-	info, err := os.Stat(env.MulticaConfigRoot)
+	info, err := os.Stat(env.LieXiuConfigRoot)
 	if err != nil {
-		t.Fatalf("stat MulticaConfigRoot: %v", err)
+		t.Fatalf("stat LieXiuConfigRoot: %v", err)
 	}
 	if got := info.Mode().Perm(); got != 0o700 {
-		t.Fatalf("MulticaConfigRoot mode = %o, want 700", got)
+		t.Fatalf("LieXiuConfigRoot mode = %o, want 700", got)
 	}
 
 	// Verify context file contains issue ID and CLI hints.
@@ -189,7 +189,7 @@ func TestPrepareWithProjectResources(t *testing.T) {
 			{
 				ID:           "33333333-4444-5555-6666-777777777777",
 				ResourceType: "github_repo",
-				ResourceRef:  json.RawMessage(`{"url":"https://github.com/multica-ai/multica","ref":"release/v2","default_branch_hint":"main"}`),
+				ResourceRef:  json.RawMessage(`{"url":"https://github.com/kailonyang/liexiu","ref":"release/v2","default_branch_hint":"main"}`),
 			},
 		},
 	}
@@ -207,7 +207,7 @@ func TestPrepareWithProjectResources(t *testing.T) {
 	defer env.Cleanup(true)
 
 	// resources.json should exist and decode back to what we wrote.
-	resourcesPath := filepath.Join(env.WorkDir, ".multica", "project", "resources.json")
+	resourcesPath := filepath.Join(env.WorkDir, ".liexiu", "project", "resources.json")
 	raw, err := os.ReadFile(resourcesPath)
 	if err != nil {
 		t.Fatalf("failed to read resources.json: %v", err)
@@ -252,10 +252,10 @@ func TestPrepareWithProjectResources(t *testing.T) {
 		"Agent UX 2026",
 		"Always write copy in British English. Ship behind a feature flag.",
 		"GitHub repo",
-		"https://github.com/multica-ai/multica",
+		"https://github.com/kailonyang/liexiu",
 		"checkout ref: `release/v2`",
 		"default branch hint: `main`",
-		".multica/project/resources.json",
+		".liexiu/project/resources.json",
 	} {
 		if !strings.Contains(s, want) {
 			t.Errorf("CLAUDE.md missing %q", want)
@@ -263,73 +263,6 @@ func TestPrepareWithProjectResources(t *testing.T) {
 	}
 }
 
-func TestChatProjectContextInjectedIntoRuntimeBrief(t *testing.T) {
-	t.Parallel()
-
-	ctx := TaskContextForEnv{
-		ChatSessionID:      "chat-project-context",
-		ProjectID:          "22222222-3333-4444-5555-666666666666",
-		ProjectTitle:       "Project Beta",
-		ProjectDescription: "Use the beta repository and follow the beta rollout plan.",
-		ProjectResources: []ProjectResourceForEnv{
-			{
-				ID:           "33333333-4444-5555-6666-777777777777",
-				ResourceType: "github_repo",
-				ResourceRef:  json.RawMessage(`{"url":"https://github.com/org/beta"}`),
-			},
-		},
-	}
-
-	for _, tc := range []struct {
-		provider string
-		filename string
-	}{
-		{provider: "claude", filename: "CLAUDE.md"},
-		{provider: "codex", filename: "AGENTS.md"},
-	} {
-		tc := tc
-		t.Run(tc.provider, func(t *testing.T) {
-			t.Parallel()
-			dir := t.TempDir()
-			if _, err := InjectRuntimeConfig(dir, tc.provider, ctx); err != nil {
-				t.Fatalf("InjectRuntimeConfig: %v", err)
-			}
-			content, err := os.ReadFile(filepath.Join(dir, tc.filename))
-			if err != nil {
-				t.Fatalf("read %s: %v", tc.filename, err)
-			}
-			s := string(content)
-			for _, want := range []string{
-				"## Project Context",
-				"Project Beta",
-				"Use the beta repository and follow the beta rollout plan.",
-				"https://github.com/org/beta",
-			} {
-				if !strings.Contains(s, want) {
-					t.Errorf("%s missing chat project context %q", tc.filename, want)
-				}
-			}
-			for _, banned := range []string{
-				"This issue belongs to",
-				"## Issue Metadata",
-				"## Sub-issue Creation",
-			} {
-				if strings.Contains(s, banned) {
-					t.Errorf("%s chat brief contains issue-only text %q", tc.filename, banned)
-				}
-			}
-		})
-	}
-}
-
-// When the issue's project has its own github_repo resources, those should be
-// the only repos rendered in the meta-skill — workspace-level repos must not
-// leak into the agent prompt to avoid confusing it about which repo to use.
-//
-// The handler-side override is exercised in handler tests; this test confirms
-// the rendering side: given a TaskContextForEnv where Repos was already
-// narrowed by the server to project repos only, the meta skill renders just
-// those.
 func TestProjectReposReplaceWorkspaceReposInMetaSkill(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
@@ -370,7 +303,7 @@ func TestWriteProjectResourcesSkippedWhenNone(t *testing.T) {
 	if err := writeProjectResources(dir, TaskContextForEnv{}, nil); err != nil {
 		t.Fatalf("writeProjectResources: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(dir, ".multica", "project", "resources.json")); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(dir, ".liexiu", "project", "resources.json")); !os.IsNotExist(err) {
 		t.Errorf("expected no resources.json to be written when project context is empty")
 	}
 }
@@ -411,7 +344,7 @@ func TestPrepareWithRepoContext(t *testing.T) {
 	}
 	for _, e := range entries {
 		name := e.Name()
-		if name != ".agent_context" && name != ".multica" && name != "CLAUDE.md" && name != ".claude" {
+		if name != ".agent_context" && name != ".liexiu" && name != "CLAUDE.md" && name != ".claude" {
 			t.Errorf("unexpected entry in workdir: %s", name)
 		}
 	}
@@ -423,7 +356,7 @@ func TestPrepareWithRepoContext(t *testing.T) {
 	}
 	s := string(content)
 	for _, want := range []string{
-		"multica repo checkout",
+		"liexiu repo checkout",
 		"https://github.com/org/backend",
 		"[--ref <branch-or-sha>]",
 		"https://github.com/org/frontend",
@@ -516,45 +449,6 @@ func TestWriteContextFilesOmitsSkillsWhenEmpty(t *testing.T) {
 	}
 	if strings.Contains(s, "## Agent Skills") {
 		t.Error("expected skills section to be omitted when no skills")
-	}
-}
-
-func TestWriteContextFilesAutopilotRunOnly(t *testing.T) {
-	t.Parallel()
-	dir := t.TempDir()
-
-	ctx := TaskContextForEnv{
-		AutopilotRunID:       "run-1",
-		AutopilotID:          "autopilot-1",
-		AutopilotTitle:       "Daily dependency check",
-		AutopilotDescription: "Check dependencies and report outdated packages.",
-		AutopilotSource:      "manual",
-	}
-
-	if err := writeContextFiles(dir, "", ctx, nil); err != nil {
-		t.Fatalf("writeContextFiles failed: %v", err)
-	}
-
-	content, err := os.ReadFile(filepath.Join(dir, ".agent_context", "issue_context.md"))
-	if err != nil {
-		t.Fatalf("failed to read: %v", err)
-	}
-
-	s := string(content)
-	for _, want := range []string{
-		"# Autopilot Run",
-		"run-1",
-		"autopilot-1",
-		"Check dependencies and report outdated packages.",
-		"multica autopilot get autopilot-1 --output json",
-		"no assigned issue",
-	} {
-		if !strings.Contains(s, want) {
-			t.Errorf("autopilot context missing %q\n---\n%s", want, s)
-		}
-	}
-	if strings.Contains(s, "Run `multica issue get") {
-		t.Errorf("autopilot context should not contain issue get workflow\n---\n%s", s)
 	}
 }
 
@@ -675,8 +569,8 @@ func TestWriteContextFilesCodebuddyNativeSkills(t *testing.T) {
 // TestReuseRefreshesSkillsWithoutDuplicating is the regression guard for
 // GitHub #3684: re-dispatching the same agent on the same issue goes through
 // the Reuse path, which must refresh skills in place rather than pile up
-// collision-free duplicates (issue-review, issue-review-multica,
-// issue-review-multica-2, …). Reuse rolls back the prior dispatch's writes
+// collision-free duplicates (issue-review, issue-review-liexiu,
+// issue-review-liexiu-2, …). Reuse rolls back the prior dispatch's writes
 // via its sidecar manifest before re-writing, so each skill lands at its
 // natural slug on every dispatch instead of dodging its own prior output.
 func TestReuseRefreshesSkillsWithoutDuplicating(t *testing.T) {
@@ -724,7 +618,7 @@ func TestReuseRefreshesSkillsWithoutDuplicating(t *testing.T) {
 		names = append(names, e.Name())
 	}
 	if len(names) != 1 || names[0] != "issue-review" {
-		t.Fatalf("after re-dispatch the skills dir = %v, want exactly [issue-review] with no -multica duplicates", names)
+		t.Fatalf("after re-dispatch the skills dir = %v, want exactly [issue-review] with no -liexiu duplicates", names)
 	}
 
 	// The surviving skill keeps its natural slug in frontmatter, so the agent
@@ -742,7 +636,7 @@ func TestReuseRefreshesSkillsWithoutDuplicating(t *testing.T) {
 // #3716 review surfaced: a prior-dispatch agent writes a file into the
 // platform's managed skill directory. CleanupSidecars on its own would keep
 // that now-non-empty directory, leaving the canonical slug occupied so the
-// next refresh dodges to issue-review-multica. Reuse must reclaim the
+// next refresh dodges to issue-review-liexiu. Reuse must reclaim the
 // platform-owned skill directory so the refreshed skill stays at its natural
 // slug.
 func TestReuseReclaimsManagedSkillDirWithStrayAgentFile(t *testing.T) {
@@ -793,7 +687,7 @@ func TestReuseReclaimsManagedSkillDirWithStrayAgentFile(t *testing.T) {
 		names = append(names, e.Name())
 	}
 	if len(names) != 1 || names[0] != "issue-review" {
-		t.Fatalf("after reuse with a stray agent file the skills dir = %v, want exactly [issue-review] with no -multica duplicate", names)
+		t.Fatalf("after reuse with a stray agent file the skills dir = %v, want exactly [issue-review] with no -liexiu duplicate", names)
 	}
 
 	// The managed skill dir is platform-owned: reclaiming it drops the agent's
@@ -948,9 +842,9 @@ func TestInjectRuntimeConfigClaude(t *testing.T) {
 
 	s := string(content)
 	for _, want := range []string{
-		"Multica Agent Runtime",
-		"multica issue get",
-		"multica issue comment list",
+		"LieXiu Agent Runtime",
+		"liexiu issue get",
+		"liexiu issue comment list",
 		// Skills are listed by on-disk slug: that is the directory
 		// writeSkillFiles creates and the only identifier the model can
 		// actually invoke (MUL-5529).
@@ -1075,71 +969,43 @@ func TestInjectRuntimeConfigAvailableCommandsCoreOnly(t *testing.T) {
 	for _, want := range []string{
 		"## Available Commands",
 		"core agent loop and common issue create/update tasks",
-		"`multica <command> --help`",
-		"multica issue get <id> --output json",
-		"multica issue comment list <issue-id>",
-		"multica issue create --title",
-		"multica issue update <id>",
-		"multica issue assign <id>",
+		"`liexiu <command> --help`",
+		"liexiu issue get <id> --output json",
+		"liexiu issue comment list <issue-id>",
+		"liexiu issue create --title",
+		"liexiu issue update <id>",
+		"liexiu issue assign <id>",
 		"--no-start",
 		"--description-file <path>",
 		"--parent \"\"",
-		"multica repo checkout <url>",
-		"multica issue status <id> <status> [--no-start]",
-		"multica issue comment add <issue-id>",
-		"multica issue comment add --help",
+		"liexiu repo checkout <url>",
+		"liexiu issue status <id> <status> [--no-start]",
+		"liexiu issue comment add <issue-id>",
+		"liexiu issue comment add --help",
 	} {
 		if !strings.Contains(s, want) {
 			t.Errorf("AGENTS.md missing core command/help text %q\n---\n%s", want, s)
 		}
 	}
 
-	// Squad maintenance is squad-leader surface and is gated on that (MUL-5442):
-	// an agent leading no squad has no squad whose roles it could change.
-	if strings.Contains(s, "### Squad maintenance") {
-		t.Errorf("non-leader brief must not carry the squad maintenance block\n---\n%s", s)
-	}
-	leaderDir := t.TempDir()
-	if _, err := InjectRuntimeConfig(leaderDir, "codex", TaskContextForEnv{IssueID: "issue-1", IsSquadLeader: true}); err != nil {
-		t.Fatalf("InjectRuntimeConfig failed: %v", err)
-	}
-	leader, err := os.ReadFile(filepath.Join(leaderDir, "AGENTS.md"))
-	if err != nil {
-		t.Fatalf("failed to read leader AGENTS.md: %v", err)
-	}
-	for _, want := range []string{
-		"### Squad maintenance",
-		"multica squad member set-role <squad-id>",
-	} {
-		if !strings.Contains(string(leader), want) {
-			t.Errorf("squad-leader AGENTS.md missing %q\n---\n%s", want, leader)
-		}
-	}
-
 	for _, banned := range []string{
-		"multica issue list [--status",
-		"multica issue label list",
-		"multica issue subscriber list",
-		"multica label list",
-		"multica workspace member list",
-		"multica agent list",
-		"multica squad list",
-		"multica issue runs",
-		"multica issue run-messages",
-		"multica attachment download",
-		"multica autopilot list",
-		"multica autopilot create",
-		"multica autopilot update",
-		"multica autopilot trigger",
-		"multica autopilot delete",
-		"multica project get",
-		"multica project resource list",
-		"multica issue label add",
-		"multica issue label remove",
-		"multica issue subscriber add",
-		"multica issue subscriber remove",
-		"multica issue comment delete",
-		"multica label create",
+		"liexiu issue list [--status",
+		"liexiu issue label list",
+		"liexiu issue subscriber list",
+		"liexiu label list",
+		"liexiu workspace member list",
+		"liexiu agent list",
+		"liexiu issue runs",
+		"liexiu issue run-messages",
+		"liexiu attachment download",
+		"liexiu project get",
+		"liexiu project resource list",
+		"liexiu issue label add",
+		"liexiu issue label remove",
+		"liexiu issue subscriber add",
+		"liexiu issue subscriber remove",
+		"liexiu issue comment delete",
+		"liexiu label create",
 	} {
 		if strings.Contains(s, banned) {
 			t.Errorf("AGENTS.md should not inject non-core command %q\n---\n%s", banned, s)
@@ -1166,7 +1032,7 @@ func TestInjectRuntimeConfigCodex(t *testing.T) {
 	}
 
 	s := string(content)
-	if !strings.Contains(s, "Multica Agent Runtime") {
+	if !strings.Contains(s, "LieXiu Agent Runtime") {
 		t.Error("AGENTS.md missing meta skill header")
 	}
 	// Listed by on-disk slug rather than the display name (MUL-5529).
@@ -1191,8 +1057,8 @@ func TestInjectRuntimeConfigNoSkills(t *testing.T) {
 	}
 
 	s := string(content)
-	if !strings.Contains(s, "multica issue get") {
-		t.Error("should reference multica CLI even without skills")
+	if !strings.Contains(s, "liexiu issue get") {
+		t.Error("should reference liexiu CLI even without skills")
 	}
 	if strings.Contains(s, "## Skills") {
 		t.Error("should not have Skills section when there are no skills")
@@ -1362,8 +1228,8 @@ func TestWriteContextFilesForcesSkillFrontmatterNameToSlug(t *testing.T) {
 
 // The directory-name == frontmatter-name invariant must survive collision
 // fallback, where the allocated slug is NOT sanitizeSkillName(Name). A
-// user-installed skill already sitting at the natural slug pushes Multica's
-// copy to `<slug>-multica`; the frontmatter has to follow it there, or the
+// user-installed skill already sitting at the natural slug pushes LieXiu's
+// copy to `<slug>-liexiu`; the frontmatter has to follow it there, or the
 // skill answers to the user's slug on Claude and to its own stale name on
 // OpenCode.
 func TestWriteContextFilesFrontmatterNameFollowsCollisionSlug(t *testing.T) {
@@ -1383,7 +1249,7 @@ func TestWriteContextFilesFrontmatterNameFollowsCollisionSlug(t *testing.T) {
 	ctx := TaskContextForEnv{
 		IssueID: "collision-test",
 		AgentSkills: []SkillContextForEnv{
-			{Name: "Review", Content: "---\nname: whatever-upstream-said\n---\n\nmultica body"},
+			{Name: "Review", Content: "---\nname: whatever-upstream-said\n---\n\nliexiu body"},
 		},
 	}
 
@@ -1400,12 +1266,12 @@ func TestWriteContextFilesFrontmatterNameFollowsCollisionSlug(t *testing.T) {
 		t.Errorf("user skill was overwritten; got:\n%s", got)
 	}
 
-	// Multica's copy landed at the fallback slug and names itself after it.
-	moved, err := os.ReadFile(filepath.Join(dir, ".opencode", "skills", "review-multica", "SKILL.md"))
+	// LieXiu's copy landed at the fallback slug and names itself after it.
+	moved, err := os.ReadFile(filepath.Join(dir, ".opencode", "skills", "review-liexiu", "SKILL.md"))
 	if err != nil {
 		t.Fatalf("read relocated SKILL.md: %v", err)
 	}
-	want := "---\nname: review-multica\n---\n\nmultica body"
+	want := "---\nname: review-liexiu\n---\n\nliexiu body"
 	if string(moved) != want {
 		t.Errorf("frontmatter name did not follow the collision slug; got:\n%s\nwant:\n%s", moved, want)
 	}
@@ -1663,7 +1529,7 @@ func TestInjectRuntimeConfigOpencode(t *testing.T) {
 	}
 
 	s := string(content)
-	if !strings.Contains(s, "Multica Agent Runtime") {
+	if !strings.Contains(s, "LieXiu Agent Runtime") {
 		t.Error("AGENTS.md missing meta skill header")
 	}
 	// Listed by on-disk slug rather than the display name (MUL-5529).
@@ -1699,7 +1565,7 @@ func TestInjectRuntimeConfigKiro(t *testing.T) {
 	}
 
 	s := string(content)
-	if !strings.Contains(s, "Multica Agent Runtime") {
+	if !strings.Contains(s, "LieXiu Agent Runtime") {
 		t.Error("AGENTS.md missing meta skill header")
 	}
 	// Listed by on-disk slug rather than the display name (MUL-5529).
@@ -1730,7 +1596,7 @@ func TestInjectRuntimeConfigQoder(t *testing.T) {
 	}
 
 	s := string(content)
-	if !strings.Contains(s, "Multica Agent Runtime") {
+	if !strings.Contains(s, "LieXiu Agent Runtime") {
 		t.Error("AGENTS.md missing meta skill header")
 	}
 	// Listed by on-disk slug rather than the display name (MUL-5529).
@@ -1759,7 +1625,7 @@ func TestInjectRuntimeConfigQoderCN(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to read AGENTS.md: %v", err)
 	}
-	if !strings.Contains(string(content), "Multica Agent Runtime") {
+	if !strings.Contains(string(content), "LieXiu Agent Runtime") {
 		t.Error("AGENTS.md missing meta skill header")
 	}
 }
@@ -1786,7 +1652,7 @@ func TestInjectRuntimeConfigAntigravity(t *testing.T) {
 	}
 
 	s := string(content)
-	if !strings.Contains(s, "Multica Agent Runtime") {
+	if !strings.Contains(s, "LieXiu Agent Runtime") {
 		t.Error("AGENTS.md missing meta skill header")
 	}
 	// Listed by on-disk slug rather than the display name (MUL-5529).
@@ -1867,7 +1733,7 @@ func TestPrepareWithRepoContextOpencode(t *testing.T) {
 	}
 	for _, e := range entries {
 		name := e.Name()
-		if name != ".agent_context" && name != ".multica" && name != "AGENTS.md" {
+		if name != ".agent_context" && name != ".liexiu" && name != "AGENTS.md" {
 			t.Errorf("unexpected entry in workdir: %s", name)
 		}
 	}
@@ -1879,7 +1745,7 @@ func TestPrepareWithRepoContextOpencode(t *testing.T) {
 	}
 	s := string(content)
 	for _, want := range []string{
-		"multica repo checkout",
+		"liexiu repo checkout",
 		"https://github.com/org/backend",
 	} {
 		if !strings.Contains(s, want) {
@@ -1921,13 +1787,13 @@ func TestInjectRuntimeConfigRequiresExplicitCommentPost(t *testing.T) {
 			}
 			s := string(data)
 
-			// The workflow must contain an explicit `multica issue comment add`
+			// The workflow must contain an explicit `liexiu issue comment add`
 			// invocation for this issue — not just a prose mention of posting.
 			mustContain := []string{
 				// MUL-5442 cross-channel dedup: the brief states the loop shape; the
 				// ready-to-run commands with real ids live in the per-turn message.
 				// Pin the command NAME and the flag mnemonics, not full templates.
-				"post it with `multica issue comment add` using",
+				"post it with `liexiu issue comment add` using",
 				"mandatory",
 			}
 			for _, want := range mustContain {
@@ -1940,7 +1806,7 @@ func TestInjectRuntimeConfigRequiresExplicitCommentPost(t *testing.T) {
 			// output is not user-visible. This is the second line of defense
 			// in case the agent skips past the workflow steps.
 			for _, want := range []string{
-				"Final results MUST be delivered via `multica issue comment add`",
+				"Final results MUST be delivered via `liexiu issue comment add`",
 				"does NOT see your terminal output",
 			} {
 				if !strings.Contains(s, want) {
@@ -2029,7 +1895,7 @@ func TestInjectRuntimeConfigCommentGuardrailIsProviderAgnostic(t *testing.T) {
 // `--content-stdin` rule was kept for years to defend against backtick / `$()`
 // substitution in the body (MUL-2904), but the heredoc/flag boundary turned out
 // to be its own structural bug: when a model wrapped extra flags around the
-// heredoc on `multica issue create`, the flags were silently swallowed into
+// heredoc on `liexiu issue create`, the flags were silently swallowed into
 // stdin (OXY-78, OXY-76). The file path defeats both classes — the body never
 // reaches the shell, and all flags live on one shell-token line — and converges
 // the Linux/macOS template with the long-standing Windows file-only path.
@@ -2105,7 +1971,7 @@ func TestInjectRuntimeConfigLinuxCommentFormattingEmphasizesFile(t *testing.T) {
 // the Comment Formatting section directs the agent at `--content-file`
 // instead of `--content-stdin`. PowerShell 5.1 / cmd.exe re-encode piped
 // HEREDOC bytes through the active console codepage and silently drop
-// non-ASCII as `?` before reaching `multica.exe` (#2198 / #2236 / #2376).
+// non-ASCII as `?` before reaching `liexiu.exe` (#2198 / #2236 / #2376).
 //
 // Not parallel: mutates the package-level runtimeGOOS.
 func TestInjectRuntimeConfigCodexWindowsUsesContentFile(t *testing.T) {
@@ -2174,49 +2040,6 @@ func TestInjectRuntimeConfigQuickCreateOutputPrefixAgnostic(t *testing.T) {
 	}
 }
 
-func TestInjectRuntimeConfigAutopilotRunOnlyNoIssueWorkflow(t *testing.T) {
-	t.Parallel()
-	dir := t.TempDir()
-
-	ctx := TaskContextForEnv{
-		AutopilotRunID:       "run-1",
-		AutopilotID:          "autopilot-1",
-		AutopilotTitle:       "Daily dependency check",
-		AutopilotDescription: "Check dependencies and report outdated packages.",
-		AutopilotSource:      "manual",
-	}
-
-	if _, err := InjectRuntimeConfig(dir, "codex", ctx); err != nil {
-		t.Fatalf("InjectRuntimeConfig failed: %v", err)
-	}
-	data, err := os.ReadFile(filepath.Join(dir, "AGENTS.md"))
-	if err != nil {
-		t.Fatalf("read AGENTS.md: %v", err)
-	}
-	s := string(data)
-
-	for _, want := range []string{
-		"Autopilot in run-only mode",
-		"Autopilot run ID: `run-1`",
-		"Check dependencies and report outdated packages.",
-		"multica autopilot get autopilot-1 --output json",
-		"Your final assistant output is captured automatically as the autopilot run result",
-	} {
-		if !strings.Contains(s, want) {
-			t.Errorf("autopilot runtime config missing %q\n---\n%s", want, s)
-		}
-	}
-
-	for _, absent := range []string{
-		"Run `multica issue get",
-		"Final results MUST be delivered via `multica issue comment add`",
-	} {
-		if strings.Contains(s, absent) {
-			t.Errorf("autopilot runtime config should not contain %q\n---\n%s", absent, s)
-		}
-	}
-}
-
 func TestInjectRuntimeConfigUnknownProvider(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
@@ -2253,7 +2076,7 @@ func TestInjectRuntimeConfigHermes(t *testing.T) {
 	}
 
 	s := string(content)
-	if !strings.Contains(s, "Multica Agent Runtime") {
+	if !strings.Contains(s, "LieXiu Agent Runtime") {
 		t.Error("AGENTS.md missing meta skill header")
 	}
 	// Listed by on-disk slug rather than the display name (MUL-5529).
@@ -3166,10 +2989,10 @@ env_key = "NEW_API_KEY"
 	// Daemon-managed sandbox / multi-agent / memory blocks must all be
 	// re-applied on top of the fresh copy — PR correctness depends on it.
 	for _, marker := range []string{
-		multicaManagedBeginMarker,
-		multicaMultiAgentBeginMarker,
-		multicaMemoryFeatureBeginMarker,
-		multicaMemoryConfigBeginMarker,
+		liexiuManagedBeginMarker,
+		liexiuMultiAgentBeginMarker,
+		liexiuMemoryFeatureBeginMarker,
+		liexiuMemoryConfigBeginMarker,
 	} {
 		if !strings.Contains(s, marker) {
 			t.Errorf("daemon-managed marker %q missing after refresh, got:\n%s", marker, s)
@@ -3272,10 +3095,10 @@ env_key = "OLD_API_KEY"
 		}
 	}
 	for _, marker := range []string{
-		multicaManagedBeginMarker,
-		multicaMultiAgentBeginMarker,
-		multicaMemoryFeatureBeginMarker,
-		multicaMemoryConfigBeginMarker,
+		liexiuManagedBeginMarker,
+		liexiuMultiAgentBeginMarker,
+		liexiuMemoryFeatureBeginMarker,
+		liexiuMemoryConfigBeginMarker,
 	} {
 		if !strings.Contains(s, marker) {
 			t.Errorf("daemon-managed marker %q missing after shared source removed, got:\n%s", marker, s)
@@ -3298,7 +3121,7 @@ func TestEnsureCodexSandboxConfigCreatesDefaultLinux(t *testing.T) {
 		t.Fatalf("failed to read config.toml: %v", err)
 	}
 	s := string(data)
-	if !strings.Contains(s, multicaManagedBeginMarker) || !strings.Contains(s, multicaManagedEndMarker) {
+	if !strings.Contains(s, liexiuManagedBeginMarker) || !strings.Contains(s, liexiuManagedEndMarker) {
 		t.Errorf("missing managed block markers, got:\n%s", s)
 	}
 	if !strings.Contains(s, `sandbox_mode = "danger-full-access"`) {
@@ -3333,7 +3156,7 @@ func TestEnsureCodexSandboxConfigDarwinFallsBack(t *testing.T) {
 
 // TestEnsureCodexSandboxConfigWindowsFallsBack pins MUL-4957: when a Windows
 // user has not opted into a native Codex sandbox, Codex cannot enforce
-// workspace-write and rejects mutation commands (e.g. `multica issue create`)
+// workspace-write and rejects mutation commands (e.g. `liexiu issue create`)
 // "by policy". The daemon therefore defaults Windows to danger-full-access and
 // emits no workspace-write keys.
 func TestEnsureCodexSandboxConfigWindowsFallsBack(t *testing.T) {
@@ -3416,7 +3239,7 @@ func TestEnsureCodexSandboxConfigIsIdempotent(t *testing.T) {
 	}
 	data, _ := os.ReadFile(configPath)
 	// The managed block should appear exactly once.
-	if n := strings.Count(string(data), multicaManagedBeginMarker); n != 1 {
+	if n := strings.Count(string(data), liexiuManagedBeginMarker); n != 1 {
 		t.Errorf("expected exactly 1 managed block, got %d in:\n%s", n, data)
 	}
 }
@@ -3495,12 +3318,12 @@ func TestEnsureCodexSandboxConfigHoistsAboveUserTables(t *testing.T) {
 
 	// User config that ends inside a table. If the managed block were
 	// appended at EOF, `sandbox_mode = "..."` would be parsed as
-	// permissions.multica.sandbox_mode and Codex would never see it — see
+	// permissions.liexiu.sandbox_mode and Codex would never see it — see
 	// review of MUL-963 PR #1246. The block must be hoisted above any
 	// user-defined table headers so it lives at the TOML root.
 	existing := `model = "o3"
 
-[permissions.multica]
+[permissions.liexiu]
 trust = "always"
 `
 	os.WriteFile(configPath, []byte(existing), 0o644)
@@ -3513,9 +3336,9 @@ trust = "always"
 	data, _ := os.ReadFile(configPath)
 	s := string(data)
 
-	beginIdx := strings.Index(s, multicaManagedBeginMarker)
-	endIdx := strings.Index(s, multicaManagedEndMarker)
-	tableIdx := strings.Index(s, "[permissions.multica]")
+	beginIdx := strings.Index(s, liexiuManagedBeginMarker)
+	endIdx := strings.Index(s, liexiuManagedEndMarker)
+	tableIdx := strings.Index(s, "[permissions.liexiu]")
 	if beginIdx < 0 || endIdx < 0 || tableIdx < 0 {
 		t.Fatalf("expected managed block and user table to both be present, got:\n%s", s)
 	}
@@ -3523,14 +3346,14 @@ trust = "always"
 	// that sandbox_mode and sandbox_workspace_write.network_access are
 	// parsed at the TOML root.
 	if !(beginIdx < endIdx && endIdx < tableIdx) {
-		t.Errorf("managed block must be hoisted above [permissions.multica]; got begin=%d end=%d table=%d:\n%s", beginIdx, endIdx, tableIdx, s)
+		t.Errorf("managed block must be hoisted above [permissions.liexiu]; got begin=%d end=%d table=%d:\n%s", beginIdx, endIdx, tableIdx, s)
 	}
 	// User content must be preserved verbatim.
 	if !strings.Contains(s, `model = "o3"`) {
 		t.Error("lost user top-level key")
 	}
 	if !strings.Contains(s, `trust = "always"`) {
-		t.Error("lost user permissions.multica content")
+		t.Error("lost user permissions.liexiu content")
 	}
 
 	// Running again must be idempotent even when the preceding content ends
@@ -3542,7 +3365,7 @@ trust = "always"
 	if string(data2) != s {
 		t.Errorf("second pass should be idempotent:\n--- first ---\n%s\n--- second ---\n%s", s, data2)
 	}
-	if n := strings.Count(string(data2), multicaManagedBeginMarker); n != 1 {
+	if n := strings.Count(string(data2), liexiuManagedBeginMarker); n != 1 {
 		t.Errorf("expected exactly one managed block after idempotent rewrite, got %d", n)
 	}
 }
@@ -3558,15 +3381,15 @@ func TestEnsureCodexSandboxConfigMovesLegacyTrailingBlockToTop(t *testing.T) {
 	// top; otherwise sandbox_mode remains trapped inside the preceding table.
 	legacy := `model = "o3"
 
-[permissions.multica]
+[permissions.liexiu]
 trust = "always"
 
-` + multicaManagedBeginMarker + `
+` + liexiuManagedBeginMarker + `
 sandbox_mode = "workspace-write"
 
 [sandbox_workspace_write]
 network_access = true
-` + multicaManagedEndMarker + `
+` + liexiuManagedEndMarker + `
 `
 	os.WriteFile(configPath, []byte(legacy), 0o644)
 
@@ -3577,12 +3400,12 @@ network_access = true
 	data, _ := os.ReadFile(configPath)
 	s := string(data)
 
-	beginIdx := strings.Index(s, multicaManagedBeginMarker)
-	tableIdx := strings.Index(s, "[permissions.multica]")
+	beginIdx := strings.Index(s, liexiuManagedBeginMarker)
+	tableIdx := strings.Index(s, "[permissions.liexiu]")
 	if beginIdx < 0 || tableIdx < 0 || beginIdx > tableIdx {
-		t.Errorf("expected managed block to be hoisted above [permissions.multica], got:\n%s", s)
+		t.Errorf("expected managed block to be hoisted above [permissions.liexiu], got:\n%s", s)
 	}
-	if strings.Count(s, multicaManagedBeginMarker) != 1 {
+	if strings.Count(s, liexiuManagedBeginMarker) != 1 {
 		t.Errorf("expected exactly one managed block, got:\n%s", s)
 	}
 	// The old inline `[sandbox_workspace_write]` header must be gone — the
@@ -3869,7 +3692,7 @@ func TestPrepareCodexHomeFailsClosedWhenSandboxWriteFails(t *testing.T) {
 	// Reused per-task home still holding the prior run's danger-full-access.
 	codexHome := t.TempDir()
 	configPath := filepath.Join(codexHome, "config.toml")
-	stale := multicaManagedBeginMarker + "\nsandbox_mode = \"danger-full-access\"\n" + multicaManagedEndMarker + "\n"
+	stale := liexiuManagedBeginMarker + "\nsandbox_mode = \"danger-full-access\"\n" + liexiuManagedEndMarker + "\n"
 	if err := os.WriteFile(configPath, []byte(stale), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -3927,7 +3750,7 @@ func TestPrepareCodexHomeWritesManagedSandboxBlock(t *testing.T) {
 		t.Fatalf("config.toml not created: %v", err)
 	}
 	s := string(data)
-	if !strings.Contains(s, multicaManagedBeginMarker) {
+	if !strings.Contains(s, liexiuManagedBeginMarker) {
 		t.Errorf("config.toml missing managed block, got:\n%s", s)
 	}
 	if !strings.Contains(s, `sandbox_mode = "danger-full-access"`) {
@@ -3974,13 +3797,13 @@ func TestReuseRestoresCodexHome(t *testing.T) {
 	if reused.CodexHome == "" {
 		t.Fatal("expected CodexHome to be restored after Reuse")
 	}
-	if reused.MulticaConfigRoot != filepath.Join(reused.RootDir, "multica-config") {
-		t.Fatalf("MulticaConfigRoot = %q, want restored task-local config directory", reused.MulticaConfigRoot)
+	if reused.LieXiuConfigRoot != filepath.Join(reused.RootDir, "liexiu-config") {
+		t.Fatalf("LieXiuConfigRoot = %q, want restored task-local config directory", reused.LieXiuConfigRoot)
 	}
-	if info, err := os.Stat(reused.MulticaConfigRoot); err != nil {
-		t.Fatalf("stat restored MulticaConfigRoot: %v", err)
+	if info, err := os.Stat(reused.LieXiuConfigRoot); err != nil {
+		t.Fatalf("stat restored LieXiuConfigRoot: %v", err)
 	} else if got := info.Mode().Perm(); got != 0o700 {
-		t.Fatalf("restored MulticaConfigRoot mode = %o, want 700", got)
+		t.Fatalf("restored LieXiuConfigRoot mode = %o, want 700", got)
 	}
 
 	// Verify config.toml has a managed block (exact mode depends on host
@@ -3989,8 +3812,8 @@ func TestReuseRestoresCodexHome(t *testing.T) {
 	if err != nil {
 		t.Fatalf("config.toml not found in reused CodexHome: %v", err)
 	}
-	if !strings.Contains(string(data), multicaManagedBeginMarker) {
-		t.Error("reused config.toml missing multica-managed block")
+	if !strings.Contains(string(data), liexiuManagedBeginMarker) {
+		t.Error("reused config.toml missing liexiu-managed block")
 	}
 }
 
@@ -4439,7 +4262,7 @@ func TestReuseUpdatesCodexWorkspaceSkills(t *testing.T) {
 
 // TestPrepareCodexSeedsUserSkills covers the fix for #1922: skills the user
 // installs under ~/.codex/skills/ must be discoverable by the codex CLI
-// inside a Multica task, despite the daemon redirecting CODEX_HOME to a
+// inside a LieXiu task, despite the daemon redirecting CODEX_HOME to a
 // per-task directory.
 func TestPrepareCodexSeedsUserSkills(t *testing.T) {
 	// Cannot use t.Parallel() with t.Setenv.
@@ -4918,8 +4741,8 @@ func TestReadGCMeta_LegacyFileDefaultsToIssueKind(t *testing.T) {
 	}
 }
 
-// New v2 meta files for chat / autopilot / quick-create round-trip without
-// being misclassified as the issue kind.
+// Supported v2 metadata kinds round-trip without being misclassified as the
+// issue kind.
 func TestWriteReadGCMeta_KindRoundTrip(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
@@ -4927,8 +4750,7 @@ func TestWriteReadGCMeta_KindRoundTrip(t *testing.T) {
 		meta GCMeta
 		want GCMetaKind
 	}{
-		{"chat", GCMeta{Kind: GCKindChat, ChatSessionID: "cs-1", WorkspaceID: "ws"}, GCKindChat},
-		{"autopilot_run", GCMeta{Kind: GCKindAutopilotRun, AutopilotRunID: "ar-1", WorkspaceID: "ws"}, GCKindAutopilotRun},
+		{"issue", GCMeta{Kind: GCKindIssue, IssueID: "i-1", WorkspaceID: "ws"}, GCKindIssue},
 		{"quick_create", GCMeta{Kind: GCKindQuickCreate, TaskID: "t-1", WorkspaceID: "ws"}, GCKindQuickCreate},
 	}
 	for _, tc := range cases {
@@ -4950,6 +4772,23 @@ func TestWriteReadGCMeta_KindRoundTrip(t *testing.T) {
 	}
 }
 
+// Unsupported historical kinds remain opaque; the daemon treats them as
+// unknown and uses the orphan-by-mtime path rather than calling a legacy API.
+func TestReadGCMeta_UnsupportedKindIsOpaque(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	data := []byte(`{"kind":"legacy","workspace_id":"ws"}`)
+	if err := os.WriteFile(filepath.Join(dir, gcMetaFile), data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	meta, err := ReadGCMeta(dir)
+	if err != nil {
+		t.Fatalf("ReadGCMeta: %v", err)
+	}
+	if meta.Kind != GCMetaKind("legacy") {
+		t.Fatalf("kind = %q, want opaque historical kind", meta.Kind)
+	}
+}
 func TestReadGCMeta_NoFile(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
@@ -5029,10 +4868,10 @@ func TestInjectRuntimeConfigMentionLoopHardening(t *testing.T) {
 		// MUL-5442 owner decision (2026-08-06): the generic no-reply rule is
 		// retired. It never carried the loop prevention — agent comments
 		// trigger nothing without an explicit @mention (the sole implicit
-		// wake is the squad-leader path), so the mention discipline pinned in
+		// wake path), so the mention discipline pinned in
 		// the Mentions subtest above is the real defense. Ordinary agents are
 		// back on the unconditional one-comment-per-run contract; recorded
-		// silence via `no_action` remains squad-leader-only. Retired pins,
+		// silence via `no_action` remains an explicit-path behavior. Retired pins,
 		// replaced by the negative guards below so the apparatus cannot creep
 		// back: "Decide whether a reply is warranted", "produced actual
 		// work", "pure acknowledgment / thanks / sign-off", "do NOT reply",
@@ -5054,13 +4893,13 @@ func TestInjectRuntimeConfigMentionLoopHardening(t *testing.T) {
 			// #6493 review: the ledger named five retired pins but only
 			// guarded two — the missing three let the old apparatus
 			// coexist with the new sentences. Ordinary-agent scope only:
-			// the leader's no_action bullet says "DO NOT post any
+			// the explicit no_action bullet says "DO NOT post any
 			// comment", which none of these match.
 			"produced actual work",
 			"pure acknowledgment / thanks / sign-off",
 			"do NOT reply",
-			// Leader-leak guard: the carve-out imperative is
-			// leader-brief-only.
+			// Guard against leaking the carve-out imperative into ordinary
+			// agent briefs.
 			"Unless your outcome is",
 		} {
 			if strings.Contains(s, banned) {
@@ -5068,74 +4907,6 @@ func TestInjectRuntimeConfigMentionLoopHardening(t *testing.T) {
 			}
 		}
 	})
-}
-
-// TestInjectRuntimeConfigSquadLeaderCommentTriggeredNoAction verifies that
-// when IsSquadLeader is true and the task is comment-triggered, the generated
-// CLAUDE.md explicitly forbids posting comments that merely announce no_action.
-// This is the fix for MUL-2168 — squad leaders were posting "Exiting silently"
-// comments because the comment-triggered path lacked the prohibition.
-func TestInjectRuntimeConfigSquadLeaderCommentTriggeredNoAction(t *testing.T) {
-	t.Parallel()
-
-	dir := t.TempDir()
-	ctx := TaskContextForEnv{
-		IssueID:          "issue-1",
-		TriggerCommentID: "comment-1",
-		IsSquadLeader:    true,
-	}
-	if _, err := InjectRuntimeConfig(dir, "claude", ctx); err != nil {
-		t.Fatalf("InjectRuntimeConfig failed: %v", err)
-	}
-	data, err := os.ReadFile(filepath.Join(dir, "CLAUDE.md"))
-	if err != nil {
-		t.Fatalf("read CLAUDE.md: %v", err)
-	}
-	s := string(data)
-
-	// The comment-triggered workflow must contain the squad leader no_action
-	// rule, and the reply imperative must carry the no_action carve-out so a
-	// later bullet never contradicts it (MUL-5442 #6493 review).
-	for _, want := range []string{
-		"Squad leader rule",
-		"DO NOT post any comment",
-		"multica squad activity",
-		"Unless your outcome is `no_action` (Squad leader rule above), posting your reply as a comment is mandatory",
-	} {
-		if !strings.Contains(s, want) {
-			t.Errorf("squad leader comment-triggered CLAUDE.md missing %q", want)
-		}
-	}
-	// Capital-P form = the ordinary unconditional bullet; the leader brief
-	// must carry only the carve-out variant (its lowercase "posting your
-	// reply as a comment is mandatory" tail is expected and legal).
-	if strings.Contains(s, "Posting your reply as a comment is mandatory") {
-		t.Errorf("squad leader CLAUDE.md still carries the unconditional reply bullet")
-	}
-
-	// The Output section must use strong prohibition language.
-	if !strings.Contains(s, "you MUST exit without posting any comment") {
-		t.Errorf("Output section missing strong prohibition for squad leader no_action")
-	}
-
-	// Non-squad-leader should NOT have the squad leader rule in comment-triggered path.
-	dir2 := t.TempDir()
-	ctx2 := TaskContextForEnv{
-		IssueID:          "issue-1",
-		TriggerCommentID: "comment-1",
-		IsSquadLeader:    false,
-	}
-	if _, err := InjectRuntimeConfig(dir2, "claude", ctx2); err != nil {
-		t.Fatalf("InjectRuntimeConfig failed: %v", err)
-	}
-	data2, err := os.ReadFile(filepath.Join(dir2, "CLAUDE.md"))
-	if err != nil {
-		t.Fatalf("read CLAUDE.md: %v", err)
-	}
-	s2 := string(data2)
-	if strings.Contains(s2, "Squad leader rule") {
-		t.Errorf("non-squad-leader CLAUDE.md should NOT contain squad leader rule")
-	}
 }
 
 // TestBuildMetaSkillContentEmitsRequestingUser pins MUL-2406's brief
@@ -5373,7 +5144,7 @@ func TestTaskInitiatorBlockAgent(t *testing.T) {
 }
 
 // TestBuildMetaSkillContentOmitsTaskInitiatorWhenNoName ensures tasks with no
-// attributable human initiator (on-assign / autopilot / quick-create, where
+// attributable human initiator (on-assign / quick-create, where
 // the fields stay empty) skip the heading entirely — a bare heading would be
 // noise.
 func TestBuildMetaSkillContentOmitsTaskInitiatorWhenNoName(t *testing.T) {
@@ -5523,7 +5294,7 @@ func TestInjectRuntimeConfigBriefOmitsResumedThreadAnchor(t *testing.T) {
 		"No other new comments on this issue since your last run",
 		"If your reply depends on thread context",
 		"do not rely only on resumed session memory",
-		"multica issue comment list " + issueID + " --thread thread-root-1 --tail 30 --compact --output json",
+		"liexiu issue comment list " + issueID + " --thread thread-root-1 --tail 30 --compact --output json",
 	} {
 		if !strings.Contains(hint, want) {
 			t.Errorf("resumed hint missing %q\n---\n%s", want, hint)
@@ -5566,7 +5337,7 @@ func TestInjectRuntimeConfigAssignmentTriggerScansRootsFirst(t *testing.T) {
 	}
 	// Older context must remain reachable through pagination. The cursor
 	// labels and flags now live in the CLI's own --help (MUL-5442, pinned by
-	// TestIssueCommentListHelpCarriesReadContract in cmd/multica); the brief
+	// TestIssueCommentListHelpCarriesReadContract in cmd/liexiu); the brief
 	// keeps a pointer in the flag reference.
 	for _, want := range []string{
 		"paging cursors, and full flag semantics: `--help`",
@@ -5576,7 +5347,7 @@ func TestInjectRuntimeConfigAssignmentTriggerScansRootsFirst(t *testing.T) {
 		}
 	}
 	for _, banned := range []string{
-		"multica issue comment list issue-1 --output json",
+		"liexiu issue comment list issue-1 --output json",
 		"read the full comment history",
 		"read the full history page-by-page",
 		"`--recent` is a way to read the full history",
@@ -5629,7 +5400,7 @@ func TestInjectRuntimeConfigCatchUpScansRootsFirst(t *testing.T) {
 		// The headline saturation warning stays in the flag reference; the
 		// deep semantics (per-thread cap, root-thread saturation) moved to the
 		// CLI's own --help (MUL-5442) and are pinned there
-		// (TestIssueCommentListHelpCarriesReadContract in cmd/multica).
+		// (TestIssueCommentListHelpCarriesReadContract in cmd/liexiu).
 		"caps THREADS, not comments",
 	} {
 		if !strings.Contains(s, want) {
@@ -5639,7 +5410,7 @@ func TestInjectRuntimeConfigCatchUpScansRootsFirst(t *testing.T) {
 
 	// The workflow steps must not hand the agent a ready-to-paste bulk read;
 	// that is what made the mandatory step pull whole histories.
-	if strings.Contains(s, "multica issue comment list issue-1 --recent") {
+	if strings.Contains(s, "liexiu issue comment list issue-1 --recent") {
 		t.Errorf("workflow steps must not present an issue-scoped --recent command\n---\n%s", s)
 	}
 	// The saturation warning belongs to the flag reference, which introduces
@@ -5664,7 +5435,7 @@ func TestInjectRuntimeConfigCatchUpScansRootsFirst(t *testing.T) {
 // the `## Issue Metadata` section (semantic guide + recommended keys +
 // pin/clear rules) and the `metadata list` workflow step are emitted only
 // when the task carries a real issue id (comment-triggered or
-// assignment-triggered). Chat / quick-create / run-only autopilot don't
+// assignment-triggered). Quick-create doesn't
 // have an issue, so injecting the section there would just guarantee a
 // failed CLI call on every entry. The discovery line in Available
 // Commands → Core is global and must appear everywhere so that the agent
@@ -5678,9 +5449,9 @@ func TestInjectRuntimeConfigIssueMetadataSectionScope(t *testing.T) {
 	// CLI when an agent decides to read or write metadata outside the
 	// numbered workflow.
 	coreDiscoveryLines := []string{
-		"multica issue metadata list <issue-id>",
-		"multica issue metadata set <issue-id> --key <k> --value <v> [--type string|number|bool]",
-		"multica issue metadata delete <issue-id> --key <k>",
+		"liexiu issue metadata list <issue-id>",
+		"liexiu issue metadata set <issue-id> --key <k> --value <v> [--type string|number|bool]",
+		"liexiu issue metadata delete <issue-id> --key <k>",
 	}
 
 	type wantSection struct {
@@ -5702,19 +5473,19 @@ func TestInjectRuntimeConfigIssueMetadataSectionScope(t *testing.T) {
 			// express — the read stance, the re-read bar, and the two
 			// write-time boundaries (secrets, length). The full ban list
 			// and the key-naming conventions live in the
-			// multica-working-on-issues skill, pinned by
+			// liexiu-working-on-issues skill, pinned by
 			// TestWorkingOnIssuesSkillCoversIssueLoopContracts so this
 			// pointer cannot dangle. The recommended-keys block was
 			// removed outright: metadata is deliberately free-form custom
 			// state (owner decision on MUL-5442), not a vocabulary the
 			// platform curates in every brief.
 			"never secrets or long content",
-			"multica issue metadata delete",
-			"the `multica-working-on-issues` skill",
+			"liexiu issue metadata delete",
+			"the `liexiu-working-on-issues` skill",
 		},
 	}
 	withoutSection := wantSection{
-		// We can't simply require `multica issue metadata list` absent
+		// We can't simply require `liexiu issue metadata list` absent
 		// because the Available Commands → Core discovery line is
 		// global (it uses `<issue-id>` placeholder text). What MUST be
 		// absent is the semantic section itself plus the workflow-step
@@ -5752,7 +5523,7 @@ func TestInjectRuntimeConfigIssueMetadataSectionScope(t *testing.T) {
 			provider: "claude",
 			filename: "CLAUDE.md",
 			workflowStepPresent: []string{
-				"Read the metadata bag (`multica issue metadata list`)",
+				"Read the metadata bag (`liexiu issue metadata list`)",
 				// Platform failure semantics, not tool mechanics: a failed
 				// metadata read must never block the main task (MUL-5442
 				// stage-1 review).
@@ -5765,8 +5536,8 @@ func TestInjectRuntimeConfigIssueMetadataSectionScope(t *testing.T) {
 				// Exit step must show both write and delete, not just
 				// "set" — stale-key cleanup is the half that keeps
 				// metadata from rotting.
-				"multica issue metadata set",
-				"multica issue metadata delete",
+				"liexiu issue metadata set",
+				"liexiu issue metadata delete",
 				"Before exiting",
 			},
 			want: withSection,
@@ -5777,11 +5548,11 @@ func TestInjectRuntimeConfigIssueMetadataSectionScope(t *testing.T) {
 			provider: "claude",
 			filename: "CLAUDE.md",
 			workflowStepPresent: []string{
-				"Read the metadata bag (`multica issue metadata list`)",
+				"Read the metadata bag (`liexiu issue metadata list`)",
 				"What to look for: `## Issue Metadata`",
 				"the bar in `## Issue Metadata`",
-				"multica issue metadata set",
-				"multica issue metadata delete",
+				"liexiu issue metadata set",
+				"liexiu issue metadata delete",
 				"Before exiting",
 			},
 			want: withSection,
@@ -5793,25 +5564,6 @@ func TestInjectRuntimeConfigIssueMetadataSectionScope(t *testing.T) {
 			},
 			provider: "codex",
 			filename: "AGENTS.md",
-			want:     withoutSection,
-		},
-		{
-			name: "run_only_autopilot_no_metadata_section",
-			ctx: TaskContextForEnv{
-				AutopilotRunID: "run-md-1",
-				AutopilotID:    "autopilot-md-1",
-			},
-			provider: "codex",
-			filename: "AGENTS.md",
-			want:     withoutSection,
-		},
-		{
-			name: "chat_no_metadata_section",
-			ctx: TaskContextForEnv{
-				ChatSessionID: "chat-md-1",
-			},
-			provider: "claude",
-			filename: "CLAUDE.md",
 			want:     withoutSection,
 		},
 	}
@@ -5897,7 +5649,7 @@ func TestInjectRuntimeConfigIssueMetadataCodexFormattingUnchanged(t *testing.T) 
 		if !strings.Contains(s, "## Issue Metadata") {
 			t.Fatalf("Issue Metadata section missing\n---\n%s", s)
 		}
-		if !strings.Contains(s, "Read the metadata bag (`multica issue metadata list`)") {
+		if !strings.Contains(s, "Read the metadata bag (`liexiu issue metadata list`)") {
 			t.Fatalf("metadata list step missing\n---\n%s", s)
 		}
 		// ...AND the post-#4182 file-first rule is still emitted on Linux.

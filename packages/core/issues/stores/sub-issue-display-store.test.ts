@@ -28,11 +28,10 @@ describe("sub-issue display store", () => {
   beforeEach(() => {
     useSubIssueDisplayStore.setState({
       rowProperties: { ...DEFAULT_SUB_ISSUE_ROW_PROPERTIES },
-      rowPropertyIds: [],
     });
   });
 
-  it("defaults to showing every built-in field and no custom properties", () => {
+  it("defaults to showing every built-in field", () => {
     const s = useSubIssueDisplayStore.getState();
     expect(s.rowProperties).toEqual({
       priority: true,
@@ -41,7 +40,6 @@ describe("sub-issue display store", () => {
       dueDate: true,
       assignee: true,
     });
-    expect(s.rowPropertyIds).toEqual([]);
   });
 
   it("toggleRowProperty flips a single field without touching the rest", () => {
@@ -57,15 +55,4 @@ describe("sub-issue display store", () => {
     );
   });
 
-  it("toggleRowPropertyId adds then removes a custom property id", () => {
-    useSubIssueDisplayStore.getState().toggleRowPropertyId("prop-1");
-    useSubIssueDisplayStore.getState().toggleRowPropertyId("prop-2");
-    expect(useSubIssueDisplayStore.getState().rowPropertyIds).toEqual([
-      "prop-1",
-      "prop-2",
-    ]);
-
-    useSubIssueDisplayStore.getState().toggleRowPropertyId("prop-1");
-    expect(useSubIssueDisplayStore.getState().rowPropertyIds).toEqual(["prop-2"]);
-  });
 });

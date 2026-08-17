@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
+	db "github.com/kailonyang/liexiu/server/pkg/db/generated"
 )
 
 // insertRuntimeProfileFixture creates a runtime_profile in testWorkspaceID and
@@ -57,10 +57,7 @@ func insertProfileRuntimeFixture(t *testing.T, ctx context.Context, profileID, n
 // per-runtime teardown the DELETE on agent_runtime would raise a raw FK error and
 // the handler would 500.
 //
-// Since MUL-5559 the teardown unbinds that agent instead of hard-deleting it, so
-// this test also pins what must NOT happen: the agent survives with its channel
-// installation intact. Sweeping the installation of a surviving agent would take
-// a working bot away from it — the mirror of the #4810 orphan problem.
+// Since MUL-5559 the teardown unbinds that agent instead of hard-deleting it.
 func TestDeleteRuntimeProfile_ArchivedAgentUnbindCascade(t *testing.T) {
 	if testHandler == nil {
 		t.Skip("database not available")
@@ -76,31 +73,6 @@ func TestDeleteRuntimeProfile_ArchivedAgentUnbindCascade(t *testing.T) {
 	if _, err := testPool.Exec(ctx, `UPDATE agent SET archived_at = now() WHERE id = $1`, agentID); err != nil {
 		t.Fatalf("archive agent: %v", err)
 	}
-
-	// Give the archived agent a channel installation (+ a dependent binding).
-	// The agent is no longer hard-deleted here, so the installation must be left
-	// alone: it belongs to an agent that still exists and whose bot must keep
-	// working once it is bound to a new runtime.
-	const rpApp = "cli_rp_cascade"
-	const rpChat = "cc000000-0000-4000-8000-0000000000f7"
-	_, _ = testPool.Exec(ctx, `DELETE FROM channel_installation WHERE config->>'app_id' = $1`, rpApp)
-	_, _ = testPool.Exec(ctx, `DELETE FROM channel_chat_session_binding WHERE chat_session_id = $1`, rpChat)
-	var rpInstallID string
-	if err := testPool.QueryRow(ctx, `
-INSERT INTO channel_installation (workspace_id, agent_id, channel_type, config, installer_user_id, status)
-VALUES ($1, $2, 'feishu', jsonb_build_object('app_id', $3::text), $4, 'active')
-RETURNING id`, testWorkspaceID, agentID, rpApp, testUserID).Scan(&rpInstallID); err != nil {
-		t.Fatalf("seed channel installation: %v", err)
-	}
-	if _, err := testPool.Exec(ctx, `
-INSERT INTO channel_chat_session_binding (chat_session_id, installation_id, channel_type, channel_chat_id, chat_type)
-VALUES ($1, $2, 'feishu', 'oc_rp', 'p2p')`, rpChat, rpInstallID); err != nil {
-		t.Fatalf("seed chat-session binding: %v", err)
-	}
-	t.Cleanup(func() {
-		_, _ = testPool.Exec(context.Background(), `DELETE FROM channel_installation WHERE config->>'app_id' = $1`, rpApp)
-		_, _ = testPool.Exec(context.Background(), `DELETE FROM channel_chat_session_binding WHERE chat_session_id = $1`, rpChat)
-	})
 
 	w := httptest.NewRecorder()
 	req := newRequest("DELETE", "/api/workspaces/"+testWorkspaceID+"/runtime-profiles/"+profileID, nil)
@@ -139,19 +111,6 @@ VALUES ($1, $2, 'feishu', 'oc_rp', 'p2p')`, rpChat, rpInstallID); err != nil {
 		t.Fatalf("surviving agent must be unbound (runtime_id IS NULL)")
 	}
 
-	var instRows, bindingRows int
-	if err := testPool.QueryRow(ctx, `SELECT count(*) FROM channel_installation WHERE id = $1`, rpInstallID).Scan(&instRows); err != nil {
-		t.Fatalf("count channel installation: %v", err)
-	}
-	if instRows != 1 {
-		t.Fatalf("surviving agent's channel installation was swept: %d rows (its bot would stop working)", instRows)
-	}
-	if err := testPool.QueryRow(ctx, `SELECT count(*) FROM channel_chat_session_binding WHERE installation_id = $1`, rpInstallID).Scan(&bindingRows); err != nil {
-		t.Fatalf("count channel chat-session binding: %v", err)
-	}
-	if bindingRows != 1 {
-		t.Fatalf("surviving installation's chat-session binding was swept: %d rows", bindingRows)
-	}
 }
 
 // TestDeleteRuntimeProfile_ActiveAgentBlocks confirms the guard still refuses

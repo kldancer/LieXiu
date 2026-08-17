@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { NextRequest } from "next/server";
-import { MULTICA_LOCALE_HEADER } from "./lib/locale-routing";
+import { LIEXIU_LOCALE_HEADER } from "./lib/locale-routing";
 import { proxy } from "./proxy";
 
 function makeRequest(
   path: string,
   cookies: Record<string, string> = {},
-  host = "app.multica.test",
+  host = "app.liexiu.test",
 ) {
   const cookieHeader = Object.entries(cookies)
     .map(([key, value]) => `${key}=${value}`)
@@ -32,11 +32,9 @@ function restoreEnv(key: string, value: string | undefined) {
 
 function withoutRuntimeUpstreams(run: () => void) {
   const previousRemoteApiUrl = process.env.REMOTE_API_URL;
-  const previousDocsUrl = process.env.DOCS_URL;
   const previousPublicApiUrl = process.env.NEXT_PUBLIC_API_URL;
   const previousPort = process.env.PORT;
   delete process.env.REMOTE_API_URL;
-  delete process.env.DOCS_URL;
   delete process.env.NEXT_PUBLIC_API_URL;
   process.env.PORT = "3000";
 
@@ -44,7 +42,6 @@ function withoutRuntimeUpstreams(run: () => void) {
     run();
   } finally {
     restoreEnv("REMOTE_API_URL", previousRemoteApiUrl);
-    restoreEnv("DOCS_URL", previousDocsUrl);
     restoreEnv("NEXT_PUBLIC_API_URL", previousPublicApiUrl);
     restoreEnv("PORT", previousPort);
   }
@@ -52,7 +49,7 @@ function withoutRuntimeUpstreams(run: () => void) {
 
 describe("proxy legacy workspace route redirects", () => {
   const sessionCookies = {
-    multica_logged_in: "1",
+    liexiu_logged_in: "1",
     last_workspace_slug: "acme",
   };
 
@@ -60,10 +57,7 @@ describe("proxy legacy workspace route redirects", () => {
     ["issues", "/acme/issues"],
     ["projects", "/acme/projects"],
     ["agents", "/acme/agents"],
-    ["squads", "/acme/squads"],
-    ["inbox", "/acme/inbox"],
     ["my-issues", "/acme/my-issues"],
-    ["autopilots", "/acme/autopilots"],
     ["runtimes", "/acme/runtimes"],
     ["skills", "/acme/skills"],
     ["settings", "/acme/settings"],
@@ -72,49 +66,42 @@ describe("proxy legacy workspace route redirects", () => {
     "redirects legacy /%s URLs through the last workspace slug",
     (segment, expectedPath) => {
       expect(redirectLocation(`/${segment}?tab=all`, sessionCookies)).toBe(
-        `https://app.multica.test${expectedPath}?tab=all`,
+        `https://app.liexiu.test${expectedPath}?tab=all`,
       );
     },
   );
 
   it("preserves nested legacy paths and query strings", () => {
     expect(
-      redirectLocation("/squads/squad-123?view=members", sessionCookies),
-    ).toBe("https://app.multica.test/acme/squads/squad-123?view=members");
+      redirectLocation("/projects/project-123?view=issues", sessionCookies),
+    ).toBe("https://app.liexiu.test/acme/projects/project-123?view=issues");
   });
 
   it("sends logged-out legacy URLs to login", () => {
-    expect(redirectLocation("/usage?tab=billing")).toBe(
-      "https://app.multica.test/login?tab=billing",
+    expect(redirectLocation("/usage?tab=runtime")).toBe(
+      "https://app.liexiu.test/login?tab=runtime",
     );
   });
 
   it("sends logged-in legacy URLs without a last workspace cookie to root", () => {
     expect(
-      redirectLocation("/squads", { multica_logged_in: "1" }),
-    ).toBe("https://app.multica.test/");
+      redirectLocation("/projects", { liexiu_logged_in: "1" }),
+    ).toBe("https://app.liexiu.test/");
   });
 
   it("does not redirect workspace-scoped URLs whose first segment is already a slug", () => {
-    expect(redirectLocation("/acme/squads", sessionCookies)).toBeNull();
+    expect(redirectLocation("/acme/projects", sessionCookies)).toBeNull();
   });
 
   it("redirects app-host root URLs to the last workspace", () => {
     expect(redirectLocation("/", sessionCookies)).toBe(
-      "https://app.multica.test/acme/issues",
+      "https://app.liexiu.test/acme/issues",
     );
   });
 
-  it.each(["multica.ai", "www.multica.ai"])(
-    "does not redirect public marketing root on %s",
-    (host) => {
-      expect(redirectLocation("/", sessionCookies, host)).toBeNull();
-    },
-  );
-
-  it("still redirects explicit legacy app routes on the public marketing host", () => {
-    expect(redirectLocation("/issues/ABC-123", sessionCookies, "multica.ai")).toBe(
-      "https://multica.ai/acme/issues/ABC-123",
+  it("redirects root URLs on every host to the last workspace", () => {
+    expect(redirectLocation("/", sessionCookies, "liexiu.ai")).toBe(
+      "https://liexiu.ai/acme/issues",
     );
   });
 });
@@ -127,19 +114,7 @@ describe("proxy runtime upstream rewrites", () => {
       expect(res.status).toBe(200);
       expect(res.headers.get("x-middleware-rewrite")).toBeNull();
       expect(
-        res.headers.get(`x-middleware-request-${MULTICA_LOCALE_HEADER}`),
-      ).toBe("en");
-    });
-  });
-
-  it("does not rewrite docs requests when no runtime docs origin is configured", () => {
-    withoutRuntimeUpstreams(() => {
-      const res = proxy(makeRequest("/docs/zh"));
-
-      expect(res.status).toBe(200);
-      expect(res.headers.get("x-middleware-rewrite")).toBeNull();
-      expect(
-        res.headers.get(`x-middleware-request-${MULTICA_LOCALE_HEADER}`),
+        res.headers.get(`x-middleware-request-${LIEXIU_LOCALE_HEADER}`),
       ).toBe("en");
     });
   });
@@ -159,21 +134,6 @@ describe("proxy runtime upstream rewrites", () => {
     }
   });
 
-  it("rewrites docs requests to the runtime docs origin", () => {
-    const previous = process.env.DOCS_URL;
-    process.env.DOCS_URL = "http://docs:4000";
-    try {
-      const res = proxy(makeRequest("/docs/zh/agents"));
-
-      expect(res.status).toBe(200);
-      expect(res.headers.get("x-middleware-rewrite")).toBe(
-        "http://docs:4000/docs/zh/agents",
-      );
-    } finally {
-      restoreEnv("DOCS_URL", previous);
-    }
-  });
-
   it("rewrites websocket requests to the runtime API origin", () => {
     const previous = process.env.REMOTE_API_URL;
     process.env.REMOTE_API_URL = "http://backend:8080";
@@ -189,7 +149,7 @@ describe("proxy runtime upstream rewrites", () => {
     }
   });
 
-  it("does not rewrite frontend auth callback pages", () => {
+  it("does not rewrite removed public auth pages", () => {
     const previous = process.env.REMOTE_API_URL;
     process.env.REMOTE_API_URL = "http://backend:8080";
     try {
@@ -198,7 +158,7 @@ describe("proxy runtime upstream rewrites", () => {
       expect(res.status).toBe(200);
       expect(res.headers.get("x-middleware-rewrite")).toBeNull();
       expect(
-        res.headers.get(`x-middleware-request-${MULTICA_LOCALE_HEADER}`),
+        res.headers.get(`x-middleware-request-${LIEXIU_LOCALE_HEADER}`),
       ).toBe("en");
     } finally {
       restoreEnv("REMOTE_API_URL", previous);
@@ -210,24 +170,24 @@ describe("proxy root and locale handling", () => {
   it("redirects logged-in root visits to the last workspace", () => {
     const res = proxy(
       makeRequest("/", {
-        multica_logged_in: "1",
+        liexiu_logged_in: "1",
         last_workspace_slug: "acme",
       }),
     );
 
     expect(res.status).toBe(307);
     expect(res.headers.get("location")).toBe(
-      "https://app.multica.test/acme/issues",
+      "https://app.liexiu.test/acme/issues",
     );
   });
 
   it("forwards locale on login requests", () => {
-    const res = proxy(makeRequest("/login", { "multica-locale": "zh-Hans" }));
+    const res = proxy(makeRequest("/login", { "liexiu-locale": "zh-Hans" }));
 
     expect(res.status).toBe(200);
     expect(res.headers.get("location")).toBeNull();
     expect(
-      res.headers.get(`x-middleware-request-${MULTICA_LOCALE_HEADER}`),
+      res.headers.get(`x-middleware-request-${LIEXIU_LOCALE_HEADER}`),
     ).toBe("zh-Hans");
   });
 });

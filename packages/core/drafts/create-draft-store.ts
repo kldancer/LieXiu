@@ -104,7 +104,7 @@ export function createDraftStore<TData extends object>(
 }
 
 // Structured clone kept local and defensive: the empty draft may contain
-// nested arrays/objects (labelIds, propertyValues, attachments) that must not
+// nested arrays/objects (labelIds, attachments) that must not
 // be shared by reference between the initial state and later `clearDraft`.
 function structuredCloneData<T>(value: T): T {
   return typeof structuredClone === "function"

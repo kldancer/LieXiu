@@ -5,8 +5,7 @@ import (
 	"testing"
 )
 
-// TestClassifyTask pins the precedence rule on classifyTask. All four
-// kinds plus tiebreak cases for safety.
+// TestClassifyTask pins the supported issue and quick-create dispatch.
 func TestClassifyTask(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
@@ -14,15 +13,10 @@ func TestClassifyTask(t *testing.T) {
 		ctx  TaskContextForEnv
 		want taskKind
 	}{
-		{"chat", TaskContextForEnv{ChatSessionID: "c"}, kindChat},
 		{"quick-create", TaskContextForEnv{QuickCreatePrompt: "p"}, kindQuickCreate},
-		{"autopilot", TaskContextForEnv{AutopilotRunID: "r"}, kindAutopilotRunOnly},
 		{"issue-comment-triggered", TaskContextForEnv{IssueID: "i", TriggerCommentID: "c"}, kindIssue},
 		{"issue-assignment-triggered", TaskContextForEnv{IssueID: "i"}, kindIssue},
 		{"issue-bare", TaskContextForEnv{}, kindIssue},
-		{"tiebreak-chat-vs-quick", TaskContextForEnv{ChatSessionID: "c", QuickCreatePrompt: "p"}, kindChat},
-		{"tiebreak-quick-vs-autopilot", TaskContextForEnv{QuickCreatePrompt: "p", AutopilotRunID: "r"}, kindQuickCreate},
-		{"tiebreak-autopilot-vs-comment", TaskContextForEnv{AutopilotRunID: "r", IssueID: "i", TriggerCommentID: "c"}, kindAutopilotRunOnly},
 	}
 	for _, tc := range cases {
 		tc := tc
@@ -44,9 +38,7 @@ func TestTaskKindHasIssueContext(t *testing.T) {
 		want bool
 	}{
 		{kindIssue, true},
-		{kindAutopilotRunOnly, false},
 		{kindQuickCreate, false},
-		{kindChat, false},
 	}
 	for _, tc := range cases {
 		if got := tc.kind.hasIssueContext(); got != tc.want {
@@ -68,7 +60,7 @@ func TestBuildMetaSkillContentBriefContent(t *testing.T) {
 		AgentID:          "eve-1",
 	})
 
-	if !strings.Contains(out, "- `multica issue get <id> --output json` — full issue.\n") {
+	if !strings.Contains(out, "- `liexiu issue get <id> --output json` — full issue.\n") {
 		t.Errorf("brief is missing the `issue get` one-liner\n---\n%s", out)
 	}
 	if strings.Contains(out, "Get full issue details.") {
@@ -83,9 +75,7 @@ func TestBuildMetaSkillContentIssueBodyFormatting(t *testing.T) {
 
 	fixtures := map[string]TaskContextForEnv{
 		"issue":        {IssueID: "i-1"},
-		"autopilot":    {AutopilotRunID: "r-1"},
 		"quick-create": {QuickCreatePrompt: "create an issue"},
-		"chat":         {ChatSessionID: "c-1"},
 	}
 
 	for name, ctx := range fixtures {
@@ -125,24 +115,19 @@ func TestBuildMetaSkillContentSlimKindMatrix(t *testing.T) {
 		heading  string
 		mustHave map[taskKind]bool
 	}
-	allKinds := map[taskKind]bool{
-		kindIssue: true, kindAutopilotRunOnly: true,
-		kindQuickCreate: true, kindChat: true,
-	}
+	allKinds := map[taskKind]bool{kindIssue: true, kindQuickCreate: true}
 	issueKinds := map[taskKind]bool{kindIssue: true}
 	checks := []sectionCheck{
-		{"# Multica Agent Runtime", allKinds},
+		{"# LieXiu Agent Runtime", allKinds},
 		{"## Background Task Safety", allKinds},
 		{"## Agent Identity", allKinds},
 		{"## Available Commands", allKinds},
 		{"## Issue Body Formatting", allKinds},
 		{"### Workflow", allKinds},
-		{"## Important: Always Use the `multica` CLI", allKinds},
+		{"## Important: Always Use the `liexiu` CLI", allKinds},
 		{"## Output", allKinds},
 		{"## Comment Formatting", issueKinds},
-		{"## Repositories", map[taskKind]bool{
-			kindIssue: true, kindAutopilotRunOnly: true, kindChat: true,
-		}},
+		{"## Repositories", map[taskKind]bool{kindIssue: true}},
 		{"## Issue Metadata", issueKinds},
 		{"## Instruction Precedence", issueKinds},
 		{"## Sub-issue Creation", issueKinds},
@@ -154,11 +139,7 @@ func TestBuildMetaSkillContentSlimKindMatrix(t *testing.T) {
 	}
 
 	fixtures := map[taskKind]TaskContextForEnv{
-		kindChat: {ChatSessionID: "c-1", AgentName: "Eve", AgentID: "eve-1",
-			Repos: baseRepo, AgentSkills: baseSkill},
 		kindQuickCreate: {QuickCreatePrompt: "p", AgentName: "Eve", AgentID: "eve-1",
-			Repos: baseRepo, AgentSkills: baseSkill},
-		kindAutopilotRunOnly: {AutopilotRunID: "r-1", AgentName: "Eve", AgentID: "eve-1",
 			Repos: baseRepo, AgentSkills: baseSkill},
 		kindIssue: {IssueID: "i-1", AgentName: "Eve", AgentID: "eve-1",
 			Repos: baseRepo, AgentSkills: baseSkill},
@@ -202,20 +183,6 @@ func TestBriefDueDateTeachesCalendarDayFormat(t *testing.T) {
 	}
 }
 
-// TestBriefOwnsAutopilotIssueCommandsGuard pins the guard's single emission
-// point: the autopilot brief carries AutopilotIssueCommandsGuard, and the
-// per-turn prompt defers to it (daemon.TestBuildPromptAutopilotRunOnly pins
-// the deferral side). MUL-5696.
-func TestBriefOwnsAutopilotIssueCommandsGuard(t *testing.T) {
-	out := buildMetaSkillContent("claude", TaskContextForEnv{AutopilotRunID: "run-1"})
-	if !strings.Contains(out, AutopilotIssueCommandsGuard) {
-		t.Errorf("autopilot brief missing AutopilotIssueCommandsGuard — the per-turn prompt defers to this single emission point")
-	}
-}
-
-// TestSlimQuickCreateAvailableCommands locks the minimal-variant content
-// for quick-create's Available Commands: `issue create` present, every
-// other Core command absent (the hard guardrails forbid the call).
 func TestSlimQuickCreateAvailableCommands(t *testing.T) {
 
 	out := buildMetaSkillContent("codex", TaskContextForEnv{
@@ -225,8 +192,8 @@ func TestSlimQuickCreateAvailableCommands(t *testing.T) {
 
 	for _, want := range []string{
 		"## Available Commands",
-		"multica issue create --title",
-		"`multica --help`",
+		"liexiu issue create --title",
+		"`liexiu --help`",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("quick_create slim Available Commands missing %q", want)
@@ -234,18 +201,16 @@ func TestSlimQuickCreateAvailableCommands(t *testing.T) {
 	}
 
 	for _, banned := range []string{
-		"multica issue get <id>",
-		"multica issue comment list <issue-id>",
-		"multica issue update <id>",
-		"multica issue status <id> <status>",
-		"multica issue comment add <issue-id>",
-		"multica issue metadata list <issue-id>",
-		"multica issue metadata set <issue-id>",
-		"multica issue metadata delete <issue-id>",
-		"multica issue children <id>",
-		"multica repo checkout <url>",
-		"### Squad maintenance",
-		"multica squad member set-role",
+		"liexiu issue get <id>",
+		"liexiu issue comment list <issue-id>",
+		"liexiu issue update <id>",
+		"liexiu issue status <id> <status>",
+		"liexiu issue comment add <issue-id>",
+		"liexiu issue metadata list <issue-id>",
+		"liexiu issue metadata set <issue-id>",
+		"liexiu issue metadata delete <issue-id>",
+		"liexiu issue children <id>",
+		"liexiu repo checkout <url>",
 	} {
 		if strings.Contains(out, banned) {
 			t.Errorf("quick_create slim Available Commands should NOT advertise %q (hard guardrails forbid the call)", banned)

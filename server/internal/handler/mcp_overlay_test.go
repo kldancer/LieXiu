@@ -33,7 +33,7 @@ func TestMergeMCPOverlayAgentNilOverlayNil(t *testing.T) {
 	}
 }
 
-// TestMergeMCPOverlayAgentOnly covers the "no Composio for this task" path:
+// TestMergeMCPOverlayAgentOnly covers the "no managed overlay for this task" path:
 // every existing agent.mcp_config must be passed through unchanged so
 // Stage 3 cannot break MCP setup for tasks where the initiator has no
 // connections.
@@ -56,7 +56,7 @@ func TestMergeMCPOverlayAgentOnly(t *testing.T) {
 // a deterministic shape regardless of how Postgres' JSONB serialized the
 // stored value.
 func TestMergeMCPOverlayOverlayOnly(t *testing.T) {
-	overlay := json.RawMessage(`{"mcpServers":{"composio":{"type":"http","url":"https://mcp.composio.dev/s/abc","headers":{"Authorization":"Bearer mcp_xyz"}}}}`)
+	overlay := json.RawMessage(`{"mcpServers":{"local-mcp":{"type":"http","url":"https://local-mcp.example/s/abc","headers":{"Authorization":"Bearer local_mcp_xyz"}}}}`)
 
 	got, err := mergeMCPOverlay(nil, overlay)
 	if err != nil {
@@ -71,16 +71,16 @@ func TestMergeMCPOverlayOverlayOnly(t *testing.T) {
 	if !ok {
 		t.Fatalf("missing mcpServers, got %s", string(got))
 	}
-	if _, ok := servers["composio"]; !ok {
-		t.Errorf("expected composio server, got %s", string(got))
+	if _, ok := servers["local-mcp"]; !ok {
+		t.Errorf("expected local-mcp server, got %s", string(got))
 	}
 }
 
 // TestMergeMCPOverlayMergesBothSides — the headline case: agent's saved
-// servers must survive, and the overlay's composio entry must appear alongside.
+// servers must survive, and the overlay's local-mcp entry must appear alongside.
 func TestMergeMCPOverlayMergesBothSides(t *testing.T) {
 	agent := json.RawMessage(`{"mcpServers":{"fetch":{"command":"uvx"},"github":{"command":"npx"}}}`)
-	overlay := json.RawMessage(`{"mcpServers":{"composio":{"type":"http","url":"https://mcp.composio.dev/s/abc"}}}`)
+	overlay := json.RawMessage(`{"mcpServers":{"local-mcp":{"type":"http","url":"https://local-mcp.example/s/abc"}}}`)
 
 	got, err := mergeMCPOverlay(agent, overlay)
 	if err != nil {
@@ -95,7 +95,7 @@ func TestMergeMCPOverlayMergesBothSides(t *testing.T) {
 	if !ok {
 		t.Fatalf("missing mcpServers, got %s", string(got))
 	}
-	for _, want := range []string{"fetch", "github", "composio"} {
+	for _, want := range []string{"fetch", "github", "local-mcp"} {
 		if _, ok := servers[want]; !ok {
 			t.Errorf("missing server %q in merged result %s", want, string(got))
 		}
@@ -108,8 +108,8 @@ func TestMergeMCPOverlayMergesBothSides(t *testing.T) {
 // sidecar generator emits the live URL, not whatever placeholder the agent
 // had saved.
 func TestMergeMCPOverlayCollisionOverlayWins(t *testing.T) {
-	agent := json.RawMessage(`{"mcpServers":{"composio":{"type":"http","url":"https://placeholder.example/old"}}}`)
-	overlay := json.RawMessage(`{"mcpServers":{"composio":{"type":"http","url":"https://mcp.composio.dev/s/new"}}}`)
+	agent := json.RawMessage(`{"mcpServers":{"local-mcp":{"type":"http","url":"https://placeholder.example/old"}}}`)
+	overlay := json.RawMessage(`{"mcpServers":{"local-mcp":{"type":"http","url":"https://local-mcp.example/s/new"}}}`)
 
 	got, err := mergeMCPOverlay(agent, overlay)
 	if err != nil {
@@ -119,8 +119,8 @@ func TestMergeMCPOverlayCollisionOverlayWins(t *testing.T) {
 	if err := json.Unmarshal(got, &cfg); err != nil {
 		t.Fatalf("unmarshal result: %v", err)
 	}
-	gotURL, _ := cfg["mcpServers"]["composio"]["url"].(string)
-	if gotURL != "https://mcp.composio.dev/s/new" {
+	gotURL, _ := cfg["mcpServers"]["local-mcp"]["url"].(string)
+	if gotURL != "https://local-mcp.example/s/new" {
 		t.Errorf("collision: expected overlay URL to win, got %q", gotURL)
 	}
 }
@@ -131,7 +131,7 @@ func TestMergeMCPOverlayCollisionOverlayWins(t *testing.T) {
 // keys the agent admin saved.
 func TestMergeMCPOverlayPreservesAgentTopLevelKeys(t *testing.T) {
 	agent := json.RawMessage(`{"mcpServers":{"fetch":{"command":"uvx"}},"experimental":{"foo":"bar"}}`)
-	overlay := json.RawMessage(`{"mcpServers":{"composio":{"type":"http","url":"https://mcp.composio.dev/s/abc"}}}`)
+	overlay := json.RawMessage(`{"mcpServers":{"local-mcp":{"type":"http","url":"https://local-mcp.example/s/abc"}}}`)
 
 	got, err := mergeMCPOverlay(agent, overlay)
 	if err != nil {
@@ -169,7 +169,7 @@ func TestMergeMCPOverlayBadOverlayFallsBackToAgent(t *testing.T) {
 // half-merged config).
 func TestMergeMCPOverlayBadAgentReturnsBytesAndError(t *testing.T) {
 	agent := json.RawMessage(`{ this is not json`)
-	overlay := json.RawMessage(`{"mcpServers":{"composio":{"type":"http","url":"https://mcp.composio.dev/s/abc"}}}`)
+	overlay := json.RawMessage(`{"mcpServers":{"local-mcp":{"type":"http","url":"https://local-mcp.example/s/abc"}}}`)
 
 	got, err := mergeMCPOverlay(agent, overlay)
 	if err == nil {
@@ -182,13 +182,13 @@ func TestMergeMCPOverlayBadAgentReturnsBytesAndError(t *testing.T) {
 
 // TestMergeMCPOverlayRejectsNonObjectServer pins the type guard: an
 // mcpServers map whose value is a primitive (or array) is rejected, so a
-// future bug that wrote `mcpServers: {composio: "https://..."}` (a string
+// future bug that wrote `mcpServers: {local-mcp: "https://..."}` (a string
 // instead of an object) doesn't quietly travel through the merge and blow
 // up in execenv's sidecar generator. Same behavior as
 // parseCursorManagedMcpServers.
 func TestMergeMCPOverlayRejectsNonObjectServer(t *testing.T) {
 	agent := json.RawMessage(`{"mcpServers":{"fetch":{"command":"uvx"}}}`)
-	overlay := json.RawMessage(`{"mcpServers":{"composio":"not-an-object"}}`)
+	overlay := json.RawMessage(`{"mcpServers":{"local-mcp":"not-an-object"}}`)
 
 	if _, err := mergeMCPOverlay(agent, overlay); err == nil {
 		t.Fatalf("expected error for non-object server, got nil")

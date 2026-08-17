@@ -4,8 +4,7 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/multica-ai/multica/server/internal/handler"
-	"github.com/multica-ai/multica/server/pkg/protocol"
+	"github.com/kailonyang/liexiu/server/internal/handler"
 )
 
 // The app advertises its capabilities on the cancel request (#5219). Browsers
@@ -16,16 +15,11 @@ func TestCORSAllowedHeaders_IncludeClientCapabilities(t *testing.T) {
 	if !slices.Contains(corsAllowedHeaders, "X-Client-Capabilities") {
 		t.Fatalf("X-Client-Capabilities missing from CORS allowed headers: %v", corsAllowedHeaders)
 	}
-	// Named so the constant and the header travel together: the capability is
-	// useless if the header carrying it cannot cross the preflight.
-	if protocol.AppCapabilityChatDraftRestoreV1 == "" {
-		t.Fatal("AppCapabilityChatDraftRestoreV1 must be a non-empty capability token")
-	}
 }
 
-// Workspace subscription checkout and portal requests use Idempotency-Key to
-// make retries safe. Browsers preflight that custom request header, so omitting
-// it from AllowedHeaders prevents the billing request from reaching the server.
+// Owner commands use Idempotency-Key to make retries safe. Browsers preflight
+// that custom request header, so omitting it prevents the command from reaching
+// the server.
 func TestCORSAllowedHeaders_IncludeIdempotencyKey(t *testing.T) {
 	if !slices.Contains(corsAllowedHeaders, "Idempotency-Key") {
 		t.Fatalf("Idempotency-Key missing from CORS allowed headers: %v", corsAllowedHeaders)

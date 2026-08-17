@@ -1,7 +1,7 @@
 import { useParams } from "react-router-dom";
-import { IssueDetailRoute } from "@multica/views/issues/components";
-import { useWorkspaceId } from "@multica/core/hooks";
-import { useCanonicalIssue } from "@multica/core/issues/canonical-id";
+import { IssueDetailRoute } from "@liexiu/views/issues/components";
+import { useWorkspaceId } from "@liexiu/core/hooks";
+import { useCanonicalIssue } from "@liexiu/core/issues/canonical-id";
 import { useDocumentTitle } from "@/hooks/use-document-title";
 
 export function IssueDetailPage({ onDelete }: { onDelete?: () => void }) {

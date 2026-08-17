@@ -77,7 +77,7 @@ type CodexHomeOptions struct {
 	// ONLY this issue's rollouts — never the machine's whole ~/.codex/sessions.
 	// See prepareCodexSessionsDir (MUL-4424).
 	IsLocalDirectory bool
-	// SessionStoreKey is a stable, per-(agent, issue-or-chat) relative path that
+	// SessionStoreKey is a stable, per-(agent, issue) relative path that
 	// identifies this task's persistent Codex sessions store. It survives across
 	// task IDs (unlike the task-scoped envRoot the GC reclaims) so a follow-up
 	// run resumes the same thread. Empty when no stable key is available (e.g. a
@@ -246,7 +246,7 @@ func prepareCodexHomeWithOpts(codexHome string, opts CodexHomeOptions, logger *s
 	// Drop `[[skills.config]]` entries inherited from the user's
 	// ~/.codex/config.toml. Codex Desktop writes plugin-backed skills with a
 	// `name` and no `path`, which the CLI's stricter TOML parser rejects with
-	// `missing field path` and bails out of `thread/start`. Multica writes the
+	// `missing field path` and bails out of `thread/start`. LieXiu writes the
 	// agent's active skills directly to `codex-home/skills/`, so the
 	// user-level registry is redundant here. See codex_skill_strip.go.
 	if err := sanitizeCopiedCodexConfig(filepath.Join(codexHome, "config.toml")); err != nil {
@@ -307,7 +307,7 @@ func prepareCodexHomeWithOpts(codexHome string, opts CodexHomeOptions, logger *s
 	}
 
 	// Disable Codex native auto-memory inside daemon-managed task sessions
-	// so cross-task and cross-workspace context leaks (multica#3130) cannot
+	// so cross-task and cross-workspace context leaks (liexiu#3130) cannot
 	// happen via `codex-home/memories/` or `~/.codex/memories/`. See
 	// codex_memory.go for the full rationale and escape hatch.
 	if err := ensureCodexMemoryConfig(filepath.Join(codexHome, "config.toml"), logger); err != nil {
@@ -355,9 +355,9 @@ var codexSessionStateGlobs = []string{
 // codexSessionStoreRoot is the directory under the shared Codex home that holds
 // the per-issue session stores. It sits beside the user's own `sessions/` so it
 // shares that volume (making resume-rollout hard links zero-copy) but is never
-// enumerated by a plain `codex` run, keeping Multica task history out of the
+// enumerated by a plain `codex` run, keeping LieXiu task history out of the
 // user's own thread list.
-const codexSessionStoreRoot = "multica-sessions"
+const codexSessionStoreRoot = "liexiu-sessions"
 
 // codexSessionStoreDir returns the persistent, per-(agent, issue) Codex sessions
 // store for key, rooted on the shared Codex home's volume. It survives across
@@ -396,17 +396,12 @@ func codexSessionStoreNamespace(profile string) string {
 }
 
 // codexSessionStoreKey builds a profile-and-task key for persistent Codex
-// sessions. Issue IDs retain their existing path;
-// direct chats use a prefixed chat_session_id so the two namespaces cannot
-// collide. Returns "" when neither stable identifier is available.
+// sessions. Issue IDs retain their existing path. Returns "" when no stable
+// identifier is available.
 func codexSessionStoreKey(profile string, task TaskContextForEnv) string {
 	storeID := sanitizePathSegment(task.IssueID)
 	if storeID == "" {
-		chatID := sanitizePathSegment(task.ChatSessionID)
-		if chatID == "" {
-			return ""
-		}
-		storeID = "chat_" + chatID
+		return ""
 	}
 	agent := sanitizePathSegment(task.AgentID)
 	if agent == "" {
@@ -430,7 +425,7 @@ func sanitizePathSegment(s string) string {
 }
 
 // PruneCodexSessionStores reclaims per-issue Codex session stores under the
-// shared home's multica-sessions root that have not been touched within
+// shared home's liexiu-sessions root that have not been touched within
 // retention, bounding the lifetime of the conversation history each one holds.
 //
 // The stores deliberately live outside the task-scoped envRoot the task GC
@@ -676,7 +671,7 @@ func touchCodexSessionStore(storeDir string, logger *slog.Logger) {
 }
 
 // CodexSessionStorePath returns the per-conversation Codex session store on the
-// shared home, or "" when there is no stable issue or chat key. The daemon
+// shared home, or "" when there is no stable issue key. The daemon
 // marks this path in-use for the duration of a task so
 // PruneCodexSessionStores never reclaims a store mid-mount, closing the
 // stat→remove race the mtime refresh alone cannot (MUL-4424).

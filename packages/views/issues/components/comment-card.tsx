@@ -3,16 +3,16 @@
 import { memo, useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { CheckCircle2, ChevronRight, ListChevronsDownUp, Copy, Loader2, MoreHorizontal, Pencil, RotateCcw, Trash2 } from "lucide-react";
 import { toast } from "sonner";
-import { Card } from "@multica/ui/components/ui/card";
-import { Button } from "@multica/ui/components/ui/button";
+import { Card } from "@liexiu/ui/components/ui/card";
+import { Button } from "@liexiu/ui/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuTrigger,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
-} from "@multica/ui/components/ui/dropdown-menu";
-import { Tooltip, TooltipTrigger, TooltipContent } from "@multica/ui/components/ui/tooltip";
+} from "@liexiu/ui/components/ui/dropdown-menu";
+import { Tooltip, TooltipTrigger, TooltipContent } from "@liexiu/ui/components/ui/tooltip";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -22,24 +22,23 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "@multica/ui/components/ui/alert-dialog";
+} from "@liexiu/ui/components/ui/alert-dialog";
 import { ActorAvatar } from "../../common/actor-avatar";
-import { ReactionBar } from "@multica/ui/components/common/reaction-bar";
-import { cn } from "@multica/ui/lib/utils";
-import { copyText } from "@multica/ui/lib/clipboard";
-import { useActorName } from "@multica/core/workspace/hooks";
+import { cn } from "@liexiu/ui/lib/utils";
+import { copyText } from "@liexiu/ui/lib/clipboard";
+import { useActorName } from "@liexiu/core/workspace/hooks";
 import { useTimeAgo } from "../../i18n";
 import { ContentEditor, type ContentEditorRef, ReadonlyContent, useFileDropZone, FileDropOverlay, Attachment as AttachmentRenderer, AttachmentDownloadProvider, useUploadGate, useComposerSubmit } from "../../editor";
 import { useCommentUploads } from "./use-comment-uploads";
-import { FileUploadButton } from "@multica/ui/components/common/file-upload-button";
-import { api, dispatchReasonCode } from "@multica/core/api";
+import { FileUploadButton } from "@liexiu/ui/components/common/file-upload-button";
+import { api, dispatchReasonCode } from "@liexiu/core/api";
 import { ReplyInput } from "./reply-input";
 import { CommentTriggerChips } from "./comment-trigger-chips";
 import { useCommentTriggerPreview } from "../hooks/use-comment-trigger-preview";
-import type { TimelineEntry, Attachment } from "@multica/core/types";
-import { contentReferencesAttachment } from "@multica/core/types";
-import { selectStandaloneAttachments } from "@multica/core/attachments/image-sequence";
-import { useCommentCollapseStore, useCommentDraftStore } from "@multica/core/issues/stores";
+import type { TimelineEntry, Attachment } from "@liexiu/core/types";
+import { contentReferencesAttachment } from "@liexiu/core/types";
+import { selectStandaloneAttachments } from "@liexiu/core/attachments/image-sequence";
+import { useCommentCollapseStore, useCommentDraftStore } from "@liexiu/core/issues/stores";
 import { useT } from "../../i18n";
 import { CommentsFoldBar } from "./resolved-thread-bar";
 import { deriveThreadResolution } from "./thread-utils";
@@ -109,7 +108,6 @@ interface CommentCardProps {
   onReply: (parentId: string, content: string, attachmentIds?: string[], suppressAgentIds?: string[]) => Promise<boolean>;
   onEdit: (commentId: string, content: string, attachmentIds: string[], suppressAgentIds?: string[]) => Promise<void>;
   onDelete: (commentId: string) => void;
-  onToggleReaction: (commentId: string, emoji: string) => void;
   /** Resolve/unresolve any comment in this thread (commentId = the target row). */
   onResolveToggle?: (commentId: string, resolved: boolean) => void;
   /**
@@ -513,7 +511,6 @@ function CommentRow({
   isHighlighted = false,
   onEdit,
   onDelete,
-  onToggleReaction,
   onResolveToggle,
 }: {
   issueId: string;
@@ -526,7 +523,6 @@ function CommentRow({
   isHighlighted?: boolean;
   onEdit: (commentId: string, content: string, attachmentIds: string[], suppressAgentIds?: string[]) => Promise<void>;
   onDelete: (commentId: string) => void;
-  onToggleReaction: (commentId: string, emoji: string) => void;
   onResolveToggle?: (commentId: string, resolved: boolean) => void;
 }) {
   const { t } = useT("issues");
@@ -539,8 +535,6 @@ function CommentRow({
   const canEditEntry = isOwn || (canModerate && entry.actor_type === "member");
   const canDeleteEntry = isOwn || canModerate;
   const [confirmDelete, setConfirmDelete] = useState(false);
-
-  const reactions = entry.reactions ?? [];
 
   return (
     <div className="py-1.5">
@@ -720,13 +714,6 @@ function CommentRow({
               className="mt-2 pl-12 pr-4 max-md:pl-3 max-md:pr-3"
             />
           )}
-          <ReactionBar
-            reactions={reactions}
-            currentUserId={currentUserId}
-            onToggle={(emoji) => onToggleReaction(entry.id, emoji)}
-            getActorName={getActorName}
-            className="mt-1.5 pl-12 pr-4 max-md:pl-3 max-md:pr-3"
-          />
         </>
       )}
     </div>
@@ -753,7 +740,6 @@ function CommentCardImpl({
   onReply,
   onEdit,
   onDelete,
-  onToggleReaction,
   onResolveToggle,
   onCollapseResolved,
   expandedResolvedIds,
@@ -782,8 +768,6 @@ function CommentCardImpl({
 
   const replyCount = allNestedReplies.length;
   const contentPreview = (entry.content ?? "").replace(/\n/g, " ").slice(0, 80);
-  const reactions = entry.reactions ?? [];
-
   const isHighlighted = highlightedCommentId === entry.id;
 
   // Reply-resolution display. When a REPLY is the thread's resolution, the other
@@ -1036,13 +1020,6 @@ function CommentCardImpl({
                     className="mt-2 pl-10 max-md:pl-0"
                   />
                 )}
-                <ReactionBar
-                  reactions={reactions}
-                  currentUserId={currentUserId}
-                  onToggle={(emoji) => onToggleReaction(entry.id, emoji)}
-                  getActorName={getActorName}
-                  className="mt-1.5 pl-10 max-md:pl-0"
-                />
               </>
             )}
           </div>
@@ -1082,7 +1059,6 @@ function CommentCardImpl({
                     isHighlighted={highlightedCommentId === resolutionReply.id}
                     onEdit={onEdit}
                     onDelete={onDelete}
-                    onToggleReaction={onToggleReaction}
                     onResolveToggle={onResolveToggle}
                   />
                 </div>
@@ -1121,7 +1097,6 @@ function CommentCardImpl({
                     isHighlighted={highlightedCommentId === reply.id}
                     onEdit={onEdit}
                     onDelete={onDelete}
-                    onToggleReaction={onToggleReaction}
                     onResolveToggle={onResolveToggle}
                   />
                 </div>
@@ -1148,7 +1123,7 @@ function CommentCardImpl({
   );
 }
 
-// Memoized so a long timeline (e.g. Inbox-embedded IssueDetail with thousands
+// Memoized so a long timeline (e.g. an embedded IssueDetail with thousands
 // of comments) does not re-render every card on each parent state update or
 // WS-driven cache refresh. Default shallow comparison is sufficient: the
 // timeline grouping is useMemo'd in issue-detail.tsx (stable Map ref), and

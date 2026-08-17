@@ -36,7 +36,7 @@ func BuildNewCommentsHint(issueID, triggerCommentID, triggerThreadID, newComment
 		return fmt.Sprintf(
 			"%d new comment(s) on this issue since your last run — don't read them all blindly. "+
 				"Start with the thread your triggering comment is in: "+
-				"`multica issue comment list %s --thread %s --since %s --compact --output json` "+
+				"`liexiu issue comment list %s --thread %s --since %s --compact --output json` "+
 				"(swap `--since` for `--tail 30` if you need the full thread, not just the delta). "+
 				"Only if you need context from the other threads, rerun it without `--thread` for the issue-wide catch-up.\n\n",
 			newCommentCount, issueID, threadID, newCommentsSince,
@@ -47,7 +47,7 @@ func BuildNewCommentsHint(issueID, triggerCommentID, triggerThreadID, newComment
 	// issue-wide catch-up.
 	return fmt.Sprintf(
 		"%d new comment(s) on this issue since your last run. Catch up: "+
-			"`multica issue comment list %s --since %s --compact --output json`.\n\n",
+			"`liexiu issue comment list %s --since %s --compact --output json`.\n\n",
 		newCommentCount, issueID, newCommentsSince,
 	)
 }
@@ -73,7 +73,7 @@ func BuildResumedCommentsHint(issueID, triggerCommentID, triggerThreadID string)
 			"No other new comments on this issue since your last run. "+
 			"If your reply depends on thread context, do not rely only on resumed session memory — "+
 			"first pull the triggering conversation with: "+
-			"`multica issue comment list %s --thread %s --tail 30 --compact --output json`.\n\n",
+			"`liexiu issue comment list %s --thread %s --tail 30 --compact --output json`.\n\n",
 		issueID, threadID,
 	)
 }
@@ -103,7 +103,7 @@ func BuildColdCommentsHint(issueID, triggerCommentID, triggerThreadID string) st
 	// routing value (MUL-5721 OPT-1).
 	return fmt.Sprintf(
 		"Read the triggering conversation first: "+
-			"`multica issue comment list %s --thread %s --tail 30 --compact --output json` "+
+			"`liexiu issue comment list %s --thread %s --tail 30 --compact --output json` "+
 			"(that thread's root + its 30 newest replies). "+
 			"Need cross-thread background? Rerun with `--roots-only --summary` replacing `--thread ... --tail 30` "+
 			"to scan the other threads cheaply, and expand only what looks relevant.\n\n",
@@ -142,10 +142,10 @@ func activeThreadID(triggerThreadID, triggerCommentID string) string {
 //     see:
 //     1. On Windows, PowerShell 5.1's `$OutputEncoding` defaults to
 //     ASCIIEncoding when piping to native commands and drops non-ASCII as
-//     `?` before the bytes reach `multica.exe` (#2198 Chinese, #2236
+//     `?` before the bytes reach `liexiu.exe` (#2198 Chinese, #2236
 //     Chinese, #2376 Cyrillic).
 //     2. On any host, when the model emits a multi-flag command (e.g.
-//     `multica issue create --title ... --assignee-id ... --project ...`)
+//     `liexiu issue create --title ... --assignee-id ... --project ...`)
 //     the bash heredoc/flag boundary is fragile: a `BODY \` "terminator
 //     with trailing token" is not recognised as the heredoc end, so flag
 //     lines after it are swallowed into the description; or a clean
@@ -162,11 +162,11 @@ func activeThreadID(triggerThreadID, triggerCommentID string) string {
 //
 // provider is retained for caller symmetry and future per-provider tweaks; the
 // guardrail itself is intentionally identical across providers and hosts.
-func BuildCommentReplyInstructions(provider, issueID, triggerCommentID string, squadLeader bool) string {
+func BuildCommentReplyInstructions(provider, issueID, triggerCommentID string) string {
 	if triggerCommentID == "" {
 		return ""
 	}
-	return buildCommentReplyInstructionsSlim(provider, issueID, triggerCommentID, squadLeader)
+	return buildCommentReplyInstructionsSlim(provider, issueID, triggerCommentID)
 }
 
 // buildCommentReplyInstructionsSlim is the compressed reply-instructions
@@ -182,21 +182,14 @@ func BuildCommentReplyInstructions(provider, issueID, triggerCommentID string, s
 // canonical `## Comment Formatting` section the same brief carries, so
 // repeating it inline at every comment-triggered step 7 would be
 // duplication, not signal.
-func buildCommentReplyInstructionsSlim(provider, issueID, triggerCommentID string, squadLeader bool) string {
-	// The squad leader's `no_action` exit (recorded via `squad activity`) is
-	// the one path where posting no comment is correct — the imperative must
-	// carry its own carve-out so a later line never contradicts the
-	// no_action rule injected above it (MUL-5442 #6493 review).
+func buildCommentReplyInstructionsSlim(provider, issueID, triggerCommentID string) string {
 	lead := "Post your reply as a comment — always use the trigger comment ID below, "
-	if squadLeader {
-		lead = "Unless your outcome is `no_action`, post your reply as a comment — always use the trigger comment ID below, "
-	}
 	if runtimeGOOS == "windows" {
 		return fmt.Sprintf(
 			lead+
 				"do NOT reuse --parent values from previous turns in this session.\n\n"+
 				"Write the body file first — never pipe via `--content-stdin` (PowerShell drops non-ASCII; full rules: ## Comment Formatting above):\n\n"+
-				"    multica issue comment add %s --parent %s --content-file ./reply.md\n"+
+				"    liexiu issue comment add %s --parent %s --content-file ./reply.md\n"+
 				"    Remove-Item ./reply.md\n\n"+
 				"Do NOT write literal `\\n` escapes to simulate line breaks; the file preserves real newlines.\n",
 			issueID, triggerCommentID,
@@ -206,7 +199,7 @@ func buildCommentReplyInstructionsSlim(provider, issueID, triggerCommentID strin
 		lead+
 			"do NOT reuse --parent values from previous turns in this session.\n\n"+
 			"Write the body file first (rules: ## Comment Formatting above — MUL-2904 / #4182):\n\n"+
-			"    multica issue comment add %s --parent %s --content-file ./reply.md\n"+
+			"    liexiu issue comment add %s --parent %s --content-file ./reply.md\n"+
 			"    rm ./reply.md\n\n"+
 			"Do NOT write literal `\\n` escapes to simulate line breaks; the file preserves real newlines.\n",
 		issueID, triggerCommentID,
@@ -248,7 +241,7 @@ type ThreadReplyTarget struct {
 // the OS split.
 //
 // Returns "" for fewer than two targets; callers keep the single-parent path.
-func BuildMultiThreadCommentReplyInstructions(issueID string, targets []ThreadReplyTarget, squadLeader bool) string {
+func BuildMultiThreadCommentReplyInstructions(issueID string, targets []ThreadReplyTarget) string {
 	if issueID == "" || len(targets) < 2 {
 		return ""
 	}
@@ -258,17 +251,7 @@ func BuildMultiThreadCommentReplyInstructions(issueID string, targets []ThreadRe
 		targetLines += fmt.Sprintf("%d. thread %s → reply with `--parent %s`\n", i+1, tgt.ThreadID, tgt.ParentID)
 	}
 
-	// Same carve-out as the single-thread cookbook (MUL-5442 #6493 review):
-	// the leader's no_action exit must not be contradicted by this later
-	// imperative, and the scope sentence must govern the ENTIRE fan-out
-	// block — every obligation below ("multiple replies are required", the
-	// posting order, the per-thread file rule) sits under the "Otherwise" —
-	// not just the first verb. Ordinary agents keep the unconditional form
-	// byte-for-byte.
 	lead := "This run coalesced comments from %d DISTINCT threads. Post ONE reply per thread"
-	if squadLeader {
-		lead = "This run coalesced comments from %d DISTINCT threads. **If your outcome is `no_action`, skip this ENTIRE fan-out block — post no replies at all and exit via `multica squad activity` as your leader rules direct; everything below applies only otherwise.** Otherwise, post ONE reply per thread"
-	}
 	return fmt.Sprintf(
 		lead+" — %d in total. This OVERRIDES the \"post exactly one comment per run\" rule: for THIS run multiple replies are required and correct. Do NOT merge separate threads into one comment or post twice in the same thread.\n\n"+
 			"Reply targets, in posting order — OLDEST thread first, the newest (triggering) thread LAST. Use the exact `--parent` for each; never reuse a `--parent` from an earlier turn:\n"+

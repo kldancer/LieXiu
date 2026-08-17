@@ -1,13 +1,9 @@
 {
   "nav": {
-    "inbox": "인박스",
-    "chat": "채팅",
     "my_issues": "내 태스크",
     "issues": "태스크",
     "projects": "프로젝트",
-    "autopilots": "오토파일럿",
     "agents": "에이전트",
-    "squads": "스쿼드",
     "usage": "분석",
     "runtimes": "런타임",
     "skills": "스킬",
@@ -16,10 +12,8 @@
   "tab": {
     "issue": "태스크",
     "project": "프로젝트",
-    "autopilot": "오토파일럿",
     "agent": "에이전트",
     "member": "멤버",
-    "squad": "스쿼드",
     "skill": "스킬",
     "machine": "머신",
     "runtime": "런타임",
@@ -29,10 +23,7 @@
   },
   "help": {
     "trigger": "도움말",
-    "docs": "문서",
-    "changelog": "변경 로그",
     "discord": "Discord",
-    "feedback": "피드백",
     "server_version": "서버 버전 {{version}}"
   },
   "workspace_loader": {
@@ -40,7 +31,6 @@
     "loading_named_prefix": "로딩 중"
   },
   "sidebar": {
-    "unpin_tooltip": "고정 해제",
     "workspaces_label": "워크스페이스",
     "create_workspace": "워크스페이스 만들기",
     "pending_invitations_label": "대기 중인 초대",
@@ -50,7 +40,6 @@
     "log_out": "로그아웃",
     "new_issue": "새 태스크",
     "new_issue_shortcut": "C",
-    "pinned_label": "고정됨",
     "workspace_group": "워크스페이스",
     "configure_group": "설정",
     "unread_overflow": "99+",

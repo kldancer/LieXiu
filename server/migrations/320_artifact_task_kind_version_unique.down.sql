@@ -1,0 +1,1 @@
+DROP INDEX CONCURRENTLY IF EXISTS idx_artifact_task_kind_version_unique;

@@ -20,7 +20,7 @@ func writeTempFile(t *testing.T, name, body string) string {
 func TestLoadRulesFromYAMLFileSimple(t *testing.T) {
 	t.Parallel()
 	path := writeTempFile(t, "flags.yaml", `
-billing_new_invoice_email:
+demo_flag:
   default: true
 ops_disable_recommendations:
   default: false
@@ -29,8 +29,8 @@ ops_disable_recommendations:
 	if err != nil {
 		t.Fatalf("LoadRulesFromYAMLFile: %v", err)
 	}
-	if got := rules["billing_new_invoice_email"].Default; got != true {
-		t.Fatalf("billing_new_invoice_email Default = %v, want true", got)
+	if got := rules["demo_flag"].Default; got != true {
+		t.Fatalf("demo_flag Default = %v, want true", got)
 	}
 	if got := rules["ops_disable_recommendations"].Default; got != false {
 		t.Fatalf("ops_disable_recommendations Default = %v, want false", got)
@@ -110,7 +110,7 @@ func TestLoadRulesFromYAMLFileMalformed(t *testing.T) {
 	t.Parallel()
 	// Invalid YAML (unmatched bracket) — must surface a parse error so
 	// operators see the misconfig instead of silently losing the file.
-	path := writeTempFile(t, "flags.yaml", "billing: { default: true")
+	path := writeTempFile(t, "flags.yaml", "flags: { default: true")
 	_, err := LoadRulesFromYAMLFile(path)
 	if err == nil {
 		t.Fatalf("malformed YAML must error")

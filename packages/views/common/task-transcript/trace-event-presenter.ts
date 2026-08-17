@@ -11,7 +11,7 @@
 // This module owns no React and no fetching, so it is unit-testable in
 // isolation and independent of whichever list shell renders the events.
 
-import type { TranscriptDetailDensity } from "@multica/core/agents/stores";
+import type { TranscriptDetailDensity } from "@liexiu/core/agents/stores";
 
 export type { TranscriptDetailDensity };
 

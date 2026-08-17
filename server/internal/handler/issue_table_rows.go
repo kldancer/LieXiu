@@ -10,9 +10,9 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/multica-ai/multica/server/internal/logger"
-	"github.com/multica-ai/multica/server/internal/util"
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
+	"github.com/kailonyang/liexiu/server/internal/logger"
+	"github.com/kailonyang/liexiu/server/internal/util"
+	db "github.com/kailonyang/liexiu/server/pkg/db/generated"
 )
 
 type issueTableRowResponse struct {
@@ -145,28 +145,8 @@ func (h *Handler) issueTableOrderBy(w http.ResponseWriter, r *http.Request, work
 		resolved.expression = "CASE i.priority WHEN 'urgent' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 WHEN 'low' THEN 3 ELSE 4 END"
 		resolved.castType = "integer"
 	default:
-		expr, handled, err := h.propertySortExpr(r, workspaceID, sortField)
-		if !handled {
-			writeError(w, http.StatusBadRequest, "invalid query.sort.field")
-			return resolvedIssueTableSort{}, false
-		}
-		if err != nil {
-			if strings.HasPrefix(err.Error(), "resolve sort property:") {
-				slog.Warn("resolve table sort property failed", append(logger.RequestAttrs(r), "error", err)...)
-				writeIssueTableQueryFailure(w, r, "failed to resolve table sort")
-			} else {
-				writeError(w, http.StatusBadRequest, err.Error())
-			}
-			return resolvedIssueTableSort{}, false
-		}
-		if expr != "" {
-			resolved.expression = expr
-			resolved.castType = "text"
-			if strings.Contains(expr, "::numeric") {
-				resolved.castType = "numeric"
-			}
-			resolved.nullsLast = true
-		}
+		writeError(w, http.StatusBadRequest, "invalid query.sort.field")
+		return resolvedIssueTableSort{}, false
 	}
 
 	direction := strings.ToLower(strings.TrimSpace(sortRequest.Direction))
@@ -349,7 +329,7 @@ func (h *Handler) ListIssueTableRows(w http.ResponseWriter, r *http.Request) {
 SELECT i.id, i.workspace_id, i.title, i.description, i.status, i.priority,
        i.assignee_type, i.assignee_id, i.creator_type, i.creator_id,
        i.parent_issue_id, i.position, i.start_date, i.due_date, i.created_at,
-	       i.updated_at, i.number, i.project_id, i.metadata, i.stage, i.properties,
+	       i.updated_at, i.number, i.project_id, i.metadata, i.stage,
 	       %s AS direct_child_count, i.table_sort_key
 	FROM page i
 	ORDER BY %s`, cte, childCountExpr, resolvedSort.orderBy())
@@ -391,7 +371,6 @@ SELECT i.id, i.workspace_id, i.title, i.description, i.status, i.priority,
 			&row.issue.ProjectID,
 			&row.issue.Metadata,
 			&row.issue.Stage,
-			&row.issue.Properties,
 			&row.childCount,
 			&row.sortKey,
 		); err != nil {

@@ -1,20 +1,19 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { ActorAvatar as ActorAvatarBase } from "@multica/ui/components/common/actor-avatar";
-import { AVATAR_SIZE_PX, type AvatarSize } from "@multica/ui/lib/avatar-size";
+import { ActorAvatar as ActorAvatarBase } from "@liexiu/ui/components/common/actor-avatar";
+import { AVATAR_SIZE_PX, type AvatarSize } from "@liexiu/ui/lib/avatar-size";
 import {
   HoverCard,
   HoverCardTrigger,
   HoverCardContent,
-} from "@multica/ui/components/ui/hover-card";
-import { useActorName } from "@multica/core/workspace/hooks";
-import { useAgentPresenceDetail } from "@multica/core/agents";
-import { useCurrentWorkspace, useWorkspacePaths } from "@multica/core/paths";
+} from "@liexiu/ui/components/ui/hover-card";
+import { useActorName } from "@liexiu/core/workspace/hooks";
+import { useAgentPresenceDetail } from "@liexiu/core/agents";
+import { useCurrentWorkspace, useWorkspacePaths } from "@liexiu/core/paths";
 import { AgentProfileCard } from "../agents/components/agent-profile-card";
 import { AgentLivePeekCard } from "../agents/components/agent-live-peek-card";
 import { MemberProfileCard } from "../members/member-profile-card";
-import { SquadProfileCard } from "../squads/components/squad-profile-card";
 import { availabilityConfig } from "../agents/presence";
 import {
   resolveClickIntent,
@@ -30,7 +29,7 @@ import {
  *   pickers, list rows).
  * - `"live"` — live activity peek (workload, current issue, last activity).
  *   Used where the user already knows the identity and wants the live state,
- *   e.g. the squad members tab.
+ *   e.g. the agent roster.
  *
  * Has no effect for non-agent actors (members always render the member card).
  */
@@ -43,7 +42,7 @@ interface ActorAvatarProps {
   className?: string;
   /**
    * Wrap the avatar in a hover-card preview on dwell. Use for "who is this?"
-   * surfaces — comment authors, list rows, subscriber chips. Independent of
+   * surfaces — comment authors, list rows, and actor chips. Independent of
    * `showStatusDot`: a surface can have one, both, or neither.
    */
   enableHoverCard?: boolean;
@@ -92,7 +91,6 @@ export function ActorAvatar({
       avatarUrl={getActorAvatarUrl(actorType, actorId)}
       isAgent={actorType === "agent"}
       isSystem={actorType === "system"}
-      isSquad={actorType === "squad"}
       size={size}
       className={className}
     />
@@ -113,15 +111,13 @@ export function ActorAvatar({
   );
   const shouldLinkToProfile =
     profileLink ??
-    (actorType === "member" || actorType === "agent" || actorType === "squad");
+    (actorType === "member" || actorType === "agent");
   const profileHref = shouldLinkToProfile
     ? actorType === "member"
       ? paths.memberDetail(actorId)
       : actorType === "agent"
         ? paths.agentDetail(actorId)
-        : actorType === "squad"
-          ? paths.squadDetail(actorId)
-          : null
+        : null
     : null;
   const content = profileHref ? (
     <ActorAvatarProfileLink href={profileHref}>{dotted}</ActorAvatarProfileLink>
@@ -141,9 +137,6 @@ export function ActorAvatar({
   }
   if (actorType === "member") {
     return <MemberAvatarHoverCard userId={actorId}>{content}</MemberAvatarHoverCard>;
-  }
-  if (actorType === "squad") {
-    return <SquadAvatarHoverCard squadId={actorId}>{content}</SquadAvatarHoverCard>;
   }
   return content;
 }
@@ -268,20 +261,6 @@ function MemberAvatarHoverCard({
 }) {
   return (
     <ActorAvatarHoverCardShell content={<MemberProfileCard userId={userId} />}>
-      {children}
-    </ActorAvatarHoverCardShell>
-  );
-}
-
-function SquadAvatarHoverCard({
-  squadId,
-  children,
-}: {
-  squadId: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <ActorAvatarHoverCardShell content={<SquadProfileCard squadId={squadId} />}>
       {children}
     </ActorAvatarHoverCardShell>
   );

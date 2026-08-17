@@ -16,52 +16,38 @@ import {
   Milestone,
   MoreHorizontal,
   PanelRight,
-  Pin,
-  PinOff,
   Plus,
   SlidersHorizontal,
   Tag,
   Unlink,
-  Users,
 } from "lucide-react";
 import { BreadcrumbHeader, type BreadcrumbSegment } from "../../layout/breadcrumb-header";
-import { Skeleton } from "@multica/ui/components/ui/skeleton";
-import { Button } from "@multica/ui/components/ui/button";
-import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@multica/ui/components/ui/resizable";
-import { Sheet, SheetContent } from "@multica/ui/components/ui/sheet";
-import { useIsMobile } from "@multica/ui/hooks/use-mobile";
+import { Skeleton } from "@liexiu/ui/components/ui/skeleton";
+import { Button } from "@liexiu/ui/components/ui/button";
+import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@liexiu/ui/components/ui/resizable";
+import { Sheet, SheetContent } from "@liexiu/ui/components/ui/sheet";
+import { useIsMobile } from "@liexiu/ui/hooks/use-mobile";
 import { ContentEditor, type ContentEditorRef, TitleEditor, type TitleEditorRef, useFileDropZone, FileDropOverlay, useLazyEditor, useEditorUpload, ImageSequenceProvider } from "../../editor";
-import { collectImageSequence, type ImageSequenceBlock } from "@multica/core/attachments/image-sequence";
-import { FileUploadButton } from "@multica/ui/components/common/file-upload-button";
+import { collectImageSequence, type ImageSequenceBlock } from "@liexiu/core/attachments/image-sequence";
+import { FileUploadButton } from "@liexiu/ui/components/common/file-upload-button";
 import {
   Tooltip,
   TooltipTrigger,
   TooltipContent,
-} from "@multica/ui/components/ui/tooltip";
-import {
-  DropdownMenu,
-  DropdownMenuTrigger,
-  DropdownMenuContent,
-  DropdownMenuItem,
-} from "@multica/ui/components/ui/dropdown-menu";
-import { Popover, PopoverTrigger, PopoverContent } from "@multica/ui/components/ui/popover";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@multica/ui/components/ui/dialog";
-import { Checkbox } from "@multica/ui/components/ui/checkbox";
-import { Command, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem } from "@multica/ui/components/ui/command";
-import { AvatarGroup, AvatarGroupCount } from "@multica/ui/components/ui/avatar";
+} from "@liexiu/ui/components/ui/tooltip";
+import { Popover, PopoverTrigger, PopoverContent } from "@liexiu/ui/components/ui/popover";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@liexiu/ui/components/ui/dialog";
 import { ActorAvatar } from "../../common/actor-avatar";
 import { PropRow } from "../../common/prop-row";
-import { PropertyIcon } from "../../common/property-icon";
-import type { Attachment, Issue, IssueProperty, IssueStatus, IssuePriority, TimelineEntry, UpdateIssueRequest } from "@multica/core/types";
-import { contentReferencesAttachment } from "@multica/core/types";
-import { STATUS_CONFIG, PRIORITY_CONFIG } from "@multica/core/issues/config";
-import { formatDateOnly, isPastDateOnly } from "@multica/core/issues/date";
-import { useUpdateIssue } from "@multica/core/issues/mutations";
+import type { Attachment, Issue, IssueStatus, IssuePriority, TimelineEntry, UpdateIssueRequest } from "@liexiu/core/types";
+import { contentReferencesAttachment } from "@liexiu/core/types";
+import { STATUS_CONFIG, PRIORITY_CONFIG } from "@liexiu/core/issues/config";
+import { formatDateOnly, isPastDateOnly } from "@liexiu/core/issues/date";
+import { useUpdateIssue } from "@liexiu/core/issues/mutations";
 import { toast } from "sonner";
 import { StatusIcon, PriorityIcon, StatusPicker, PriorityPicker, StagePicker, StartDatePicker, DueDatePicker, AssigneePicker, LabelPicker } from ".";
 import { maxSiblingStage } from "./pickers/stage-picker";
-import { CustomPropertyValueEditor, CustomPropertyValueDisplay } from "./pickers/custom-property-picker";
-import { Switch } from "@multica/ui/components/ui/switch";
+import { Switch } from "@liexiu/ui/components/ui/switch";
 import { IssueActionsDropdown, useIssueActions, IssueActionsContextMenu, IssueContextMenuProvider } from "../actions";
 import { LabelChip } from "../../labels/label-chip";
 import { IssueAgentActivityIndicator } from "./issue-agent-activity-indicator";
@@ -71,8 +57,8 @@ import { LocalDirectoryHint } from "../../projects/components/local-directory-hi
 import { CommentCard } from "./comment-card";
 import { CommentInput } from "./comment-input";
 import { ResolvedThreadBar } from "./resolved-thread-bar";
-import { getShortcut, shortcutMatchesEvent } from "@multica/core/shortcuts";
-import { isImeComposing } from "@multica/core/utils";
+import { getShortcut, shortcutMatchesEvent } from "@liexiu/core/shortcuts";
+import { isImeComposing } from "@liexiu/core/utils";
 import { ThreadMinimap } from "./thread-minimap";
 import { ThreadNavPanel, mentionsUser, type ThreadNavThread } from "./thread-nav-panel";
 import { collectThreadReplies, deriveThreadResolution } from "./thread-utils";
@@ -80,19 +66,17 @@ import { IssueAgentHeaderChip } from "./issue-agent-header-chip";
 import { ExecutionLogSection } from "./execution-log-section";
 import { QuickActionsSection } from "./quick-actions-section";
 import { PullRequestList } from "./pull-request-list";
-import { useGitHubSettings } from "@multica/core/github";
+import { useGitHubSettings } from "@liexiu/core/github";
 import { useQuery } from "@tanstack/react-query";
-import { useAuthStore } from "@multica/core/auth";
-import { useWorkspacePaths } from "@multica/core/paths";
-import { useActorName } from "@multica/core/workspace/hooks";
-import { useWorkspaceId } from "@multica/core/hooks";
-import { useRecentContextStore } from "@multica/core/chat";
-import { issueListOptions, issueDetailOptions, childIssuesOptions, childIssueProgressOptions, issueAttachmentsOptions } from "@multica/core/issues/queries";
-import { projectDetailOptions } from "@multica/core/projects/queries";
+import { useAuthStore } from "@liexiu/core/auth";
+import { useWorkspacePaths } from "@liexiu/core/paths";
+import { useActorName } from "@liexiu/core/workspace/hooks";
+import { useWorkspaceId } from "@liexiu/core/hooks";
+import { issueListOptions, issueDetailOptions, childIssuesOptions, childIssueProgressOptions, issueAttachmentsOptions } from "@liexiu/core/issues/queries";
+import { projectDetailOptions } from "@liexiu/core/projects/queries";
 import { ProjectIcon } from "../../projects/components/project-icon";
-import { issueLabelsOptions } from "@multica/core/labels";
-import { propertyListOptions } from "@multica/core/properties";
-import { memberListOptions, agentListOptions } from "@multica/core/workspace/queries";
+import { issueLabelsOptions } from "@liexiu/core/labels";
+import { memberListOptions } from "@liexiu/core/workspace/queries";
 import {
   selectExpandedResolved,
   useRecentIssuesStore,
@@ -102,13 +86,10 @@ import {
   SUB_ISSUE_ROW_PROPERTY_KEYS,
   type SubIssueRowProperties,
   type SubIssueRowPropertyKey,
-} from "@multica/core/issues/stores";
-import { useIssueSelectionStore } from "@multica/core/issues/stores/selection-store";
+} from "@liexiu/core/issues/stores";
+import { useIssueSelectionStore } from "@liexiu/core/issues/stores/selection-store";
 import { BatchActionToolbar } from "./batch-action-toolbar";
 import { useIssueTimeline } from "../hooks/use-issue-timeline";
-import { useIssueReactions } from "../hooks/use-issue-reactions";
-import { useIssueSubscribers } from "../hooks/use-issue-subscribers";
-import { ReactionBar } from "@multica/ui/components/common/reaction-bar";
 import { useTimeAgo } from "../../i18n";
 import {
   useRestoredScrollOffset,
@@ -116,11 +97,10 @@ import {
   useRestoredViewState,
   useViewStateWriter,
 } from "../../platform";
-import { cn } from "@multica/ui/lib/utils";
+import { cn } from "@liexiu/ui/lib/utils";
 import { PAGE_GUTTER } from "../../layout/page-header";
 
 import { ProgressRing } from "./progress-ring";
-import { matchesPinyin } from "../../editor/extensions/pinyin-match";
 import { useT } from "../../i18n";
 import { useIssueDetailScrollRestore } from "../hooks/use-issue-detail-scroll-restore";
 import { useInPageFind } from "../hooks/use-in-page-find";
@@ -138,111 +118,10 @@ import {
  * issue already landed on the current route (value: the consumed comment
  * id). Lets a remount that merely restores the view (tab switch back) skip
  * the jump-and-highlight, while a fresh selection — which clears the entry
- * (see InboxPage.handleSelect) — runs it again.
+ * (see the embedded issue-detail host) — runs it again.
  */
 export function issueHighlightMementoKey(issueId: string): string {
   return `highlight:${issueId}`;
-}
-
-// Shared by the subscribe button and the unsubscribe menu trigger so the two
-// stay one control visually — they occupy the same slot and only differ in
-// what a click does.
-const SUBSCRIPTION_ACTION_CLASS =
-  "text-caption text-muted-foreground hover:text-foreground transition-colors disabled:pointer-events-none disabled:opacity-50";
-
-function SubscriberPopoverContent({
-  members,
-  agents,
-  subscribers,
-  toggleSubscriber,
-  togglesDisabled,
-  t,
-}: {
-  members: { user_id: string; name: string }[];
-  agents: { id: string; name: string; archived_at?: string | null }[];
-  subscribers: { user_type: string; user_id: string }[];
-  toggleSubscriber: (id: string, type: "member" | "agent", subscribed: boolean) => void;
-  /**
-   * Every checkbox here is drawn from `subscribers`, which defaults to an empty
-   * list until the query resolves — so an unresolved query renders everyone as
-   * unsubscribed. Acting on that is not a harmless no-op: an explicit subscribe
-   * rewrites the target's reason to 'manual' and clears any opt-out scope
-   * (server/pkg/db/queries/subscriber.sql), which would quietly discard a
-   * delegated subscription or someone's deliberate opt-out. So these rows wait
-   * for a real answer, not just for the in-flight mutation (MUL-5714).
-   */
-  togglesDisabled: boolean;
-  t: ActivityT;
-}) {
-  const [search, setSearch] = useState("");
-  const q = search.trim().toLowerCase();
-
-  const uniqueMembers = members.filter((m, i, arr) => arr.findIndex((x) => x.user_id === m.user_id) === i);
-  const activeAgents = agents.filter((a) => !a.archived_at);
-
-  const filteredMembers = q
-    ? uniqueMembers.filter((m) => m.name.toLowerCase().includes(q) || matchesPinyin(m.name, q))
-    : uniqueMembers;
-  const filteredAgents = q
-    ? activeAgents.filter((a) => a.name.toLowerCase().includes(q) || matchesPinyin(a.name, q))
-    : activeAgents;
-
-  return (
-    <PopoverContent align="end" className="w-64 p-0">
-      <Command shouldFilter={false}>
-        <CommandInput
-          placeholder={t(($) => $.detail.change_subscribers_placeholder)}
-          value={search}
-          onValueChange={setSearch}
-        />
-        <CommandList className="max-h-64">
-          {filteredMembers.length === 0 && filteredAgents.length === 0 && (
-            <CommandEmpty>{t(($) => $.detail.no_subscribers_results)}</CommandEmpty>
-          )}
-          {filteredMembers.length > 0 && (
-            <CommandGroup heading={t(($) => $.detail.members_group)}>
-              {filteredMembers.map((m) => {
-                const sub = subscribers.find((s) => s.user_type === "member" && s.user_id === m.user_id);
-                const isSubbed = !!sub;
-                return (
-                  <CommandItem
-                    key={`member-${m.user_id}`}
-                    onSelect={() => toggleSubscriber(m.user_id, "member", isSubbed)}
-                    disabled={togglesDisabled}
-                    className="flex items-center gap-2.5"
-                  >
-                    <Checkbox checked={isSubbed} className="pointer-events-none" />
-                    <ActorAvatar actorType="member" actorId={m.user_id} size="md" />
-                    <span className="truncate flex-1">{m.name}</span>
-                  </CommandItem>
-                );
-              })}
-            </CommandGroup>
-          )}
-          {filteredAgents.length > 0 && (
-            <CommandGroup heading={t(($) => $.detail.agents_group)}>
-              {filteredAgents.map((a) => {
-                const sub = subscribers.find((s) => s.user_type === "agent" && s.user_id === a.id);
-                const isSubbed = !!sub;
-                return (
-                  <CommandItem
-                    key={`agent-${a.id}`}
-                    onSelect={() => toggleSubscriber(a.id, "agent", isSubbed)}
-                    disabled={togglesDisabled}
-                    className="flex items-center gap-2.5"
-                  >
-                    <Checkbox checked={isSubbed} className="pointer-events-none" />
-                    <ActorAvatar actorType="agent" actorId={a.id} size="md" showStatusDot />
-                    <span className="truncate flex-1">{a.name}</span>
-                  </CommandItem>
-                );
-              })}
-            </CommandGroup>
-          )}
-        </CommandList>
-      </Command>
-    </PopoverContent>
-  );
 }
 
 function shortDate(date: string | null): string {
@@ -316,25 +195,6 @@ function formatActivity(
       return t(($) => $.activity.task_completed, { count: entry.coalesced_count ?? 1 });
     case "task_failed":
       return t(($) => $.activity.task_failed, { count: entry.coalesced_count ?? 1 });
-    case "squad_leader_evaluated": {
-      const reason = details.reason?.trim();
-      switch (details.outcome) {
-        case "action":
-          return reason
-            ? t(($) => $.activity.squad_leader_action_reason, { reason })
-            : t(($) => $.activity.squad_leader_action);
-        case "no_action":
-          return reason
-            ? t(($) => $.activity.squad_leader_no_action_reason, { reason })
-            : t(($) => $.activity.squad_leader_no_action);
-        case "failed":
-          return reason
-            ? t(($) => $.activity.squad_leader_failed_reason, { reason })
-            : t(($) => $.activity.squad_leader_failed);
-        default:
-          return t(($) => $.activity.squad_leader_evaluated);
-      }
-    }
     default:
       return entry.action ?? "";
   }
@@ -635,15 +495,12 @@ function SubIssueRow({
   child,
   childProgress,
   rowProps,
-  customProperties,
 }: {
   child: Issue;
   /** The sub-issue's OWN children progress (it can itself be a parent). */
   childProgress?: { done: number; total: number };
   /** User-level display preference: which built-in fields the row shows. */
   rowProps: SubIssueRowProperties;
-  /** Workspace custom properties the user opted into showing on rows. */
-  customProperties: IssueProperty[];
 }) {
   const { t } = useT("issues");
   const paths = useWorkspacePaths();
@@ -652,9 +509,6 @@ function SubIssueRow({
   const toggleSelected = useIssueSelectionStore((s) => s.toggle);
   const isDone = child.status === "done" || child.status === "cancelled";
   const labels = rowProps.labels ? (child.labels ?? []) : [];
-  const customPropsWithValue = customProperties.filter(
-    (p) => child.properties?.[p.id] !== undefined,
-  );
 
   const handleUpdate = useCallback(
     (updates: Partial<UpdateIssueRequest>) => {
@@ -756,22 +610,6 @@ function SubIssueRow({
                 )}
               </span>
             )}
-            {customPropsWithValue.length > 0 && (
-              <span className="hidden max-w-[260px] shrink-0 items-center gap-1 overflow-hidden md:inline-flex">
-                {customPropsWithValue.slice(0, 3).map((property) => (
-                  <span
-                    key={property.id}
-                    className="inline-flex max-w-[120px] items-center gap-1 rounded-full bg-muted/60 px-1.5 py-0.5 text-micro text-muted-foreground"
-                  >
-                    <PropertyIcon property={property} className="size-3 text-micro" />
-                    <CustomPropertyValueDisplay
-                      property={property}
-                      value={child.properties?.[property.id]}
-                    />
-                  </span>
-                ))}
-              </span>
-            )}
             {rowProps.childProgress && childProgress && childProgress.total > 0 && (
               <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-muted/60 px-1.5 py-0.5">
                 <ProgressRing
@@ -851,16 +689,10 @@ const SUB_ISSUE_ROW_PROPERTY_LABEL_KEY: Record<
   assignee: "card_assignee",
 };
 
-function SubIssueDisplayPopover({
-  workspaceProperties,
-}: {
-  workspaceProperties: IssueProperty[];
-}) {
+function SubIssueDisplayPopover() {
   const { t } = useT("issues");
   const rowProperties = useSubIssueDisplayStore((s) => s.rowProperties);
-  const rowPropertyIds = useSubIssueDisplayStore((s) => s.rowPropertyIds);
   const toggleRowProperty = useSubIssueDisplayStore((s) => s.toggleRowProperty);
-  const toggleRowPropertyId = useSubIssueDisplayStore((s) => s.toggleRowPropertyId);
 
   return (
     <Popover>
@@ -900,22 +732,6 @@ function SubIssueDisplayPopover({
                 />
               </label>
             ))}
-            {workspaceProperties.map((property) => (
-              <label
-                key={property.id}
-                className="flex cursor-pointer items-center justify-between gap-3"
-              >
-                <span className="flex min-w-0 items-center gap-1.5 truncate text-body">
-                  <PropertyIcon property={property} className="size-3.5 text-caption" />
-                  <span className="truncate">{property.name}</span>
-                </span>
-                <Switch
-                  size="sm"
-                  checked={rowPropertyIds.includes(property.id)}
-                  onCheckedChange={() => toggleRowPropertyId(property.id)}
-                />
-              </label>
-            ))}
           </div>
         </div>
       </PopoverContent>
@@ -941,13 +757,13 @@ interface IssueDetailProps {
    * detail. A remount replays it by itself (fresh mount, cleared memento
    * entry); this token is for the one path with neither remount nor
    * guaranteed re-render — re-clicking the notification row that is already
-   * open (see InboxPage.handleSelect). The bump both re-arms the landing
+   * open. The bump both re-arms the landing
    * guard and forces the render that re-reads the cleared memento entry.
    */
   highlightRequestToken?: number;
   /**
    * Far-left header slot, replacing the mobile sidebar trigger. A host that
-   * embeds this detail one level deep (the inbox, on a phone) passes its own
+   * embeds this detail one level deep (for example, on a phone) passes its own
    * "back" control here instead of stacking a second 48px bar above us — the
    * breadcrumb this header already renders names the issue's container, not
    * the surface the reader arrived from, so only the host can spell that trip.
@@ -972,7 +788,7 @@ export function IssueNotFound({
   showBackLink?: boolean;
   /**
    * Host-supplied way back, mirrored from `IssueDetailProps.leadingAction`. A
-   * host that hands its whole screen to this component (the inbox, on a phone)
+   * host that hands its whole screen to this component
    * has no bar of its own left, so this state has to carry the trip back or
    * there is none.
    */
@@ -1074,7 +890,7 @@ export function IssueDetailSkeleton({ leading }: { leading?: ReactNode } = {}) {
 // IssueDetail
 // ---------------------------------------------------------------------------
 
-export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = true, layoutId = "multica_issue_detail_layout", highlightCommentId, highlightRequestToken, leadingAction }: IssueDetailProps) {
+export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = true, layoutId = "liexiu_issue_detail_layout", highlightCommentId, highlightRequestToken, leadingAction }: IssueDetailProps) {
   const { t } = useT("issues");
   const timeAgo = useTimeAgo();
   const id = issueId;
@@ -1084,7 +900,6 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
   // Issue navigation — read from TQ list cache
   const wsId = useWorkspaceId();
   const { data: members = [] } = useQuery(memberListOptions(wsId));
-  const { data: agents = [] } = useQuery(agentListOptions(wsId));
   // Workspace owners and admins moderate any comment authored by anyone
   // (mirrors backend `comment.go:507-512`). Computed here so per-comment
   // rendering doesn't have to re-derive it for every row.
@@ -1138,10 +953,6 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
   const [visibleOptionalProps, setVisibleOptionalProps] = useState<Set<OptionalPropKey>>(
     () => new Set(),
   );
-  // Same progressive-disclosure machinery for custom properties, keyed by
-  // property definition id instead of a static key union.
-  const [visibleCustomProps, setVisibleCustomProps] = useState<Set<string>>(() => new Set());
-  const [autoOpenCustomProp, setAutoOpenCustomProp] = useState<string | null>(null);
   // Optional property to auto-open as soon as it's mounted (the user just
   // picked it from "+ Add property" and we want them dropped straight into
   // edit state). Consumed by the row that matches this key, cleared after.
@@ -1163,7 +974,7 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
   // list's first render already materializes the rows around it.
   //
   // The container key carries the issue id: on the issue route that is
-  // redundant with the route scoping, but in the inbox the selection lives
+  // redundant with the route scoping, but an embedded host may own selection
   // in the query string while memento entries key by pathname — a bare
   // "main" would restore notification A's offset into notification B's
   // detail.
@@ -1287,22 +1098,14 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
 
   // Record recent visit
   const recordVisit = useRecentIssuesStore((s) => s.recordVisit);
-  const recordRecentContext = useRecentContextStore((s) => s.recordVisit);
   useEffect(() => {
     if (issue) {
       recordVisit(wsId, issue.id);
-      recordRecentContext(wsId, {
-        type: "issue",
-        id: issue.id,
-        label: issue.identifier,
-        subtitle: issue.title,
-        status: issue.status,
-      });
     }
   }, [issue?.id, wsId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Fire `onDelete` once when the issue transitions from loaded to missing.
-  // Delete goes through a shell-level modal, so the caller (e.g. inbox) can't
+  // Delete goes through a shell-level modal, so the caller can't
   // be notified directly — instead, the detail page observes its own cache
   // clearing and runs the callback. We navigate via `onDeletedFallbackPath` on
   // the actions menu when no callback is supplied (standalone routes).
@@ -1325,11 +1128,11 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
     }
   }, [issue, issueLoading, onDelete]);
 
-  // Custom hooks — encapsulate timeline, reactions, subscribers
+  // Custom hook for the issue timeline and comment mutations.
   const {
     timeline, loading: timelineLoading,
     submitComment, submitReply,
-    editComment, deleteComment, toggleResolveComment, toggleReaction: handleToggleReaction,
+    editComment, deleteComment, toggleResolveComment,
   } = useIssueTimeline(id, user?.id);
 
   // Resolve / unresolve must always clear the per-session expand entry so
@@ -1357,7 +1160,7 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
   // the previous render via `prevThreadRepliesRef`: if a thread's flat list
   // is shallow-equal to the previous one, we reuse the previous array so
   // React.memo on CommentCard / ResolvedThreadBar can short-circuit. Without
-  // this, every WS event (including reactions, edits, AI streaming on an
+  // this, every WS event (including edits, AI streaming on an
   // unrelated thread) hands every card a brand-new prop reference and forces
   // every thread subtree to re-render in lockstep.
   const prevThreadRepliesRef = useRef<Map<string, TimelineEntry[]>>(new Map());
@@ -1397,16 +1200,13 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
     // Coalesce consecutive activities from the same actor + action.
     // - task_completed / task_failed: no time limit (these repeat across runs)
     // - all other actions: within a 2-minute window
-    // - squad_leader_evaluated: never coalesce; outcome/reason are audit data
     const COALESCE_MS = 2 * 60 * 1000;
     const NO_TIME_LIMIT_ACTIONS = new Set(["task_completed", "task_failed"]);
-    const NEVER_COALESCE_ACTIONS = new Set(["squad_leader_evaluated"]);
     const coalesced: TimelineEntry[] = [];
     for (const entry of topLevel) {
       if (entry.type === "activity") {
         const prev = coalesced[coalesced.length - 1];
         if (
-          !NEVER_COALESCE_ACTIONS.has(entry.action!) &&
           prev?.type === "activity" &&
           prev.action === entry.action &&
           prev.actor_type === entry.actor_type &&
@@ -1475,7 +1275,7 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
 
   // Map of reply-comment id → root-comment id, so a deep-link to a reply
   // (which lives inside a CommentCard, not in the flat items array) can fall
-  // back to scrolling the root thread into view. Without this, an inbox
+  // back to scrolling the root thread into view. Without this, an embedded
   // notification on a reply would land at items[-1] and short-circuit.
   const replyToRoot = useMemo(() => {
     const map = new Map<string, string>();
@@ -1568,7 +1368,7 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
         if (index < 0) return;
         virtuosoRef.current?.scrollToIndex({ index, align: "start", offset: -16 });
       }
-      // Flash the landed thread the same way inbox deep-links do, so the eye
+      // Flash the landed thread the same way deep-links do, so the eye
       // has an anchor after the instant jump. (Folded resolved bars don't
       // take the highlight prop — the scroll itself is the feedback there.)
       setHighlightedId(threadId);
@@ -1621,18 +1421,6 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
     threadNavPinned,
   ]);
 
-  const {
-    reactions: issueReactions,
-    toggleReaction: handleToggleIssueReaction,
-  } = useIssueReactions(id, user?.id);
-
-  const {
-    subscribers, isSubscribed, subscriptionReason, subscriptionKnown,
-    togglePending, subtreePending,
-    toggleSubscribe: handleToggleSubscribe, toggleSubscriber,
-    unsubscribeFromSubtree: handleUnsubscribeSubtree,
-  } = useIssueSubscribers(id, user?.id);
-
   // Attachments uploaded against this issue. Drives the description
   // editor's click-time fresh-sign download: NodeViews match
   // `src`/`href` against this list to resolve an attachment id before
@@ -1654,11 +1442,7 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
     ...projectDetailOptions(wsId, issueProjectId ?? ""),
     enabled: !!issueProjectId,
   });
-  const {
-    data: childIssues = [],
-    isSuccess: childIssuesLoaded,
-    isFetching: childIssuesFetching,
-  } = useQuery({
+  const { data: childIssues = [] } = useQuery({
     ...childIssuesOptions(wsId, id),
     enabled: !!issue,
   });
@@ -1668,7 +1452,6 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
   // visit. The unsubscribe control below picks a different server write from
   // this answer, so a defaulted or stale empty array must not count as "no
   // sub-issues" (MUL-5714).
-  const childCountKnown = childIssuesLoaded && !childIssuesFetching;
   // Parent's children — used to render the "x/y" progress next to the
   // "Sub-issue of …" breadcrumb under the title.
   const { data: parentChildIssues = [] } = useQuery({
@@ -1682,12 +1465,8 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
     ...childIssueProgressOptions(wsId),
     enabled: childIssues.length > 0,
   });
-  // User-level display preference for sub-issue rows (built-in field toggles
-  // + opted-in workspace custom properties). `subIssueCustomProps` resolves
-  // the persisted ids against this workspace's live, non-archived property
-  // definitions — ids from other workspaces or archived properties drop out.
+  // User-level display preference for built-in sub-issue row fields.
   const subIssueRowProps = useSubIssueDisplayStore((s) => s.rowProperties);
-  const subIssueRowPropertyIds = useSubIssueDisplayStore((s) => s.rowPropertyIds);
   // Store-backed (not useState) so the collapsed state survives leaving the
   // issue and navigating back within the session.
   const subIssuesCollapsed = useSubIssuesCollapseStore((s) =>
@@ -1926,24 +1705,6 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
   const { data: attachedLabels = [] } = useQuery(issueLabelsOptions(wsId, id));
   const attachedLabelsCount = attachedLabels.length;
 
-  // Custom property catalog. Includes archived definitions: an issue can
-  // still carry a value written before the archive, and that row must stay
-  // renderable (read-only) until someone clears it.
-  const { data: workspaceProperties = [] } = useQuery(propertyListOptions(wsId, true));
-
-  // Sub-issue rows only surface live definitions: the display picker offers
-  // non-archived properties, and chips render only ids that resolve here.
-  const activeWorkspaceProperties = useMemo(
-    () => workspaceProperties.filter((p) => p.archived !== true),
-    [workspaceProperties],
-  );
-  const subIssueCustomProps = useMemo(
-    () =>
-      subIssueRowPropertyIds
-        .map((pid) => activeWorkspaceProperties.find((p) => p.id === pid))
-        .filter((p): p is IssueProperty => !!p),
-    [subIssueRowPropertyIds, activeWorkspaceProperties],
-  );
 
   // Seed the visible-optional-props set:
   //   - on issue switch, reset to whichever fields are currently set
@@ -1956,13 +1717,11 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
     if (seededIssueIdRef.current !== issue.id) {
       seededIssueIdRef.current = issue.id;
       setAutoOpenProp(null);
-      setAutoOpenCustomProp(null);
       const seed = new Set<OptionalPropKey>();
       for (const k of OPTIONAL_PROP_KEYS) {
         if (isOptionalPropSet(issue, k, attachedLabelsCount)) seed.add(k);
       }
       setVisibleOptionalProps(seed);
-      setVisibleCustomProps(new Set(Object.keys(issue.properties ?? {})));
       return;
     }
     setVisibleOptionalProps((prev) => {
@@ -1971,16 +1730,6 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
         if (isOptionalPropSet(issue, k, attachedLabelsCount) && !next.has(k)) {
           if (next === prev) next = new Set(prev);
           next.add(k);
-        }
-      }
-      return next;
-    });
-    setVisibleCustomProps((prev) => {
-      let next = prev;
-      for (const propertyId of Object.keys(issue.properties ?? {})) {
-        if (!next.has(propertyId)) {
-          if (next === prev) next = new Set(prev);
-          next.add(propertyId);
         }
       }
       return next;
@@ -2003,16 +1752,6 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
     [],
   );
 
-  const addCustomProp = useCallback((propertyId: string) => {
-    setVisibleCustomProps((prev) => {
-      if (prev.has(propertyId)) return prev;
-      const next = new Set(prev);
-      next.add(propertyId);
-      return next;
-    });
-    setAutoOpenCustomProp(propertyId);
-    setAddPropPopoverOpen(false);
-  }, []);
 
   // Clear the auto-open flag after the next render so pickers (which read
   // `defaultOpen` once via a useState initializer) keep the open state they
@@ -2022,10 +1761,6 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
     setAutoOpenProp(null);
   }, [autoOpenProp]);
 
-  useEffect(() => {
-    if (autoOpenCustomProp === null) return;
-    setAutoOpenCustomProp(null);
-  }, [autoOpenCustomProp]);
 
   const handleToggleSidebar = useCallback(() => {
     if (isMobile) {
@@ -2145,40 +1880,9 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
             </PropRow>
           )}
 
-          {/* Custom properties — same progressive disclosure as the
-              built-in optional props: a row renders when the issue has a
-              value OR the user added the property this session. Archived
-              definitions render read-only until their value is cleared. */}
-          {workspaceProperties
-            .filter(
-              (p) =>
-                issue.properties?.[p.id] !== undefined ||
-                (!p.archived && visibleCustomProps.has(p.id)),
-            )
-            .map((p) => (
-              <PropRow
-                key={p.id}
-                label={
-                  <>
-                    <PropertyIcon property={p} className="size-3.5 text-caption" />
-                    <span className="truncate">{p.name}</span>
-                  </>
-                }
-              >
-                <CustomPropertyValueEditor
-                  issue={issue}
-                  property={p}
-                  defaultOpen={autoOpenCustomProp === p.id}
-                />
-              </PropRow>
-            ))}
-
-          {/* "+ Add property" — opens a Popover listing optional fields
-              not yet displayed. Hidden once every optional field is on
-              screen. Sits inside the same grid as a full-row, with its
-              own padding so the visual rhythm follows the rows above. */}
-          {(OPTIONAL_PROP_KEYS.some((k) => !visibleOptionalProps.has(k) && (k !== "stage" || issue.parent_issue_id != null)) ||
-            workspaceProperties.some((p) => !p.archived && !visibleCustomProps.has(p.id) && issue.properties?.[p.id] === undefined)) && (
+          {OPTIONAL_PROP_KEYS.some(
+            (k) => !visibleOptionalProps.has(k) && (k !== "stage" || issue.parent_issue_id != null),
+          ) && (
             <div className="col-span-2 mt-1">
               <Popover open={addPropPopoverOpen} onOpenChange={setAddPropPopoverOpen}>
                 <PopoverTrigger
@@ -2223,35 +1927,6 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
                       </span>
                     </button>
                   ))}
-                  {(() => {
-                    const addable = workspaceProperties.filter(
-                      (p) =>
-                        !p.archived &&
-                        !visibleCustomProps.has(p.id) &&
-                        issue.properties?.[p.id] === undefined,
-                    );
-                    if (addable.length === 0) return null;
-                    return (
-                      <>
-                        <div className="my-1 h-px bg-border" />
-                        {addable.map((p) => (
-                          <button
-                            key={p.id}
-                            type="button"
-                            onClick={() => addCustomProp(p.id)}
-                            className="flex w-full items-center gap-2 rounded-md px-2 py-1 text-caption text-foreground transition-colors hover:bg-accent focus-visible:bg-accent focus-visible:outline-none"
-                          >
-                            {p.icon ? (
-                              <PropertyIcon property={p} className="size-3.5 text-caption" />
-                            ) : (
-                              <SlidersHorizontal className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                            )}
-                            <span className="truncate">{p.name}</span>
-                          </button>
-                        ))}
-                      </>
-                    );
-                  })()}
                 </PopoverContent>
               </Popover>
             </div>
@@ -2423,7 +2098,6 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
             onReply={submitReply}
             onEdit={editComment}
             onDelete={deleteComment}
-            onToggleReaction={handleToggleReaction}
             onResolveToggle={handleResolveToggle}
             onCollapseResolved={isResolved ? () => toggleResolvedExpand(item.id, false) : undefined}
             expandedResolvedIds={expandedResolved}
@@ -2568,21 +2242,6 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
                 <TooltipContent side="bottom">{t(($) => $.detail.archive_tooltip)}</TooltipContent>
               </Tooltip>
             )}
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <Button
-                    variant="ghost"
-                    size="icon-sm"
-                    className={cn("text-muted-foreground", actions.isPinned && "text-foreground")}
-                    onClick={actions.togglePin}
-                  >
-                    {actions.isPinned ? <PinOff /> : <Pin />}
-                  </Button>
-                }
-              />
-              <TooltipContent side="bottom">{actions.isPinned ? t(($) => $.detail.unpin_tooltip) : t(($) => $.detail.pin_tooltip)}</TooltipContent>
-            </Tooltip>
             <IssueActionsDropdown
               issue={issue}
               align="end"
@@ -2740,12 +2399,6 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
             />
 
             <div className="flex items-center gap-1 mt-3">
-              <ReactionBar
-                reactions={issueReactions}
-                currentUserId={user?.id}
-                onToggle={handleToggleIssueReaction}
-                getActorName={getActorName}
-              />
               <FileUploadButton
                 size="sm"
                 multiple
@@ -2815,7 +2468,7 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
                     )}
                   />
                   <div className="ml-auto flex items-center gap-0.5">
-                    <SubIssueDisplayPopover workspaceProperties={activeWorkspaceProperties} />
+                    <SubIssueDisplayPopover />
                     <Tooltip>
                       <TooltipTrigger
                         render={
@@ -2859,7 +2512,6 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
                               child={child}
                               childProgress={subIssueProgress?.get(child.id)}
                               rowProps={subIssueRowProps}
-                              customProperties={subIssueCustomProps}
                             />
                           ))}
                         </Fragment>
@@ -2879,120 +2531,6 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
                 <h2 className="text-title-sm font-semibold">{t(($) => $.detail.activity_section)}</h2>
-              </div>
-              <div className="flex items-center gap-2">
-                {/* A delegated subscription is one the user never opted into
-                    by hand — their agent created this issue for them. Saying
-                    so is what keeps it from reading as the product quietly
-                    adding them to things (MUL-5483). */}
-                {isSubscribed && subscriptionReason === "delegated" && (
-                  <Tooltip>
-                    {/* Quiet surface, not plain body text: this is metadata
-                        explaining a state, and must not read as a second
-                        action sitting next to Unsubscribe. Uses the shared
-                        caption role rather than an ad-hoc size (MUL-5451). */}
-                    <TooltipTrigger className="cursor-default rounded-full bg-muted px-2 py-0.5 text-caption text-muted-foreground">
-                      {t(($) => $.detail.delegated_subscription_badge)}
-                    </TooltipTrigger>
-                    <TooltipContent side="top" className="max-w-64">
-                      {t(($) => $.detail.delegated_subscription_hint)}
-                    </TooltipContent>
-                  </Tooltip>
-                )}
-                {/* Nothing until the subscribers query resolves: the default
-                    empty list reads as "not subscribed" for everyone, so
-                    rendering it flashes Subscribe at someone who is already
-                    subscribed, and a click landing in that window sends a
-                    subscribe instead of the unsubscribe they meant. An
-                    unresolved state is better shown as no control than as the
-                    wrong one (MUL-5714). */}
-                {subscriptionKnown &&
-                  (!isSubscribed || (childCountKnown && childIssues.length === 0) ? (
-                    /* One button, no menu, when there is nothing for the
-                       subtree option to cover. This is the root-only path
-                       (opt_out_scope='issue'), NOT the subtree one: even at
-                       zero children the two are different server writes,
-                       because a subtree tombstone also keeps FUTURE children
-                       from re-subscribing the user
-                       (server/pkg/db/queries/subscriber.sql). Declining one
-                       issue must not silently opt someone out of a tree that
-                       does not exist yet. While the child count is unknown we
-                       keep the menu below — it never picks a scope for the
-                       user. */
-                    <button
-                      type="button"
-                      onClick={handleToggleSubscribe}
-                      disabled={togglePending || !user?.id}
-                      className={SUBSCRIPTION_ACTION_CLASS}
-                    >
-                      {isSubscribed
-                        ? t(($) => $.detail.unsubscribe)
-                        : t(($) => $.detail.subscribe)}
-                    </button>
-                  ) : (
-                    <DropdownMenu>
-                      <DropdownMenuTrigger
-                        disabled={togglePending || subtreePending || !user?.id}
-                        className={SUBSCRIPTION_ACTION_CLASS}
-                      >
-                        {t(($) => $.detail.unsubscribe)}
-                      </DropdownMenuTrigger>
-                      {/* onClick, not onSelect: Base UI's Menu.Item exposes no
-                          onSelect (that is the Radix spelling), and because its
-                          props extend the full div attribute set, an onSelect
-                          typechecks and silently lands on the DOM node as the
-                          native text-selection event — the handler never runs
-                          (MUL-5710). */}
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem
-                          onClick={handleToggleSubscribe}
-                          disabled={togglePending}
-                        >
-                          {t(($) => $.detail.unsubscribe_this)}
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          onClick={handleUnsubscribeSubtree}
-                          disabled={subtreePending}
-                        >
-                          {t(($) => $.detail.unsubscribe_subtree)}
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  ))}
-                <Popover>
-                  <PopoverTrigger className="cursor-pointer hover:opacity-80 transition-opacity">
-                    {subscribers.length > 0 ? (
-                      <AvatarGroup>
-                        {subscribers.slice(0, 4).map((sub) => (
-                          <ActorAvatar
-                            key={`${sub.user_type}-${sub.user_id}`}
-                            actorType={sub.user_type}
-                            actorId={sub.user_id}
-                            size="md"
-                            enableHoverCard
-                          />
-                        ))}
-                        {subscribers.length > 4 && (
-                          <AvatarGroupCount>+{subscribers.length - 4}</AvatarGroupCount>
-                        )}
-                      </AvatarGroup>
-                    ) : (
-                      <span className="flex items-center justify-center h-6 w-6 rounded-full border border-dashed border-muted-foreground/30 text-muted-foreground">
-                        <Users className="h-3 w-3" />
-                      </span>
-                    )}
-                  </PopoverTrigger>
-                  <SubscriberPopoverContent
-                    members={members}
-                    agents={agents}
-                    subscribers={subscribers}
-                    toggleSubscriber={toggleSubscriber}
-                    togglesDisabled={
-                      !subscriptionKnown || togglePending || !user?.id
-                    }
-                    t={t}
-                  />
-                </Popover>
               </div>
             </div>
 
@@ -3018,7 +2556,7 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
               <TimelineSkeleton />
             ) : (
               // Two render modes:
-              //   - `highlightCommentId` set (came from inbox deep-link) →
+              //   - `highlightCommentId` set (came from a deep-link) →
               //     render flat. Every comment mounts, every height is real,
               //     the target id is in the DOM the instant the useEffect
               //     above runs `scrollIntoView`. No virtualization estimate

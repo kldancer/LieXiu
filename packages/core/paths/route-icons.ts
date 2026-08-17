@@ -12,7 +12,7 @@
  * this registry for the page case.
  *
  * Icon values are *names*, not React components, so this module stays
- * React-free and safe inside `@multica/core`. The name → component registry
+ * React-free and safe inside `@liexiu/core`. The name → component registry
  * lives in `packages/views/layout/route-icon-components.tsx`; its
  * `Record<RouteIconName, LucideIcon>` type makes a missing component a compile
  * error.
@@ -20,14 +20,10 @@
 
 /** Every icon name a nav page or a tab type-icon can resolve to. */
 export type RouteIconName =
-  | "Inbox"
-  | "MessageSquare"
   | "CircleUser"
   | "ListTodo"
   | "FolderKanban"
-  | "Zap"
   | "Bot"
-  | "Users"
   | "BarChart3"
   | "Monitor"
   | "Server"
@@ -44,14 +40,10 @@ export type RouteIconName =
 
 /** i18n label key (under the `layout.nav` namespace) for a page. */
 export type NavLabelKey =
-  | "inbox"
-  | "chat"
   | "my_issues"
   | "issues"
   | "projects"
-  | "autopilots"
   | "agents"
-  | "squads"
   | "usage"
   | "runtimes"
   | "skills"
@@ -59,14 +51,10 @@ export type NavLabelKey =
 
 /** Stable identifier for each workspace navigation page. */
 export type WorkspacePageKey =
-  | "inbox"
-  | "chat"
   | "myIssues"
   | "issues"
   | "projects"
-  | "autopilots"
   | "agents"
-  | "squads"
   | "usage"
   | "runtimes"
   | "skills"
@@ -86,14 +74,10 @@ export interface WorkspacePage {
  * destinations in paths.ts and the sidebar nav groups.
  */
 export const WORKSPACE_PAGES: Record<WorkspacePageKey, WorkspacePage> = {
-  inbox: { segment: "inbox", icon: "Inbox", navKey: "inbox" },
-  chat: { segment: "chat", icon: "MessageSquare", navKey: "chat" },
   myIssues: { segment: "my-issues", icon: "CircleUser", navKey: "my_issues" },
   issues: { segment: "issues", icon: "ListTodo", navKey: "issues" },
   projects: { segment: "projects", icon: "FolderKanban", navKey: "projects" },
-  autopilots: { segment: "autopilots", icon: "Zap", navKey: "autopilots" },
   agents: { segment: "agents", icon: "Bot", navKey: "agents" },
-  squads: { segment: "squads", icon: "Users", navKey: "squads" },
   usage: { segment: "usage", icon: "BarChart3", navKey: "usage" },
   runtimes: { segment: "runtimes", icon: "Monitor", navKey: "runtimes" },
   skills: { segment: "skills", icon: "BookOpenText", navKey: "skills" },

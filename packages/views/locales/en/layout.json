@@ -1,13 +1,9 @@
 {
   "nav": {
-    "inbox": "Inbox",
-    "chat": "Chat",
     "my_issues": "My Issues",
     "issues": "Issues",
     "projects": "Projects",
-    "autopilots": "Autopilot",
     "agents": "Agents",
-    "squads": "Squads",
     "usage": "Analytics",
     "runtimes": "Runtimes",
     "skills": "Skills",
@@ -16,10 +12,8 @@
   "tab": {
     "issue": "Issue",
     "project": "Project",
-    "autopilot": "Autopilot",
     "agent": "Agent",
     "member": "Member",
-    "squad": "Squad",
     "skill": "Skill",
     "machine": "Machine",
     "runtime": "Runtime",
@@ -29,10 +23,7 @@
   },
   "help": {
     "trigger": "Help",
-    "docs": "Docs",
-    "changelog": "Change log",
     "discord": "Discord",
-    "feedback": "Feedback",
     "server_version": "Server version {{version}}"
   },
   "workspace_loader": {
@@ -40,7 +31,6 @@
     "loading_named_prefix": "Loading"
   },
   "sidebar": {
-    "unpin_tooltip": "Unpin",
     "workspaces_label": "Workspaces",
     "create_workspace": "Create workspace",
     "pending_invitations_label": "Pending invitations",
@@ -50,7 +40,6 @@
     "log_out": "Log out",
     "new_issue": "New Issue",
     "new_issue_shortcut": "C",
-    "pinned_label": "Pinned",
     "workspace_group": "Workspace",
     "configure_group": "Configure",
     "unread_overflow": "99+",

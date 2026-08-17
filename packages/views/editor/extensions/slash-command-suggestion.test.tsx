@@ -1,9 +1,9 @@
 import { act, render } from "@testing-library/react";
 import { createRef, type ReactNode } from "react";
 import { beforeAll, describe, expect, it, vi } from "vitest";
-import { I18nProvider } from "@multica/core/i18n/react";
-import { workspaceKeys } from "@multica/core/workspace/queries";
-import type { Agent, MemberWithUser } from "@multica/core/types";
+import { I18nProvider } from "@liexiu/core/i18n/react";
+import { workspaceKeys } from "@liexiu/core/workspace/queries";
+import type { Agent, MemberWithUser } from "@liexiu/core/types";
 import type { QueryClient } from "@tanstack/react-query";
 import enEditor from "../../locales/en/editor.json";
 
@@ -23,18 +23,13 @@ beforeAll(() => {
   Element.prototype.scrollIntoView = vi.fn();
 });
 
-vi.mock("@multica/core/platform", () => ({
+vi.mock("@liexiu/core/platform", () => ({
   getCurrentWsId: () => "ws-1",
 }));
 
 const authState = { user: { id: "u1" } as { id: string } | null };
-vi.mock("@multica/core/auth", () => ({
+vi.mock("@liexiu/core/auth", () => ({
   useAuthStore: { getState: () => authState },
-}));
-
-const chatState = { selectedAgentId: "agent-1" as string | null };
-vi.mock("@multica/core/chat", () => ({
-  useChatStore: { getState: () => chatState },
 }));
 
 import {
@@ -99,7 +94,6 @@ function items(qc: QueryClient, query = ""): SlashCommandItem[] {
 
 describe("slash command suggestion items", () => {
   it("returns all active agent skills when query is empty", () => {
-    chatState.selectedAgentId = "agent-1";
     const qc = fakeQc({
       members: [{ user_id: "u1", name: "Alice", role: "member" }],
       agents: [
@@ -117,7 +111,6 @@ describe("slash command suggestion items", () => {
   });
 
   it("filters skills by name case-insensitively", () => {
-    chatState.selectedAgentId = "agent-1";
     const qc = fakeQc({
       members: [{ user_id: "u1", name: "Alice", role: "member" }],
       agents: [
@@ -135,7 +128,6 @@ describe("slash command suggestion items", () => {
   });
 
   it("filters skills by description", () => {
-    chatState.selectedAgentId = "agent-1";
     const qc = fakeQc({
       members: [{ user_id: "u1", name: "Alice", role: "member" }],
       agents: [
@@ -153,7 +145,6 @@ describe("slash command suggestion items", () => {
   });
 
   it("tolerates skills with missing descriptions from cached API data", () => {
-    chatState.selectedAgentId = "agent-1";
     const qc = fakeQc({
       members: [{ user_id: "u1", name: "Alice", role: "member" }],
       agents: [
@@ -173,7 +164,6 @@ describe("slash command suggestion items", () => {
   });
 
   it("returns empty when the active agent has no skills", () => {
-    chatState.selectedAgentId = "agent-1";
     const qc = fakeQc({
       members: [{ user_id: "u1", name: "Alice", role: "member" }],
       agents: [agent({ id: "agent-1", skills: [] })],
@@ -183,7 +173,6 @@ describe("slash command suggestion items", () => {
   });
 
   it("caps results at 20", () => {
-    chatState.selectedAgentId = "agent-1";
     const qc = fakeQc({
       members: [{ user_id: "u1", name: "Alice", role: "member" }],
       agents: [
@@ -202,7 +191,6 @@ describe("slash command suggestion items", () => {
   });
 
   it("falls back to the first available agent when selectedAgentId is stale", () => {
-    chatState.selectedAgentId = "missing";
     const qc = fakeQc({
       members: [{ user_id: "u1", name: "Alice", role: "member" }],
       agents: [
@@ -226,7 +214,6 @@ describe("slash command suggestion items", () => {
   });
 
   it("excludes skills from private agents the user cannot access", () => {
-    chatState.selectedAgentId = "private-agent";
     const qc = fakeQc({
       members: [
         { user_id: "u1", name: "Alice", role: "member" },

@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/multica-ai/multica/server/internal/runtimeapps"
+	"github.com/kailonyang/liexiu/server/internal/runtimeapps"
 )
 
 // This file holds the runtime brief assembler — the post-MUL-3560 path
@@ -16,7 +16,7 @@ import (
 // Layout:
 //
 //   - buildMetaSkillContentSlim is the entry point.
-//   - It calls classifyTask (runtime_config_kind.go) to pick one of five
+//   - It calls classifyTask (runtime_config_kind.go) to pick one of two
 //     task kinds, then composes the brief from the per-section writers
 //     below.
 //   - Each section is its own writer so the matrix of "which kind gets
@@ -24,7 +24,7 @@ import (
 //
 // The brief applies two orthogonal optimisations:
 //
-//  1. Section gating per task kind — quick-create / chat / autopilot
+//  1. Section gating per task kind — quick-create
 //     skip sections they have no use for (Mentions, Comment Formatting,
 //     Issue Metadata, Sub-issue, ...).
 //  2. Per-section prose compression — Available Commands, Issue
@@ -40,8 +40,8 @@ import (
 
 // writeHeader emits the brief's leading title and one-line elevator pitch.
 func writeHeader(b *strings.Builder) {
-	b.WriteString("# Multica Agent Runtime\n\n")
-	b.WriteString("You are a coding agent in the Multica platform. Use the `multica` CLI to interact with the platform.\n\n")
+	b.WriteString("# LieXiu Agent Runtime\n\n")
+	b.WriteString("You are a coding agent in the LieXiu platform. Use the `liexiu` CLI to interact with the platform.\n\n")
 }
 
 // writeBackgroundTaskSafetySlim emits the Background Task Safety section
@@ -98,7 +98,7 @@ func writeHeader(b *strings.Builder) {
 // a fresh review decision.
 func writeBackgroundTaskSafetySlim(b *strings.Builder) {
 	b.WriteString("## Background Task Safety\n\n")
-	b.WriteString("Multica marks the task terminal the moment your top-level turn exits — any run-owned work still active is orphaned, its result lost, and the final comment you meant to post never sends. There is no background-completion wakeup, whatever a tool response promises. Never background-and-yield: collect required results inside foreground tool calls that block to completion, run unobservable work synchronously, and never end a turn \"standing by\" for something to finish — that message becomes your final output.\n\n")
+	b.WriteString("LieXiu marks the task terminal the moment your top-level turn exits — any run-owned work still active is orphaned, its result lost, and the final comment you meant to post never sends. There is no background-completion wakeup, whatever a tool response promises. Never background-and-yield: collect required results inside foreground tool calls that block to completion, run unobservable work synchronously, and never end a turn \"standing by\" for something to finish — that message becomes your final output.\n\n")
 	b.WriteString("External systems triggered by your completed actions — CI, GitHub Actions after a successful push — are not run-owned: do not wait for them, and do not run `gh pr checks --watch`, `gh run watch`, or sleep/retry polls. A repo's merge gate (\"CI must be green before merge\") is NOT your delivery acceptance criteria. Deliver what you have — \"Local tests pass; CI running: <PR link>\" is a complete hand-off. The one exception: when the trigger comment or the issue's acceptance criteria explicitly ask for the CI result, collect it as ONE foreground blocking call (`gh pr checks <pr> --watch`) inside this same turn.\n\n")
 	b.WriteString("A user explicitly asking for a local service to stay available after the turn is a persistent service handoff, not background-and-yield — allowed only when the running service itself is the requested deliverable. Detach its lifecycle from this run first (durable logs, a recorded cleanup handle such as PID/profile), verify readiness, and reply with the URL, logs, and stop instructions. Without a supervisor, describe survival as best-effort, not guaranteed.\n\n")
 }
@@ -176,7 +176,7 @@ func BuildTaskInitiatorBlock(initiatorType, initiatorName, initiatorEmail string
 	} else {
 		fmt.Fprintf(&b, "This task was initiated by **%s**, a member of this workspace.\n\n", safeInitiator)
 	}
-	b.WriteString("The initiator — not the runtime owner — is who you are answering: apply any per-person privacy or access rules your instructions define. Your Multica credentials stay scoped to the runtime owner, and initiator attribution does not change what you may read or write; do not assume the initiator can see everything you can.\n\n")
+	b.WriteString("The initiator — not the runtime owner — is who you are answering: apply any per-person privacy or access rules your instructions define. Your LieXiu credentials stay scoped to the runtime owner, and initiator attribution does not change what you may read or write; do not assume the initiator can see everything you can.\n\n")
 	return b.String()
 }
 
@@ -243,11 +243,11 @@ func sanitizeBriefCodeToken(s string) string {
 
 // writeAvailableCommands emits the slim Available Commands section
 // (~2.4k chars vs legacy ~4.4k). Every test-asserted substring is
-// preserved: each `multica issue …` command name, all three `comment add`
+// preserved: each `liexiu issue …` command name, all three `comment add`
 // input modes, `--description-file <path>`, `--parent ""`, the
 // `Next reply cursor` / `Next thread cursor` stderr labels, the three
 // metadata discovery lines, the "core agent loop and common issue
-// create/update tasks" intro phrase, and `multica issue comment add
+// create/update tasks" intro phrase, and `liexiu issue comment add
 // --help`.
 //
 // The fold-aware `--full` flag from MUL-3555 is documented inline on the
@@ -255,51 +255,38 @@ func sanitizeBriefCodeToken(s string) string {
 // behaviour as the legacy brief on that path.
 func writeAvailableCommands(b *strings.Builder, ctx TaskContextForEnv) {
 	b.WriteString("## Available Commands\n\n")
-	b.WriteString("Prefer `--output json` for structured data. The default brief lists only the core agent loop and common issue create/update tasks; for everything else run `multica --help` or `multica <command> --help`.\n\n")
+	b.WriteString("Prefer `--output json` for structured data. The default brief lists only the core agent loop and common issue create/update tasks; for everything else run `liexiu --help` or `liexiu <command> --help`.\n\n")
 	b.WriteString("### Core\n")
-	b.WriteString("- `multica issue get <id> --output json` — full issue.\n")
-	b.WriteString("- `multica issue comment list <issue-id> [--roots-only] [--summary] [--thread <comment-id> [--tail N] | --recent N] [--since <RFC3339>] --output json` — thread-aware comment reads. Bound a wide read with `--roots-only --summary` (roots plus `reply_count` / `last_activity_at`, clipped bodies); bound a deep one with `--thread <id> --tail N`; add `--compact` to any JSON read to drop echoed/null/bookkeeping fields. Careful with `--recent N`: it caps THREADS, not comments, and can return the whole history on a small issue. Resolved-thread folding, paging cursors, and full flag semantics: `--help`.\n")
-	b.WriteString("- `multica issue create --title \"...\" [--description-file <path>] [--priority X] [--status X] [--assignee X | --assignee-id <uuid>] [--parent <issue-id>] [--stage N] [--project <project-id>] [--due-date <YYYY-MM-DD>] [--attachment <path>]` — create an issue. For agent-authored long descriptions prefer `--description-file <path>` (heredoc stdin can swallow trailing flags, #4182). Write that file inside your working directory (e.g. `./description.md`), never `/tmp` or shared paths — same workdir rule as `## Comment Formatting`.\n")
-	b.WriteString("- `multica issue update <id> [--title X] [--description-file <path>] [--priority X] [--status X] [--assignee X] [--parent <issue-id>] [--stage N] [--project <project-id>] [--due-date <YYYY-MM-DD>] [--no-start]` — update fields; pass `--parent \"\"` to clear parent.\n")
+	b.WriteString("- `liexiu issue get <id> --output json` — full issue.\n")
+	b.WriteString("- `liexiu issue comment list <issue-id> [--roots-only] [--summary] [--thread <comment-id> [--tail N] | --recent N] [--since <RFC3339>] --output json` — thread-aware comment reads. Bound a wide read with `--roots-only --summary` (roots plus `reply_count` / `last_activity_at`, clipped bodies); bound a deep one with `--thread <id> --tail N`; add `--compact` to any JSON read to drop echoed/null/bookkeeping fields. Careful with `--recent N`: it caps THREADS, not comments, and can return the whole history on a small issue. Resolved-thread folding, paging cursors, and full flag semantics: `--help`.\n")
+	b.WriteString("- `liexiu issue create --title \"...\" [--description-file <path>] [--priority X] [--status X] [--assignee X | --assignee-id <uuid>] [--parent <issue-id>] [--stage N] [--project <project-id>] [--due-date <YYYY-MM-DD>] [--attachment <path>]` — create an issue. For agent-authored long descriptions prefer `--description-file <path>` (heredoc stdin can swallow trailing flags, #4182). Write that file inside your working directory (e.g. `./description.md`), never `/tmp` or shared paths — same workdir rule as `## Comment Formatting`.\n")
+	b.WriteString("- `liexiu issue update <id> [--title X] [--description-file <path>] [--priority X] [--status X] [--assignee X] [--parent <issue-id>] [--stage N] [--project <project-id>] [--due-date <YYYY-MM-DD>] [--no-start]` — update fields; pass `--parent \"\"` to clear parent.\n")
 	// Assign deliberately stays in the core brief: it is the action that can
 	// create an unaware cross-issue run, and agents cannot discover the safe
 	// ownership-only --no-start path if the command is hidden behind --help.
-	b.WriteString("- `multica issue assign <id> (--to X | --to-id <uuid> | --unassign) [--no-start]` — change ownership. On assign/update/status, `--no-start` records the change without starting another run — use it when the work is already underway.\n")
-	b.WriteString("- `multica issue status <id> <status> [--no-start]` — flip status (todo / in_progress / in_review / done / blocked / backlog / cancelled).\n")
-	b.WriteString("- `multica issue children <id> [--output json]` — list a parent's sub-issues grouped by stage.\n")
-	b.WriteString("- `multica issue comment add <issue-id> [--content \"...\" | --content-file <path> | --content-stdin] [--parent <comment-id>] [--attachment <path>]` — post a comment. Agent-authored bodies MUST use `--content-file`; see `## Comment Formatting` for why. `multica issue comment add --help` for full flags.\n")
-	b.WriteString("- `multica issue metadata list <issue-id> [--output json]` — list KV metadata.\n")
-	b.WriteString("- `multica issue metadata set <issue-id> --key <k> --value <v> [--type string|number|bool]` — pin or overwrite a key.\n")
-	b.WriteString("- `multica issue metadata delete <issue-id> --key <k>` — remove a key.\n")
-	b.WriteString("- `multica repo checkout <url> [--ref <branch-or-sha>]` — repository checkout on a dedicated branch.\n\n")
-	// Squad maintenance is squad-leader surface: an agent that leads no squad
-	// has no squad to change roles in, so this shipped to every run as dead
-	// weight (MUL-5442). IsSquadLeader is a PER-TASK role (the daemon derives
-	// it from the claim's is_leader_task / squad_id), so gating brief content
-	// on it does cost byte-stability across runs of one session whenever the
-	// role flips. That is an owner-accepted tradeoff, not an open action item;
-	// the decision is recorded in MUL-5811.
-	if ctx.IsSquadLeader {
-		b.WriteString("### Squad maintenance\n")
-		b.WriteString("- `multica squad member set-role <squad-id> --member-id <id> --member-type <agent|member> --role <role> [--output json]` — change role in place (use this instead of remove+add).\n\n")
-	}
+	b.WriteString("- `liexiu issue assign <id> (--to X | --to-id <uuid> | --unassign) [--no-start]` — change ownership. On assign/update/status, `--no-start` records the change without starting another run — use it when the work is already underway.\n")
+	b.WriteString("- `liexiu issue status <id> <status> [--no-start]` — flip status (todo / in_progress / in_review / done / blocked / backlog / cancelled).\n")
+	b.WriteString("- `liexiu issue children <id> [--output json]` — list a parent's sub-issues grouped by stage.\n")
+	b.WriteString("- `liexiu issue comment add <issue-id> [--content \"...\" | --content-file <path> | --content-stdin] [--parent <comment-id>] [--attachment <path>]` — post a comment. Agent-authored bodies MUST use `--content-file`; see `## Comment Formatting` for why. `liexiu issue comment add --help` for full flags.\n")
+	b.WriteString("- `liexiu issue metadata list <issue-id> [--output json]` — list KV metadata.\n")
+	b.WriteString("- `liexiu issue metadata set <issue-id> --key <k> --value <v> [--type string|number|bool]` — pin or overwrite a key.\n")
+	b.WriteString("- `liexiu issue metadata delete <issue-id> --key <k>` — remove a key.\n")
+	b.WriteString("- `liexiu repo checkout <url> [--ref <branch-or-sha>]` — repository checkout on a dedicated branch.\n\n")
 }
 
 // writeAvailableCommandsQuickCreate emits a minimal Available Commands
 // section for quick-create runs. Quick-create's hard guardrails forbid
-// every CLI other than `multica issue create`, so listing more would just
+// every CLI other than `liexiu issue create`, so listing more would just
 // tempt the model to bend the guardrail.
 func writeAvailableCommandsQuickCreate(b *strings.Builder) {
 	b.WriteString("## Available Commands\n\n")
-	b.WriteString("**Use `--output json` for structured data.** For anything beyond `issue create`, run `multica --help` or `multica <command> --help`.\n\n")
+	b.WriteString("**Use `--output json` for structured data.** For anything beyond `issue create`, run `liexiu --help` or `liexiu <command> --help`.\n\n")
 	b.WriteString("### Core\n")
-	b.WriteString("- `multica issue create --title \"...\" [--description \"...\" | --description-file <path> | --description-stdin] [--priority X] [--status X] [--assignee X | --assignee-id <uuid>] [--parent <issue-id>] [--stage N] [--project <project-id>] [--due-date <YYYY-MM-DD>] [--attachment <path>]` — Create a new issue; `--attachment` may be repeated. For agent-authored long descriptions, prefer `--description-file <path>` over `--description-stdin` (flags after a HEREDOC terminator can be silently swallowed, #4182). Write that file inside your working directory (e.g. `./description.md`), never `/tmp` or shared paths, and treat a failed write as fatal — the CLI rejects a path outside the workdir so a stale file from another run can't leak in (MUL-4252).\n\n")
+	b.WriteString("- `liexiu issue create --title \"...\" [--description \"...\" | --description-file <path> | --description-stdin] [--priority X] [--status X] [--assignee X | --assignee-id <uuid>] [--parent <issue-id>] [--stage N] [--project <project-id>] [--due-date <YYYY-MM-DD>] [--attachment <path>]` — Create a new issue; `--attachment` may be repeated. For agent-authored long descriptions, prefer `--description-file <path>` over `--description-stdin` (flags after a HEREDOC terminator can be silently swallowed, #4182). Write that file inside your working directory (e.g. `./description.md`), never `/tmp` or shared paths, and treat a failed write as fatal — the CLI rejects a path outside the workdir so a stale file from another run can't leak in (MUL-4252).\n\n")
 }
 
 // writeIssueBodyFormatting emits the default Markdown hierarchy for issue
-// descriptions. It is shared by every task kind because issue creation and
-// updates can be requested from issue, chat, autopilot, and quick-create
-// surfaces.
+// descriptions. It is shared by issue and quick-create tasks.
 func writeIssueBodyFormatting(b *strings.Builder) {
 	b.WriteString("## Issue Body Formatting\n\n")
 	b.WriteString("An issue title already serves as its H1. By default, do not add a Markdown H1 (`# ...`) to an issue body or description; start with prose or `##` subheadings. Only add an H1 when the user specifically requests one.\n\n")
@@ -328,7 +315,7 @@ func writeRepositories(b *strings.Builder, ctx TaskContextForEnv) {
 		return
 	}
 	b.WriteString("## Repositories\n\n")
-	b.WriteString("Available in this workspace — `multica repo checkout <url> [--ref <branch-or-sha>]` to fetch (creates a repository checkout on a dedicated branch).\n\n")
+	b.WriteString("Available in this workspace — `liexiu repo checkout <url> [--ref <branch-or-sha>]` to fetch (creates a repository checkout on a dedicated branch).\n\n")
 	for _, repo := range ctx.Repos {
 		if repo.Description != "" {
 			fmt.Fprintf(b, "- %s — %s\n", repo.URL, repo.Description)
@@ -340,9 +327,7 @@ func writeRepositories(b *strings.Builder, ctx TaskContextForEnv) {
 }
 
 // writeProjectContext emits the Project Context section when the task carries
-// an active project. Project context is independent of the task surface: an
-// issue inherits it from its project, while a chat receives it from the
-// project selected on the chat session.
+// an active project. Project context is inherited from the active project.
 func writeProjectContext(b *strings.Builder, ctx TaskContextForEnv) {
 	if ctx.ProjectID == "" && len(ctx.ProjectResources) == 0 {
 		return
@@ -357,12 +342,12 @@ func writeProjectContext(b *strings.Builder, ctx TaskContextForEnv) {
 		b.WriteString("\n\n")
 	}
 	if len(ctx.ProjectResources) > 0 {
-		b.WriteString("Project resources (also written to `.multica/project/resources.json`):\n\n")
+		b.WriteString("Project resources (also written to `.liexiu/project/resources.json`):\n\n")
 		for _, r := range ctx.ProjectResources {
 			fmt.Fprintf(b, "- %s\n", formatProjectResource(r))
 		}
 		b.WriteString("\nResources are pointers — open them only when relevant to the task. ")
-		b.WriteString("For `github_repo` resources, use `multica repo checkout <url>` to fetch the code. Add `--ref <branch-or-sha>` when a task or handoff names an exact revision.\n\n")
+		b.WriteString("For `github_repo` resources, use `liexiu repo checkout <url>` to fetch the code. Add `--ref <branch-or-sha>` when a task or handoff names an exact revision.\n\n")
 	} else {
 		b.WriteString("This project has no resources attached yet.\n\n")
 	}
@@ -375,7 +360,7 @@ func writeIssueMetadata(b *strings.Builder) {
 	b.WriteString("## Issue Metadata\n\n")
 	b.WriteString("`metadata` is a small per-issue KV bag — custom key-value state your workflow wants future runs on this issue to re-read. Most runs write nothing.\n\n")
 	b.WriteString("- **Read on entry.** Hints, not truth: latest comment / code wins on conflict. Empty `{}` is normal.\n")
-	b.WriteString("- **Write on exit.** Only what a future run will actually re-read — short values, never secrets or long content. Overwrite or `multica issue metadata delete` stale keys. Full write discipline: the `multica-working-on-issues` skill.\n\n")
+	b.WriteString("- **Write on exit.** Only what a future run will actually re-read — short values, never secrets or long content. Overwrite or `liexiu issue metadata delete` stale keys. Full write discipline: the `liexiu-working-on-issues` skill.\n\n")
 }
 
 // writeInstructionPrecedence emits the "Agent Identity wins over the issue
@@ -395,127 +380,25 @@ func writeInstructionPrecedence(b *strings.Builder) {
 	b.WriteString("Never treat this runtime workflow as permission to change issue status, investigate, implement, create issues, update issues, delegate, or otherwise act beyond your Agent Identity.\n\n")
 }
 
-// The SessionContinuityNotice* family tells the agent a resume the task
-// expected could not be honored. The daemon has already cleared the resume
-// flags, so without this the run would silently reappear as a brand-new
-// conversation (MUL-4424).
-//
-// There are three because the surfaces lose different things, and saying so
-// accurately matters more than saying it loudly. The question that separates
-// them is not "is this a chat?" but "can this conversation still be read?":
-//
-//   - Issue: the conversation IS the issue body and its comments. Untouched,
-//     and the workflow already makes the agent read them every turn.
-//   - Slack: the conversation lives in the channel and `multica chat history` /
-//     `multica chat thread` can fetch it — see buildChatPrompt, which hands the
-//     agent exactly those commands. Recoverable, just from a different place.
-//   - Web chat, Feishu, WeCom and DingTalk: the conversation is persisted in
-//     Multica's chat_message table and `multica chat history` reads it back —
-//     see handler/chat_history.go's chat_message fallback for non-Slack
-//     sessions. Recoverable, just from a different place. The readable set is
-//     decided in one place, SurfacePersistsTranscript.
-//
-// Only a surface whose conversation Multica never stored (so there is nothing
-// to read back) warrants telling the user; no current surface is in that
-// group, so SessionContinuityNoticeUnrecoverable is a defensive fallback. On
-// the readable ones the discussion survives, so announcing "the previous
-// context was lost" describes a loss that did not happen — the user reasonably
-// hears "the discussion is gone" when not a word of it is. There the notice
-// informs the agent and leaves mentioning it to the agent's judgement. What is
-// actually gone on every surface is the agent's own unrecorded working memory,
-// and each variant says so.
-//
-// Emitted into the per-turn user message rather than the runtime brief: it is
-// true of one run and false of the next on the same issue, so rendering it into
-// the brief broke prompt-cache prefix stability across resumes (MUL-5377).
+// SessionContinuityNoticeIssue tells an issue run that its provider session
+// could not be restored. It is emitted in the per-turn message so the stable
+// runtime brief remains cacheable.
 const SessionContinuityNoticeIssue = "## Session Continuity Notice\n\n" +
 	"This run was meant to continue an earlier conversation, but that provider session could not be restored, so you are on a fresh one. The issue and its full comment history are unaffected — that record is the authoritative version of this conversation, and reading it (which your workflow already requires) reconstructs it. What is gone is only your own working memory from earlier turns: what you already tried, what you ruled out, and how far you had got. Re-derive what you need instead of assuming it, and do not claim continuity the record cannot back up. Do not open your reply by announcing this — raise it only where it actually matters, such as when the user refers to reasoning you never wrote down.\n\n"
-
-const SessionContinuityNoticeChannelHistory = "## Session Continuity Notice\n\n" +
-	"This run was meant to continue an earlier conversation, but that provider session could not be restored, so you are on a fresh one. The channel conversation itself is unaffected — read it back with `multica chat history` / `multica chat thread` before acting, and treat what you find there as the authoritative version. What is gone is only your own working memory from earlier turns: what you already tried, what you ruled out, and how far you had got. Re-derive what you need instead of assuming it. Do not open your reply by announcing this — raise it only where it actually matters.\n\n"
-
-const SessionContinuityNoticeChatTranscript = "## Session Continuity Notice\n\n" +
-	"This run was meant to continue an earlier conversation, but that provider session could not be restored, so you are on a fresh one. The conversation itself is unaffected — Multica stored it, and you can read it back with `multica chat history` before acting; treat what you find there as the authoritative version. What is gone is only your own working memory from earlier turns: what you already tried, what you ruled out, and how far you had got. Re-derive what you need instead of assuming it. Do not open your reply by announcing this — raise it only where it actually matters.\n\n"
-
-// SessionContinuityNoticeUnrecoverable is the defensive fallback for a surface
-// whose conversation Multica never stored and cannot read back. Every current
-// chat surface (web chat, Feishu, WeCom, DingTalk, Slack) persists a transcript
-// that `multica chat history` can fetch, so no surface routes here today — it
-// exists so a future channel that stores no transcript degrades to an honest
-// "this is a new session" instead of silently pretending continuity. Unlike the
-// readable variants it scripts the user-facing disclosure, because here the
-// loss is real and the user must hear it.
-const SessionContinuityNoticeUnrecoverable = "## Session Continuity Notice\n\n" +
-	"This run was meant to continue an earlier conversation, but that session's context could NOT be restored — you are starting fresh with no memory of the previous turns. That history is not readable from anywhere now: there is no command that fetches it, and only the context already in this message survives. **When you reply, tell the user up front (one short sentence) that the previous conversation context was unavailable and this is a new session**, so they understand why the thread did not carry over.\n\n"
 
 // writeWorkflowHeader emits the unconditional `### Workflow` heading.
 func writeWorkflowHeader(b *strings.Builder) {
 	b.WriteString("### Workflow\n\n")
 }
 
-// writeWorkflowChat emits the chat-mode workflow. Follow-up quick actions are
-// deliberately NOT taught here: the daemon generates them in a dedicated
-// post-completion suggestion pass (chat_suggest.go), because an optional
-// formatting instruction in this brief proved unreliable across providers and
-// long conversations.
-//
-// Room shape is run context rather than an agent/provider invariant, so it is
-// emitted by daemon.BuildPrompt instead of fragmenting this cached brief across
-// group, direct, and unknown-audience chat sessions (MUL-5377, MUL-5442).
-func writeWorkflowChat(b *strings.Builder) {
-	b.WriteString("**You are in chat mode.**\n\n")
-	b.WriteString("- Respond conversationally and helpfully to the user's message\n")
-	b.WriteString("- You have full access to the `multica` CLI to look up issues, workspace info, members, agents, etc.\n")
-	b.WriteString("- If asked about issues, use `multica issue list --output json` or `multica issue get <id> --output json`\n")
-	b.WriteString("- If asked about the workspace, use `multica workspace get --output json`\n")
-	b.WriteString("- If asked to perform actions (create issues, update status, etc.), use the appropriate CLI commands\n")
-	b.WriteString("- If the task requires code changes, use `multica repo checkout <url>` to get the code first. Use `--ref <branch-or-sha>` when you need an exact revision\n")
-	b.WriteString("- Keep responses concise and direct\n\n")
-}
-
 // writeWorkflowQuickCreate emits the quick-create workflow's hard
 // guardrails.
 func writeWorkflowQuickCreate(b *strings.Builder) {
-	b.WriteString("**This task was triggered by quick-create.** There is NO existing Multica issue. Follow the field and output rules in the user message you just received; ignore the default assignment-task workflow.\n\n")
+	b.WriteString("**This task was triggered by quick-create.** There is NO existing LieXiu issue. Follow the field and output rules in the user message you just received; ignore the default assignment-task workflow.\n\n")
 	b.WriteString("Hard guardrails (apply even if the user message is missing):\n")
-	b.WriteString("- Run exactly one `multica issue create` invocation, then exit.\n")
-	b.WriteString("- Do NOT call `multica issue get`, `multica issue status`, or `multica issue comment add` for this task — there is no issue to query, transition, or comment on. The platform writes the user's success/failure inbox notification automatically based on whether `multica issue create` succeeded.\n")
+	b.WriteString("- Run exactly one `liexiu issue create` invocation, then exit.\n")
+	b.WriteString("- Do NOT call `liexiu issue get`, `liexiu issue status`, or `liexiu issue comment add` for this task — there is no issue to query, transition, or comment on. The platform records the task outcome automatically based on whether `liexiu issue create` succeeded.\n")
 	b.WriteString("- If the CLI returns an error, exit with that error as the only output. Do not retry.\n\n")
-}
-
-// AutopilotIssueCommandsGuard is the run-only autopilot issue-command boundary,
-// shared verbatim by the runtime brief (writeWorkflowAutopilot) and the
-// per-turn prompt (daemon.buildAutopilotPrompt). Both land in the same context
-// window; MUL-5696 found the two hand-maintained copies had drifted into an
-// unconditional ban on one surface and a conditional one on the other.
-const AutopilotIssueCommandsGuard = "Do not run `multica issue get`, `multica issue comment add`, or `multica issue status` for this run unless the autopilot instructions explicitly tell you to create or update an issue"
-
-// writeWorkflowAutopilot emits the autopilot run-only workflow.
-func writeWorkflowAutopilot(b *strings.Builder, ctx TaskContextForEnv) {
-	b.WriteString("**This task was triggered by an Autopilot in run-only mode.** There is no assigned Multica issue for this run.\n\n")
-	fmt.Fprintf(b, "- Autopilot run ID: `%s`\n", ctx.AutopilotRunID)
-	if ctx.AutopilotID != "" {
-		fmt.Fprintf(b, "- Autopilot ID: `%s`\n", ctx.AutopilotID)
-	}
-	if ctx.AutopilotTitle != "" {
-		fmt.Fprintf(b, "- Autopilot title: %s\n", ctx.AutopilotTitle)
-	}
-	if ctx.AutopilotSource != "" {
-		fmt.Fprintf(b, "- Trigger source: %s\n", ctx.AutopilotSource)
-	}
-	if ctx.AutopilotTriggerPayload != "" {
-		fmt.Fprintf(b, "- Trigger payload:\n\n```json\n%s\n```\n", ctx.AutopilotTriggerPayload)
-	}
-	if strings.TrimSpace(ctx.AutopilotDescription) != "" {
-		b.WriteString("\nAutopilot instructions:\n\n")
-		b.WriteString(ctx.AutopilotDescription)
-		b.WriteString("\n\n")
-	}
-	if ctx.AutopilotID != "" {
-		fmt.Fprintf(b, "- Run `multica autopilot get %s --output json` if you need the full autopilot configuration\n", ctx.AutopilotID)
-	}
-	b.WriteString("- Complete the autopilot instructions directly\n")
-	b.WriteString("- " + AutopilotIssueCommandsGuard + "\n\n")
 }
 
 // writeWorkflowIssue emits the single issue workflow used by BOTH
@@ -550,82 +433,40 @@ func writeWorkflowAutopilot(b *strings.Builder, ctx TaskContextForEnv) {
 // is the single discovery point for the comment-read surface; repeating them per
 // step is what made this one bloat in the first place.
 //
-// Ordinary agents own the full status arc for their issue: open with
-// in_progress, deliver with in_review. Squad leaders share the opening
-// in_progress step so the parent leaves todo as soon as coordination
-// starts, but their first assignment turn is only a dispatch — flipping
-// the parent to in_review there would mark unfinished multi-stage work
-// as ready for review. Leaders move the parent to in_review later, when
-// a re-trigger (member update / stage barrier) confirms the overall goal
-// is met; see the Squad Operating Protocol and child-done system comments.
-//
-// ctx.IsSquadLeader is a PER-TASK role, not agent configuration: branching on
-// it here does move brief bytes when the same agent runs leader one turn and
-// worker the next. Owner-accepted tradeoff; decision recorded in MUL-5811.
+// Agent turns own the ordinary status arc for their issue: open with
+// in_progress and deliver with in_review.
 func writeWorkflowIssue(b *strings.Builder, ctx TaskContextForEnv) {
 	b.WriteString("**Turn mode.** The per-turn user message names this run's mode on a line of its own: `Turn mode: Reply.` (respond to the comment that message carries — it brings the triggering comment's id and your `--parent` value) or `Turn mode: Ownership.` (an assignment or status change started this run). Steps 1–6 are shared; then **apply exactly one mode block, the one the user message named** — they differ on issue status. No mode line → Reply mode, do not change the issue status.\n\n")
 
 	b.WriteString("**Steps 1–6 — both modes** (the per-turn user message carries this issue's real id and ready-to-run context-read commands; assemble other calls from `## Available Commands`)\n\n")
-	b.WriteString("1. Read the issue (`multica issue get`) to understand the context.\n")
-	b.WriteString("2. Read the metadata bag (`multica issue metadata list`) — best-effort, empty `{}` and CLI failures are normal. What to look for: `## Issue Metadata`.\n")
+	b.WriteString("1. Read the issue (`liexiu issue get`) to understand the context.\n")
+	b.WriteString("2. Read the metadata bag (`liexiu issue metadata list`) — best-effort, empty `{}` and CLI failures are normal. What to look for: `## Issue Metadata`.\n")
 	b.WriteString("3. Catch up on the comment history — this is mandatory, not optional — in two bounded reads, never one bulk pull: scan every thread cheaply (`--roots-only --summary --compact`), then expand only the threads that matter (`--thread <id> --tail 30 --compact`). Earlier comments often carry context the issue body lacks. Skipping this step is the most common cause of agents acting on stale or incomplete instructions — so always run the scan, even when the trigger looks self-contained. In Reply mode the per-turn user message names the thread to expand first; the scan is how you decide whether any OTHER thread is also relevant.\n")
 	b.WriteString("4. Complete the task within your Agent Identity boundaries (`## Instruction Precedence` lists the actions Agent Identity can forbid). If your role is delegation-only, perform the allowed delegation work and stop once that outcome is delivered. Before self-assigning, check the target issue's comment history for an existing claim and any `## Active sibling runs` block; when assignment or status only records ownership/progress for work already underway, pass `--no-start` on every such command (the default start behavior is for handing off fresh work).\n")
-	if ctx.IsSquadLeader {
-		b.WriteString("5. **Post your final results as a comment** (unless your outcome is `no_action` — in that case, calling `multica squad activity <issue-id> no_action --reason \"...\"` alone is sufficient; you MUST exit without posting any comment. DO NOT post a comment announcing no_action or saying you are exiting silently): post it with `multica issue comment add` using the platform-correct non-inline mode from ## Comment Formatting (never inline `--content`). Your results are only visible to the user if posted via this CLI call; text in your terminal or run logs is NOT delivered.\n")
-	} else {
-		b.WriteString("5. **Post your final results as a comment — this step is mandatory**: post it with `multica issue comment add` using the platform-correct non-inline mode from ## Comment Formatting (never inline `--content`). `## Output` states why this call is the only delivery channel.\n")
-	}
-	b.WriteString("6. Before exiting, pin or clear a metadata key via `multica issue metadata set`/`delete` only if it clears the bar in `## Issue Metadata`. Most runs write nothing here — that is the expected outcome, not a gap. When in doubt, do not write.\n\n")
+	b.WriteString("5. **Post your final results as a comment — this step is mandatory**: post it with `liexiu issue comment add` using the platform-correct non-inline mode from ## Comment Formatting (never inline `--content`). `## Output` states why this call is the only delivery channel.\n")
+	b.WriteString("6. Before exiting, pin or clear a metadata key via `liexiu issue metadata set`/`delete` only if it clears the bar in `## Issue Metadata`. Most runs write nothing here — that is the expected outcome, not a gap. When in doubt, do not write.\n\n")
 
 	b.WriteString("**Ownership mode only — you own the issue status this run** (skip any status call below that your Agent Identity forbids)\n\n")
-	b.WriteString("- Before step 4, run `multica issue status <issue-id> in_progress`.\n")
-	if ctx.IsSquadLeader {
-		b.WriteString("- After this initial dispatch, leave the parent issue `in_progress` — do NOT move it to `in_review` or `done` on this turn. Dispatching members is not completion. You will be re-triggered when members post updates or a stage closes; only then, if the overall goal is met, move the parent to `in_review`.\n")
-	} else {
-		b.WriteString("- When done, run `multica issue status <issue-id> in_review`.\n")
-	}
-	b.WriteString("- If blocked, run `multica issue status <issue-id> blocked`, and post a comment explaining the blocker unless your Agent Identity forbids issue comments.\n\n")
+	b.WriteString("- Before step 4, run `liexiu issue status <issue-id> in_progress`.\n")
+	b.WriteString("- When done, run `liexiu issue status <issue-id> in_review`.\n")
+	b.WriteString("- If blocked, run `liexiu issue status <issue-id> blocked`, and post a comment explaining the blocker unless your Agent Identity forbids issue comments.\n\n")
 
 	b.WriteString("**Reply mode only — respond to the comment in the user message**\n\n")
 	b.WriteString("- Respond to THAT specific comment; take its id from the user message, never from this file or from an earlier turn.\n")
-	if ctx.IsSquadLeader {
-		b.WriteString("- **Squad leader rule:** If your evaluation outcome is `no_action`, call `multica squad activity <issue-id> no_action --reason \"...\"` and then EXIT IMMEDIATELY. DO NOT post any comment whose only purpose is to announce that you are taking no action, exiting silently, or acknowledging another agent. A comment like \"No action needed\" or \"Exiting silently\" is noise — the `squad activity` call already records your decision in the timeline.\n")
-	}
 	b.WriteString("- Do any requested work first, then **decide whether to include any `@mention` link.** The default is NO mention; `## Mentions` states when one is warranted.\n")
-	if ctx.IsSquadLeader {
-		b.WriteString("- **Unless your outcome is `no_action` (Squad leader rule above), posting your reply as a comment is mandatory** (`## Output`). Use the `--parent` value the per-turn user message gives you for this turn; do NOT reuse a `--parent` from an earlier turn in this session. When that message lists more than one thread to answer, post one reply per thread instead of merging them.\n")
-	} else {
-		b.WriteString("- **Posting your reply as a comment is mandatory** (`## Output`). Use the `--parent` value the per-turn user message gives you for this turn; do NOT reuse a `--parent` from an earlier turn in this session. When that message lists more than one thread to answer, post one reply per thread instead of merging them.\n")
-	}
-	if ctx.IsSquadLeader {
-		// The default rule below and the Squad Operating Protocol's
-		// "Own the parent issue status" responsibility would otherwise
-		// contradict each other on the squad's most common shape:
-		// @mention dispatch with no child issues, where the member's
-		// delivery comment never "explicitly asks" for a status change and
-		// no child-done system comment exists to carry that ask. Naming the
-		// protocol section as the exception resolves it in one direction.
-		//
-		// The exception is safe to state unconditionally here because the
-		// grant only exists in the instructions when the server determined
-		// this issue is assigned to this squad (see buildSquadLeaderBriefing);
-		// a guest leader gets the opposite text and this stays a no-op.
-		b.WriteString("- Do NOT change the issue status unless the comment explicitly asks for it — **or** a section in your instructions explicitly grants you ownership of this issue's status (the Squad Operating Protocol's \"Own the parent issue status\" responsibility). That section only appears when this issue is assigned to your squad; when it is there, treat it as a standing instruction and move the parent to `in_review` on the turn you confirm the overall goal is met, without waiting to be asked. When it is absent, the rule above is absolute. **The Ownership-mode status steps above do not apply in Reply mode.**\n\n")
-	} else {
-		b.WriteString("- Do NOT change the issue status unless the comment explicitly asks for it. **The Ownership-mode status steps above do not apply in Reply mode.**\n\n")
-	}
+	b.WriteString("- Do NOT change the issue status unless the comment explicitly asks for it. **The Ownership-mode status steps above do not apply in Reply mode.**\n\n")
 }
 
 // writeSubIssueCreation emits the Sub-issue Creation section.
 //
 // MUL-5442 demotes the full todo/backlog/stage playbook to the
-// multica-working-on-issues built-in skill: the semantics are only needed at
+// liexiu-working-on-issues built-in skill: the semantics are only needed at
 // the moment an agent is about to create sub-issues, and that moment is
 // exactly what triggers the skill. The brief keeps the one-line map so the
 // flags remain discoverable without the skill.
 func writeSubIssueCreation(b *strings.Builder) {
 	b.WriteString("## Sub-issue Creation\n\n")
-	b.WriteString("`--status todo` starts an agent-assigned child immediately; `--status backlog` parks it for later promotion; `--stage <N>` groups children into ordered stages. Before creating sub-issues, read the `multica-working-on-issues` skill — it covers serial chains, promotion, and stage wake semantics.\n\n")
+	b.WriteString("`--status todo` starts an agent-assigned child immediately; `--status backlog` parks it for later promotion; `--stage <N>` groups children into ordered stages. Before creating sub-issues, read the `liexiu-working-on-issues` skill — it covers serial chains, promotion, and stage wake semantics.\n\n")
 }
 
 // writeSkills emits the Skills section: an index of invocable skill names.
@@ -636,7 +477,7 @@ func writeSubIssueCreation(b *strings.Builder) {
 // already had — measured at ~3,100 tokens per brief on a real task, 40% of the
 // whole brief — and no extra routing signal (MUL-5529).
 //
-// The index itself stays because it is the one skill listing Multica controls.
+// The index itself stays because it is the one skill listing LieXiu controls.
 // Each CLI's own listing is theirs: its format, and whether it exists at all,
 // can change with any release.
 //
@@ -675,7 +516,7 @@ func writeMentions(b *strings.Builder) {
 // writeAttachments emits the Attachments pointer.
 func writeAttachments(b *strings.Builder) {
 	b.WriteString("## Attachments\n\n")
-	b.WriteString("Fetch issue/comment attachments via the authenticated CLI (`multica attachment --help`); never open Multica resource URLs directly.\n")
+	b.WriteString("Fetch issue/comment attachments via the authenticated CLI (`liexiu attachment --help`); never open LieXiu resource URLs directly.\n")
 	// Closes the inbound half of the MUL-4899 loop: an attachment the agent
 	// just downloaded is the most tempting local path to echo back, because it
 	// came from the conversation and *feels* shared. It is not — the download
@@ -683,11 +524,11 @@ func writeAttachments(b *strings.Builder) {
 	b.WriteString("An attachment you download lands in your own workdir: that local path is a private working copy, not something the reader can open — the link rules in `## Output` apply to it too.\n\n")
 }
 
-// writeAlwaysUseCLI emits the "must go through the multica CLI" guardrail
+// writeAlwaysUseCLI emits the "must go through the liexiu CLI" guardrail
 // (compressed).
 func writeAlwaysUseCLI(b *strings.Builder) {
-	b.WriteString("## Important: Always Use the `multica` CLI\n\n")
-	b.WriteString("Access Multica platform resources only through the `multica` CLI — never `curl` / `wget`. For anything the CLI doesn't cover, post a comment mentioning the workspace owner rather than working around it.\n\n")
+	b.WriteString("## Important: Always Use the `liexiu` CLI\n\n")
+	b.WriteString("Access LieXiu platform resources only through the `liexiu` CLI — never `curl` / `wget`. For anything the CLI doesn't cover, post a comment mentioning the workspace owner rather than working around it.\n\n")
 }
 
 // writeDeliveryInvariant emits the always-on delivery contract, shared by every
@@ -713,52 +554,17 @@ func writeDeliveryInvariant(b *strings.Builder) {
 // invariant plus one per-surface file-delivery policy line per kind.
 func writeOutput(b *strings.Builder, kind taskKind, ctx TaskContextForEnv) {
 	b.WriteString("## Output\n\n")
-	switch kind {
-	case kindAutopilotRunOnly:
-		b.WriteString("This is a run-only autopilot task, so there may be no issue comment to post. Your final assistant output is captured automatically as the autopilot run result. Keep it concise and state the outcome.\n\n")
-		b.WriteString("**Delivering files here:** this surface is text-only — the run result carries no attachments. Describe what you produced; do not link its path.\n")
-	case kindQuickCreate:
-		b.WriteString("This is a quick-create task. There is NO existing issue to comment on. Your final stdout is captured automatically and the platform writes the user's success/failure inbox notification based on whether `multica issue create` succeeded.\n\n")
-		b.WriteString("- Do NOT call `multica issue comment add` — the issue you just created has no conversation context for this run.\n")
-		b.WriteString("- Print exactly one final line: `Created <identifier-or-id>: <title>` after a successful `multica issue create`, using the created issue's `identifier` from JSON output (fall back to its `id`; never assume a workspace issue prefix such as `MUL-`).\n")
-		b.WriteString("- On CLI failure, exit with the CLI error as the only output — the platform turns it into a `quick_create_failed` inbox item for the user.\n\n")
-		b.WriteString("**Delivering files here:** your stdout is text-only. A file that belongs to the new issue goes on the `multica issue create` call itself via `--attachment <path>`; never put its path in the description or in your stdout line.\n")
-	case kindChat:
-		b.WriteString("This is a chat session. Your reply is delivered directly to the chat window the user is reading.\n\n")
-		// Two-layer channel policy (MUL-4899). This is the DELIVERY layer, and
-		// the brief answers only the half that is stable for the whole session.
-		//
-		// `attachment upload` binds a file to the Multica chat reply whatever
-		// the surface; whether anything carries it the last hop is a property
-		// of the deployment — its object storage, and whether the server is new
-		// enough to report the hop at all. Both change under a session that
-		// resumes across the change, and this file is the prompt-cache prefix
-		// (MUL-5377), so rendering the verdict here made one resumed chat
-		// produce two different briefs. The verdict therefore lives in the
-		// per-turn chat prompt, which carries both branches
-		// (daemon.buildChatPrompt), and the copy below points at it.
-		// ctx.ChatChannelDeliversFiles must NOT be read from this file.
-		//
-		// Web/mobile chat keeps its own copy: it has no channel and no last hop
-		// to be uncertain about — the browser renders the bound file as a card.
-		//
-		// The orthogonal HISTORY layer (which read commands exist) is
-		// Slack-only and also lives in the per-turn chat prompt — do not
-		// collapse the two.
-		if ctx.ChatChannelType != "" {
-			fmt.Fprintf(b, "**Delivering files here:** whether Multica can push a file you produce into this %s conversation depends on how this deployment is configured, so it is stated per turn rather than here: the per-turn user message tells you, every turn. Follow what it says about files, and never report a file as delivered unless it told you how to deliver one.\n", ChannelDisplayName(ctx.ChatChannelType))
-		} else {
-			b.WriteString("**Delivering files here:** run `multica attachment upload <local-path>` — it binds the file to your reply and it renders as an attachment card. That command is the ONLY way a file reaches the user; a path written into your reply text is not.\n")
-		}
-	default:
-		if ctx.IsSquadLeader {
-			b.WriteString("⚠️ **Final results MUST be delivered via `multica issue comment add`** — unless your outcome is `no_action`. When you evaluate a trigger and decide no action is needed, calling `multica squad activity <issue-id> no_action --reason \"...\"` alone is sufficient; you MUST exit without posting any comment. DO NOT post a comment that announces no_action, acknowledges another agent, or says you are exiting silently — such comments are noise. For all other outcomes (`action`, `failed`), a comment is still mandatory.\n\n")
-		} else {
-			b.WriteString("⚠️ **Final results MUST be delivered via `multica issue comment add`.** The user does NOT see your terminal output or run logs — only comments on the issue.\n\n")
-		}
+	if kind == kindQuickCreate {
+		b.WriteString("This is a quick-create task. There is NO existing issue to comment on. Your final stdout is captured automatically and the platform records the task outcome based on whether `liexiu issue create` succeeded.\n\n")
+		b.WriteString("- Do NOT call `liexiu issue comment add` — the issue you just created has no conversation context for this run.\n")
+		b.WriteString("- Print exactly one final line: `Created <identifier-or-id>: <title>` after a successful `liexiu issue create`, using the created issue's `identifier` from JSON output (fall back to its `id`; never assume a workspace issue prefix).\n")
+		b.WriteString("- On CLI failure, exit with the CLI error as the only output.\n\n")
+		b.WriteString("**Delivering files here:** your stdout is text-only. A file that belongs to the new issue goes on the `liexiu issue create` call itself via `--attachment <path>`; never put its path in the description or in your stdout line.\n")
+	} else {
+		b.WriteString("⚠️ **Final results MUST be delivered via `liexiu issue comment add`.** The user does NOT see your terminal output or run logs — only comments on the issue.\n\n")
 		b.WriteString("**Post exactly ONE comment per run — your final result, before this turn exits.** Do NOT post progress updates or plans along the way.\n\n")
 		b.WriteString("Keep comments concise and natural — state the outcome, not the process.\n\n")
-		b.WriteString("**Delivering files here:** pass `--attachment <path>` to `multica issue comment add` (repeatable) — the only way a screenshot or artifact reaches the reader.\n")
+		b.WriteString("**Delivering files here:** pass `--attachment <path>` to `liexiu issue comment add` (repeatable) — the only way a screenshot or artifact reaches the reader.\n")
 	}
 	b.WriteString("\n")
 	writeDeliveryInvariant(b)
@@ -768,22 +574,7 @@ func writeOutput(b *strings.Builder, kind taskKind, ctx TaskContextForEnv) {
 // Called from buildMetaSkillContent (runtime_config.go). The
 // `runtime_brief_slim` flag that once gated it was retired in MUL-4297.
 //
-// The Section × Kind matrix encoded below (skip = elide section, keep
-// = always emit, △ = data-driven inside the helper):
-//
-//	Section               | comment | assign | autopilot | quick_create | chat
-//	----------------------+---------+--------+-----------+--------------+------
-//	Available Commands    |   full  |  full  |   full    |   minimal    | full
-//	Issue Body Formatting |    ✓    |   ✓    |     ✓     |      ✓       |  ✓
-//	Comment Formatting    |    ✓    |   ✓    |     —     |      —       |  —
-//	Repositories          |    △    |   △    |     △     |      —       |  △
-//	Project Context       |    △    |   △    |     △     |      △       |  △
-//	Issue Metadata        |    ✓    |   ✓    |     —     |      —       |  —
-//	Instruction Precedence|    —    |   ✓    |     —     |      —       |  —
-//	Sub-issue Creation    |    ✓    |   ✓    |     —     |      —       |  —
-//	Skills                |    ✓    |   ✓    |     ✓    |      ✓       |  ✓
-//	Mentions              |    ✓    |   ✓    |     —     |      —       |  —
-//	Attachments           |    ✓    |   ✓    |     —     |      —       |  —
+// The Section × Kind matrix encoded below describes the two supported task kinds.
 //
 // Always-on rows — Header, Background Task Safety, Agent Identity,
 // Requesting User, Task Initiator, Workspace Context, Connected Apps,
@@ -830,14 +621,9 @@ func buildMetaSkillContentSlim(provider string, ctx TaskContextForEnv) string {
 	}
 
 	writeWorkflowHeader(&b)
-	switch kind {
-	case kindChat:
-		writeWorkflowChat(&b)
-	case kindQuickCreate:
+	if kind == kindQuickCreate {
 		writeWorkflowQuickCreate(&b)
-	case kindAutopilotRunOnly:
-		writeWorkflowAutopilot(&b, ctx)
-	case kindIssue:
+	} else {
 		writeWorkflowIssue(&b, ctx)
 	}
 

@@ -162,7 +162,7 @@ func TestClaimTasksByRuntime_SkipsCrossWorkspaceRuntime(t *testing.T) {
 
 	// A foreign workspace with its own runtime + agent + queued task.
 	var foreignUser, foreignWS string
-	if err := testPool.QueryRow(ctx, `INSERT INTO "user" (name, email) VALUES ('Foreign User', 'batch-foreign@multica.ai') RETURNING id`).Scan(&foreignUser); err != nil {
+	if err := testPool.QueryRow(ctx, `INSERT INTO "user" (name, email) VALUES ('Foreign User', 'batch-foreign@liexiu.ai') RETURNING id`).Scan(&foreignUser); err != nil {
 		t.Fatalf("foreign user: %v", err)
 	}
 	t.Cleanup(func() { testPool.Exec(ctx, `DELETE FROM "user" WHERE id = $1`, foreignUser) })

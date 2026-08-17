@@ -9,15 +9,15 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/multica-ai/multica/server/internal/analytics"
-	"github.com/multica-ai/multica/server/internal/events"
-	"github.com/multica-ai/multica/server/internal/handler"
-	obsmetrics "github.com/multica-ai/multica/server/internal/metrics"
-	"github.com/multica-ai/multica/server/internal/service"
-	"github.com/multica-ai/multica/server/internal/util"
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
-	"github.com/multica-ai/multica/server/pkg/protocol"
-	"github.com/multica-ai/multica/server/pkg/redact"
+	"github.com/kailonyang/liexiu/server/internal/analytics"
+	"github.com/kailonyang/liexiu/server/internal/events"
+	"github.com/kailonyang/liexiu/server/internal/handler"
+	obsmetrics "github.com/kailonyang/liexiu/server/internal/metrics"
+	"github.com/kailonyang/liexiu/server/internal/service"
+	"github.com/kailonyang/liexiu/server/internal/util"
+	db "github.com/kailonyang/liexiu/server/pkg/db/generated"
+	"github.com/kailonyang/liexiu/server/pkg/protocol"
+	"github.com/kailonyang/liexiu/server/pkg/redact"
 )
 
 const (
@@ -76,8 +76,8 @@ const (
 	// the race against a runtime that went offline mid-tick) need a
 	// time-bounded exit. 2 hours is conservatively above any reasonable
 	// "queued behind a long-running task" window for an online runtime, so we
-	// don't expire legitimately-pending work, while still draining the historical
-	// 87k autopilot backlog within ~24h once enabled.
+	// don't expire legitimately-pending work while still bounding historical
+	// queue cleanup.
 	queuedTTLSeconds = 2 * 3600.0
 	// queuedExpireBatchSize caps how many queued rows a single sweeper tick
 	// transitions to failed. Keeps the sweep transaction short even when
@@ -85,14 +85,6 @@ const (
 	// ticks and 500 rows/tick we drain 60k rows/hour worst case — plenty
 	// of headroom for the documented backlog without monopolising DB CPU.
 	queuedExpireBatchSize = 500
-	// chatFinalizeGraceSeconds is how long a cancelled chat task's deferred
-	// empty/non-empty judgment (#5219) waits for the daemon's cancel-ack
-	// before the sweeper settles it. Covers the daemon's 5s cancellation
-	// poll plus the bounded 10s+12s transcript drain wait (#5210) plus
-	// network slack; past this the daemon is presumed dead or partitioned.
-	chatFinalizeGraceSeconds = 60.0
-	// chatFinalizeBatchSize caps deferred finalizations per tick.
-	chatFinalizeBatchSize = 100
 )
 
 type runtimeGCTxStarter interface {
@@ -122,7 +114,6 @@ func runRuntimeSweeper(ctx context.Context, txStarter runtimeGCTxStarter, querie
 			sweepStaleRuntimes(ctx, queries, liveness, taskSvc, bus)
 			sweepStaleTasks(ctx, queries, taskSvc, bus)
 			sweepExpiredQueuedTasks(ctx, queries, taskSvc)
-			sweepDeferredChatFinalizations(ctx, queries, taskSvc)
 			gcRuntimes(ctx, txStarter, queries, taskSvc.Metrics, bus)
 		}
 	}
@@ -468,29 +459,6 @@ func sweepExpiredQueuedTasks(ctx context.Context, queries *db.Queries, taskSvc *
 	taskSvc.HandleFailedTasks(ctx, failedTasks)
 }
 
-// sweepDeferredChatFinalizations settles cancelled chat tasks whose deferred
-// empty/non-empty judgment (#5219) never received a daemon cancel-ack within
-// the grace period — the daemon died, was partitioned, or its ack was lost.
-// FinalizeDeferredCancelledChat claims the marker atomically, so racing a
-// late ack is harmless.
-func sweepDeferredChatFinalizations(ctx context.Context, queries *db.Queries, taskSvc *service.TaskService) {
-	rows, err := queries.ListChatFinalizeDeferredExpired(ctx, db.ListChatFinalizeDeferredExpiredParams{
-		GraceSecs:  chatFinalizeGraceSeconds,
-		MaxPerTick: chatFinalizeBatchSize,
-	})
-	if err != nil {
-		slog.Warn("chat finalize sweeper: list deferred failed", "error", err)
-		return
-	}
-	if len(rows) == 0 {
-		return
-	}
-	for _, t := range rows {
-		taskSvc.FinalizeDeferredCancelledChat(ctx, t.ID)
-	}
-	slog.Info("chat finalize sweeper: settled deferred cancellations", "count", len(rows))
-}
-
 // broadcastFailedTasks is preserved as a thin shim for the integration tests
 // in this package. New call sites should use TaskService.HandleFailedTasks
 // directly so the side effects (event broadcast, agent reconcile, issue
@@ -510,7 +478,9 @@ func broadcastFailedTasks(ctx context.Context, queries *db.Queries, taskSvc *ser
 			failureReason = t.FailureReason.String
 		}
 		workspaceID := ""
-		if t.IssueID.Valid {
+		// Orchestration owns the compatibility Issue projection. Keep the test
+		// shim on the same authority boundary as TaskService.HandleFailedTasks.
+		if t.IssueID.Valid && !t.OrchestrationRunID.Valid {
 			if issue, err := queries.GetIssue(ctx, t.IssueID); err == nil {
 				workspaceID = util.UUIDToString(issue.WorkspaceID)
 				issueKey := util.UUIDToString(t.IssueID)
@@ -539,10 +509,6 @@ func broadcastFailedTasks(ctx context.Context, queries *db.Queries, taskSvc *ser
 			ActorType:   "system",
 			TaskID:      util.UUIDToString(t.ID),
 			Payload:     payload,
-		}
-		if t.ChatSessionID.Valid {
-			e.ChatSessionID = util.UUIDToString(t.ChatSessionID)
-			payload["chat_session_id"] = e.ChatSessionID
 		}
 		bus.Publish(e)
 		affectedAgents[util.UUIDToString(t.AgentID)] = t.AgentID

@@ -8,11 +8,11 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
-	"github.com/multica-ai/multica/server/internal/events"
-	"github.com/multica-ai/multica/server/internal/realtime"
-	"github.com/multica-ai/multica/server/internal/service"
-	"github.com/multica-ai/multica/server/internal/util"
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
+	"github.com/kailonyang/liexiu/server/internal/events"
+	"github.com/kailonyang/liexiu/server/internal/realtime"
+	"github.com/kailonyang/liexiu/server/internal/service"
+	"github.com/kailonyang/liexiu/server/internal/util"
+	db "github.com/kailonyang/liexiu/server/pkg/db/generated"
 )
 
 // requireSessionExcluded asserts a resume lookup found nothing BECAUSE the
@@ -763,7 +763,7 @@ func TestRerunIssueSetsForceFreshSession(t *testing.T) {
 // supplied (the execution-log retry-button path), the rerun targets the agent
 // that ran that specific past task — not the issue's current assignee.
 // Without this, clicking retry on a row whose agent has since been displaced
-// (squad worker, @-mention agent, or a prior assignee) re-fires the new
+// (another worker, @-mention agent, or a prior assignee) re-fires the new
 // assignee instead, which is the MUL-2457 bug.
 func TestRerunIssueTargetsSourceTaskAgent(t *testing.T) {
 	if testPool == nil {
@@ -777,7 +777,7 @@ func TestRerunIssueTargetsSourceTaskAgent(t *testing.T) {
 
 	// Create a second agent in the same workspace + runtime so we can stand
 	// in as a "row whose agent is no longer the issue assignee" — e.g. a
-	// squad worker or an @-mentioned agent. The issue's assignee is still
+	// another worker or an @-mentioned agent. The issue's assignee is still
 	// the primary agent; the rerun must target this secondary one because
 	// that's whose task row the user clicked.
 	var secondaryAgentID string

@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
@@ -129,5 +130,48 @@ func TestSetAuthCookies_HTTPSProduction(t *testing.T) {
 		if c.Domain != "app.example.com" {
 			t.Errorf("cookie %q Domain = %q, want %q", c.Name, c.Domain, "app.example.com")
 		}
+	}
+}
+
+func TestValidateCSRFRequiresTokenBoundToAuthCookie(t *testing.T) {
+	recorder := httptest.NewRecorder()
+	if err := SetAuthCookies(recorder, "owner-session-token"); err != nil {
+		t.Fatalf("SetAuthCookies: %v", err)
+	}
+
+	var authCookie, csrfCookie *http.Cookie
+	for _, cookie := range recorder.Result().Cookies() {
+		switch cookie.Name {
+		case AuthCookieName:
+			authCookie = cookie
+		case CSRFCookieName:
+			csrfCookie = cookie
+		}
+	}
+	if authCookie == nil || csrfCookie == nil {
+		t.Fatalf("missing auth/CSRF cookies: %v", recorder.Result().Cookies())
+	}
+
+	request := httptest.NewRequest(http.MethodPost, "/api/missions", nil)
+	request.AddCookie(authCookie)
+	if ValidateCSRF(request) {
+		t.Fatal("mutating cookie request without X-CSRF-Token must fail")
+	}
+
+	request.Header.Set("X-CSRF-Token", csrfCookie.Value)
+	if !ValidateCSRF(request) {
+		t.Fatal("token issued with the auth cookie should pass")
+	}
+
+	request.Header.Set("X-CSRF-Token", csrfCookie.Value+"tampered")
+	if ValidateCSRF(request) {
+		t.Fatal("tampered CSRF token must fail")
+	}
+}
+
+func TestValidateCSRFAllowsSafeMethodWithoutToken(t *testing.T) {
+	request := httptest.NewRequest(http.MethodGet, "/api/bootstrap/status", nil)
+	if !ValidateCSRF(request) {
+		t.Fatal("safe method should not require a CSRF token")
 	}
 }

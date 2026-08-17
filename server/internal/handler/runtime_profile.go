@@ -10,9 +10,9 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/multica-ai/multica/server/pkg/agent"
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
-	"github.com/multica-ai/multica/server/pkg/protocol"
+	"github.com/kailonyang/liexiu/server/pkg/agent"
+	db "github.com/kailonyang/liexiu/server/pkg/db/generated"
+	"github.com/kailonyang/liexiu/server/pkg/protocol"
 )
 
 // ---------------------------------------------------------------------------
@@ -23,7 +23,7 @@ import (
 // for their workspace, resolve command_name on PATH, and register an
 // agent_runtime instance carrying the profile_id. The profile only changes how
 // a runtime is launched/displayed; the underlying protocol_family must be a
-// backend Multica officially supports (validated against agent.SupportedTypes).
+// backend LieXiu officially supports (validated against agent.SupportedTypes).
 //
 // Iron rule: a profile carries NO generic per-agent args. Per-agent launch args
 // stay on agent.custom_args. The only args field is fixed_args — args every
@@ -406,7 +406,7 @@ func (h *Handler) DeleteRuntimeProfile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	for _, runtimeID := range runtimeIDs {
-		if _, err := qtx.ListUserAgentsByRuntimeForUpdate(r.Context(), runtimeID); err != nil {
+		if _, err := qtx.ListAgentsByRuntimeForUpdate(r.Context(), runtimeID); err != nil {
 			writeError(w, http.StatusInternalServerError, "failed to lock profile dependencies")
 			return
 		}
@@ -427,8 +427,8 @@ func (h *Handler) DeleteRuntimeProfile(w http.ResponseWriter, r *http.Request) {
 
 	// App-layer cascade, per runtime, mirroring DeleteAgentRuntime: unbind the
 	// remaining (archived) agents and their task history, cancel anything still
-	// in flight, and hard-delete only the system agents, so removing the runtime
-	// rows below cannot destroy an agent, a conversation or a task record.
+	// in flight, so removing the runtime rows below cannot destroy an agent or
+	// a task record.
 	var teardowns []runtimeTeardownResult
 	for _, rid := range runtimeIDs {
 		teardown, err := unbindRuntimeForDelete(r.Context(), qtx, rid)

@@ -5,14 +5,14 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
-import { setApiInstance } from "@multica/core/api";
-import type { ApiClient } from "@multica/core/api/client";
+import { setApiInstance } from "@liexiu/core/api";
+import type { ApiClient } from "@liexiu/core/api/client";
 import type {
   Issue,
   IssueStatus,
   IssueTableQuerySpec,
   IssueTableRowsRequest,
-} from "@multica/core/types";
+} from "@liexiu/core/types";
 import { useIssueStatusBranches } from "./use-issue-status-branches";
 
 function makeIssue(id: string): Issue {
@@ -36,7 +36,6 @@ function makeIssue(id: string): Issue {
     start_date: null,
     due_date: null,
     metadata: {},
-    properties: {},
     created_at: "2026-01-01T00:00:00Z",
     updated_at: "2026-01-01T00:00:00Z",
   };

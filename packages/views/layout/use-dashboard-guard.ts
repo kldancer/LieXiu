@@ -2,16 +2,14 @@
 
 import { useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { useNavigationStore } from "@multica/core/navigation";
-import { useAuthStore } from "@multica/core/auth";
+import { useNavigationStore } from "@liexiu/core/navigation";
+import { useAuthStore } from "@liexiu/core/auth";
 import {
   paths,
-  resolvePostAuthDestination,
   useCurrentWorkspace,
-  useHasOnboarded,
-} from "@multica/core/paths";
-import { workspaceListOptions } from "@multica/core/workspace";
-import { useRecentIssuesStore } from "@multica/core/issues/stores";
+} from "@liexiu/core/paths";
+import { workspaceListOptions } from "@liexiu/core/workspace";
+import { useRecentIssuesStore } from "@liexiu/core/issues/stores";
 import { useNavigation } from "../navigation";
 
 /**
@@ -21,18 +19,8 @@ import { useNavigation } from "../navigation";
  *  - Auth still loading → wait
  *  - Not logged in → /login
  *  - Logged in but workspace list not yet loaded → wait (don't bounce prematurely)
- *  - Logged in but URL slug doesn't resolve to any workspace →
- *    `resolvePostAuthDestination(list, hasOnboarded)` (workspace-presence first;
- *    see paths/resolve.ts for the full table)
- *
- * This guard only redirects when the URL slug doesn't resolve. Onboarding
- * itself marks the user onboarded before navigating into a workspace, so
- * entering the dashboard no longer depends on a follow-up Helper modal.
- *
- * (Older comment claimed this state was physically impossible because
- * CreateWorkspace and AcceptInvitation atomically marked onboarded.
- * CreateWorkspace no longer marks; AcceptInvitation still does — invitees
- * skip the modal entirely.)
+ *  - Logged in but canonical Workspace is unavailable → /login, where the
+ *    local bootstrap/canonical recovery contract owns the state.
  *
  * We read the workspace list query state directly (rather than relying on
  * useCurrentWorkspace's null return) so we can distinguish "list loading"
@@ -44,7 +32,6 @@ export function useDashboardGuard() {
   const user = useAuthStore((s) => s.user);
   const isLoading = useAuthStore((s) => s.isLoading);
   const workspace = useCurrentWorkspace();
-  const hasOnboarded = useHasOnboarded();
   const { data: workspaces = [], isFetched: workspaceListFetched } = useQuery({
     ...workspaceListOptions(),
     enabled: !!user,
@@ -58,9 +45,9 @@ export function useDashboardGuard() {
     }
     if (!workspaceListFetched) return;
     if (!workspace) {
-      replace(resolvePostAuthDestination(workspaces, hasOnboarded));
+      replace(paths.login());
     }
-  }, [user, isLoading, workspaceListFetched, workspace, workspaces, hasOnboarded, replace]);
+  }, [user, isLoading, workspaceListFetched, workspace, replace]);
 
   useEffect(() => {
     useNavigationStore.getState().onPathChange(pathname);

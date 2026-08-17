@@ -11,39 +11,38 @@ import {
   type ReactNode,
 } from "react";
 import type { QueryClient } from "@tanstack/react-query";
-import { getCurrentWsId } from "@multica/core/platform";
-import { flattenIssueBuckets, issueKeys } from "@multica/core/issues/queries";
-import { workspaceKeys } from "@multica/core/workspace/queries";
-import { useAuthStore } from "@multica/core/auth";
-import { canAssignAgentToIssue } from "@multica/core/permissions";
-import { isAgentRuntimeBound } from "@multica/core/agents";
-import { api } from "@multica/core/api";
+import { getCurrentWsId } from "@liexiu/core/platform";
+import { flattenIssueBuckets, issueKeys } from "@liexiu/core/issues/queries";
+import { workspaceKeys } from "@liexiu/core/workspace/queries";
+import { useAuthStore } from "@liexiu/core/auth";
+import { canAssignAgentToIssue } from "@liexiu/core/permissions";
+import { isAgentRuntimeBound } from "@liexiu/core/agents";
+import { api } from "@liexiu/core/api";
 import {
   isIssueDirectHit,
   isProjectDirectHit,
-} from "@multica/core/search/cancelled-rank";
-import { isImeComposing } from "@multica/core/utils";
+} from "@liexiu/core/search/cancelled-rank";
+import { isImeComposing } from "@liexiu/core/utils";
 import type {
   Issue,
   ListIssuesCache,
   MemberWithUser,
   Agent,
-  Squad,
-} from "@multica/core/types";
+} from "@liexiu/core/types";
 import { ListTodo } from "lucide-react";
 import { ActorAvatar } from "../../common/actor-avatar";
 import { StatusIcon } from "../../issues/components/status-icon";
 import { ProjectIcon } from "../../projects/components/project-icon";
 import { useT } from "../../i18n";
-import { Badge } from "@multica/ui/components/ui/badge";
+import { Badge } from "@liexiu/ui/components/ui/badge";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
-} from "@multica/ui/components/ui/tooltip";
-import { cn } from "@multica/ui/lib/utils";
-import type { IssueStatus, ProjectStatus } from "@multica/core/types";
-import { PROJECT_STATUS_CONFIG } from "@multica/core/projects/config";
+} from "@liexiu/ui/components/ui/tooltip";
+import { cn } from "@liexiu/ui/lib/utils";
+import type { IssueStatus, ProjectStatus } from "@liexiu/core/types";
+import { PROJECT_STATUS_CONFIG } from "@liexiu/core/projects/config";
 import type { SuggestionOptions } from "@tiptap/suggestion";
 import { PluginKey } from "@tiptap/pm/state";
 import {
@@ -69,7 +68,7 @@ import { blockedReasonLabel } from "../../issues/blocked-trigger-copy";
 export interface MentionItem {
   id: string;
   label: string;
-  type: "member" | "agent" | "squad" | "issue" | "project" | "all";
+  type: "member" | "agent" | "issue" | "project" | "all";
   /** Optional grouping hint for injected context items. */
   group?: "current" | "recent" | "search";
   /** Secondary text shown beside the label (e.g. issue title) */
@@ -615,11 +614,6 @@ function MentionRow({
         // eslint-disable-next-line i18next/no-literal-string
         <Badge variant="outline" className="ml-auto text-micro h-4 px-1.5">Agent</Badge>
       )}
-      {item.type === "squad" && (
-        // "Squad" is a glossary-protected product term — kept un-translated.
-        // eslint-disable-next-line i18next/no-literal-string
-        <Badge variant="outline" className="ml-auto text-micro h-4 px-1.5">Squad</Badge>
-      )}
     </button>
   );
 
@@ -696,7 +690,6 @@ export function createMentionSuggestion(
 
     const members: MemberWithUser[] = qc.getQueryData(workspaceKeys.members(wsId)) ?? [];
     const agents: Agent[] = qc.getQueryData(workspaceKeys.agents(wsId)) ?? [];
-    const squads: Squad[] = qc.getQueryData(workspaceKeys.squads(wsId)) ?? [];
     const listQueries = qc.getQueriesData<ListIssuesCache>({ queryKey: issueKeys.list(wsId) });
     const cachedResponse = listQueries[0]?.[1];
     const cachedIssues: Issue[] = cachedResponse ? flattenIssueBuckets(cachedResponse) : [];
@@ -740,34 +733,12 @@ export function createMentionSuggestion(
           ? undefined
           : ("agent_runtime_required" as const),
       }));
-    const activeAgentRuntimeBinding = new Map(
-      agents
-        .filter((agent) => !agent.archived_at)
-        .map((agent) => [agent.id, isAgentRuntimeBound(agent)]),
-    );
-
-    const squadItems: MentionItem[] = squads
-      .filter(
-        (s) =>
-          !s.archived_at &&
-          (s.name.toLowerCase().includes(q) || matchesPinyin(s.name, q)),
-      )
-      .map((s) => ({
-        id: s.id,
-        label: s.name,
-        type: "squad" as const,
-        disabledReason:
-          activeAgentRuntimeBinding.get(s.leader_id) === false
-            ? ("agent_runtime_required" as const)
-            : undefined,
-      }));
-
     // Members and agents share a single ranked list — recently mentioned
     // targets come first regardless of type, with an alphabetical fallback
     // for everyone the user hasn't mentioned yet on this device.
     const recency = getRecencyMap(wsId);
     const userItems = sortUserItemsByRecency(
-      [...memberItems, ...agentItems, ...squadItems],
+      [...memberItems, ...agentItems],
       recency,
     );
 

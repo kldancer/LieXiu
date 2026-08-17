@@ -1,6 +1,6 @@
 // Package execenv manages isolated per-task execution environments for the daemon.
 // Each task gets its own directory with injected context files. Repositories are
-// checked out on demand by the agent via `multica repo checkout`.
+// checked out on demand by the agent via `liexiu repo checkout`.
 package execenv
 
 import (
@@ -11,7 +11,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/multica-ai/multica/server/internal/runtimeapps"
+	"github.com/kailonyang/liexiu/server/internal/runtimeapps"
 )
 
 // RepoContextForEnv describes a workspace repo available for checkout.
@@ -35,7 +35,7 @@ type ProjectResourceForEnv struct {
 
 // PrepareParams holds all inputs needed to set up an execution environment.
 type PrepareParams struct {
-	WorkspacesRoot string // base path for all envs (e.g., ~/multica_workspaces)
+	WorkspacesRoot string // base path for all envs (e.g., ~/liexiu_workspaces)
 	WorkspaceID    string // workspace UUID — tasks are grouped under this
 	TaskID         string // task UUID — used for directory name
 	AgentName      string // for git branch naming only
@@ -87,12 +87,12 @@ type PrepareParams struct {
 	// HermesMemoryStore is the agent's persistent Hermes memory store
 	// (HermesMemoryStorePath) the overlay links memories/ to, so memory outlives
 	// the task. Empty keeps memories/ task-local — no agent to key on, or the
-	// Multica profile dir could not be resolved.
+	// LieXiu profile dir could not be resolved.
 	HermesMemoryStore string
 	// HermesSessionStore is the conversation's persistent Hermes session store
 	// (HermesSessionStorePath) the overlay links state.db to, so the transcript
 	// outlives the task and a follow-up turn can actually resume it. Empty keeps
-	// state.db task-local — no agent or conversation to key on, or the Multica
+	// state.db task-local — no agent or conversation to key on, or the LieXiu
 	// profile dir could not be resolved.
 	HermesSessionStore string
 	// HermesEnv is the sanitized effective env (agent custom_env minus the daemon
@@ -148,50 +148,16 @@ type TaskContextForEnv struct {
 	ProjectTitle                  string                  // human-readable project title
 	ProjectDescription            string                  // durable project-level context, rendered into the brief's Project Context section
 	ProjectResources              []ProjectResourceForEnv // resources attached to the project
-	ChatSessionID                 string                  // non-empty for chat tasks
-	// ChatChannelType is the IM platform behind a chat session ("slack",
-	// "feishu", "wecom"); empty for a web/mobile chat. It names the surface in
-	// the brief's copy; what that surface can DELIVER is the separate field
-	// below (MUL-4899). The orthogonal audience and history policies live in
-	// the per-turn chat prompt (daemon/prompt.go) — the server has no history
-	// reader for any other channel.
-	ChatChannelType string
-	// ChatChannelDeliversFiles is the server's verdict, for THIS turn, on
-	// whether a file the agent produces reaches the reader: the adapter goes
-	// back for the bound attachment and this deployment has the object storage
-	// it goes back to. It arrives on the claim and is used as given. False
-	// covers an old server that never sent it, a deployment with no storage,
-	// and every channel whose adapter does not perform the hop — all three of
-	// which want the same instruction, the one telling the agent to describe
-	// its file in words.
-	//
-	// Carried here but deliberately NOT rendered into the brief. It is a
-	// per-turn value: a server upgrade that starts sending it, or object
-	// storage being turned on or off, flips it under a chat session that
-	// resumes across the change, and the brief is the prompt-cache prefix
-	// (MUL-5377). The agent-facing verdict is emitted by the per-turn chat
-	// prompt (daemon.buildChatPrompt) instead, and
-	// TestBriefByteIdenticalAcrossRunsForEveryKind is what keeps this field out
-	// of the brief.
-	ChatChannelDeliversFiles bool
-
-	AutopilotRunID          string // non-empty for autopilot run_only tasks
-	AutopilotID             string
-	AutopilotTitle          string
-	AutopilotDescription    string
-	AutopilotSource         string
-	AutopilotTriggerPayload string
-	QuickCreatePrompt       string // non-empty for quick-create tasks
-	HandoffNote             string // assignment handoff instruction; rendered into issue_context.md (MUL-3375)
-	IsSquadLeader           bool   // true when THIS TASK runs the agent in the squad-leader role (may exit silently on no_action); derived from the claim's is_leader_task / squad_id, never sniffed from instructions text (MUL-5811)
+	QuickCreatePrompt             string                  // non-empty for quick-create tasks
+	HandoffNote                   string                  // assignment handoff instruction; rendered into issue_context.md (MUL-3375)
 	// WorkspaceContext is the workspace-level system prompt (workspace.context
 	// in the DB). Rendered into the brief as `## Workspace Context` when
 	// non-empty so every agent in the workspace sees the same shared context,
-	// regardless of issue / chat / autopilot / quick-create.
+	// regardless of issue or quick-create.
 	WorkspaceContext string
 	// ConnectedApps lists per-run external app capabilities mounted through
 	// MCP overlays. Rendered briefly so the agent can map app names such as
-	// Notion to the actual MCP server name (`composio`).
+	// a display label to the actual configured MCP server name.
 	ConnectedApps []runtimeapps.ConnectedApp
 	// RequestingUserName + RequestingUserProfileDescription describe the
 	// human the agent is acting on behalf of. v1 sources them from the
@@ -204,8 +170,8 @@ type TaskContextForEnv struct {
 	// Initiator* identify the actor who triggered THIS task (the real
 	// requester) as distinct from the runtime owner. Rendered into the brief
 	// as `## Task Initiator` when a name is present; InitiatorEmail is shown
-	// only for member initiators. Empty for on-assign / autopilot /
-	// quick-create tasks, which have no attributable human initiator. See
+	// only for member initiators. Empty for on-assign / quick-create tasks,
+	// which have no attributable human initiator. See
 	// MUL-2645.
 	InitiatorType  string
 	InitiatorID    string
@@ -245,10 +211,10 @@ type Environment struct {
 	// scratch that the GC should reclaim on the normal schedule, and the
 	// sidecar rollback that protects a user's directory is unnecessary.
 	LocalDirectory bool
-	// MulticaConfigRoot is the private per-task config directory exported to
+	// LieXiuConfigRoot is the private per-task config directory exported to
 	// child CLI invocations. It prevents implicit discovery of the daemon
-	// owner's ~/.multica profile without changing the provider-facing HOME.
-	MulticaConfigRoot string
+	// owner's ~/.liexiu profile without changing the provider-facing HOME.
+	LieXiuConfigRoot string
 	// LocalWorktree is set when the task runs in worktree mode against a
 	// local_directory resource. The daemon calls Finalize on it after the
 	// agent exits to commit leftovers, drop the worktree, and learn the
@@ -323,7 +289,7 @@ func PredictRootDir(workspacesRoot, workspaceID, taskID string) string {
 
 // Prepare creates an isolated execution environment for a task.
 // The workdir starts empty (no repo checkouts). The agent checks out repos
-// on demand via `multica repo checkout <url>`.
+// on demand via `liexiu repo checkout <url>`.
 func Prepare(params PrepareParams, logger *slog.Logger) (*Environment, error) {
 	if params.WorkspacesRoot == "" {
 		return nil, fmt.Errorf("execenv: workspaces root is required")
@@ -341,7 +307,7 @@ func Prepare(params PrepareParams, logger *slog.Logger) (*Environment, error) {
 	// removed while the daemon runs is restored before the agent spawns. The
 	// per-workdir marker written below only covers cwds inside the workdir;
 	// the root marker keeps the CLI fail-closed guard active for subprocesses
-	// that lose all MULTICA_* env vars AND escape above the workdir. Non-fatal:
+	// that lose all LIEXIU_* env vars AND escape above the workdir. Non-fatal:
 	// without it the workdir marker still protects the common case.
 	if err := EnsureWorkspacesRootMarker(params.WorkspacesRoot); err != nil && logger != nil {
 		logger.Warn("execenv: workspaces root marker not written; fail-closed guard limited to the task workdir", "error", err)
@@ -370,12 +336,12 @@ func Prepare(params PrepareParams, logger *slog.Logger) (*Environment, error) {
 			return nil, fmt.Errorf("execenv: create directory %s: %w", dir, err)
 		}
 	}
-	multicaConfigRoot := filepath.Join(envRoot, "multica-config")
-	if err := os.MkdirAll(multicaConfigRoot, 0o700); err != nil {
-		return nil, fmt.Errorf("execenv: create task-local Multica config directory: %w", err)
+	liexiuConfigRoot := filepath.Join(envRoot, "liexiu-config")
+	if err := os.MkdirAll(liexiuConfigRoot, 0o700); err != nil {
+		return nil, fmt.Errorf("execenv: create task-local LieXiu config directory: %w", err)
 	}
-	if err := os.Chmod(multicaConfigRoot, 0o700); err != nil {
-		return nil, fmt.Errorf("execenv: restrict task-local Multica config directory: %w", err)
+	if err := os.Chmod(liexiuConfigRoot, 0o700); err != nil {
+		return nil, fmt.Errorf("execenv: restrict task-local LieXiu config directory: %w", err)
 	}
 
 	// Worktree mode: build the task's own checkout of the user's repo inside
@@ -421,7 +387,7 @@ func Prepare(params PrepareParams, logger *slog.Logger) (*Environment, error) {
 		WorkDir:           workDir,
 		LocalDirectory:    params.LocalWorkDir != "",
 		LocalWorktree:     localWorktree,
-		MulticaConfigRoot: multicaConfigRoot,
+		LieXiuConfigRoot: liexiuConfigRoot,
 		logger:            logger,
 	}
 
@@ -451,7 +417,7 @@ func Prepare(params PrepareParams, logger *slog.Logger) (*Environment, error) {
 	// In place only. Worktree mode discards the whole worktree on failure just
 	// above, and a cloud envRoot is wiped wholesale by the GC — only the
 	// local_directory flow writes into a directory that outlives the task and
-	// belongs to the user, where a leftover marker disables every multica
+	// belongs to the user, where a leftover marker disables every liexiu
 	// command in that directory tree until someone removes it by hand.
 	if params.LocalWorkDir != "" {
 		defer func() {
@@ -474,7 +440,7 @@ func Prepare(params PrepareParams, logger *slog.Logger) (*Environment, error) {
 	// the prior handler writes .gc_meta.json — so reuse eligibility must be
 	// provable from an artifact that exists the moment the env is created. Only
 	// managed (non-local_directory) issue envs get this marker; that is exactly
-	// the set squad-leader reuse targets (MUL-4886). Non-fatal: a write failure
+	// the set of managed reuse targets (MUL-4886). Non-fatal: a write failure
 	// only costs the next follow-up its session reuse (it falls back to a fresh
 	// session), which must never block dispatching this task.
 	if params.LocalWorkDir == "" && params.Task.IssueID != "" {
@@ -697,13 +663,13 @@ func Reuse(params ReuseParams, logger *slog.Logger) *Environment {
 		logger:         logger,
 	}
 	if env.RootDir != "" {
-		env.MulticaConfigRoot = filepath.Join(env.RootDir, "multica-config")
-		if err := os.MkdirAll(env.MulticaConfigRoot, 0o700); err != nil {
-			logger.Warn("execenv: restore task-local Multica config directory failed; forcing fresh prepare", "error", err)
+		env.LieXiuConfigRoot = filepath.Join(env.RootDir, "liexiu-config")
+		if err := os.MkdirAll(env.LieXiuConfigRoot, 0o700); err != nil {
+			logger.Warn("execenv: restore task-local LieXiu config directory failed; forcing fresh prepare", "error", err)
 			return nil
 		}
-		if err := os.Chmod(env.MulticaConfigRoot, 0o700); err != nil {
-			logger.Warn("execenv: restrict task-local Multica config directory failed; forcing fresh prepare", "error", err)
+		if err := os.Chmod(env.LieXiuConfigRoot, 0o700); err != nil {
+			logger.Warn("execenv: restrict task-local LieXiu config directory failed; forcing fresh prepare", "error", err)
 			return nil
 		}
 	}
@@ -712,8 +678,8 @@ func Reuse(params ReuseParams, logger *slog.Logger) *Environment {
 	// On reuse the workdir still holds the prior run's issue_context.md and
 	// skill directories; without clearing them first, writeSkillFiles sees
 	// its own earlier output occupying the canonical slug and falls back to
-	// a collision-free sibling (issue-review, issue-review-multica,
-	// issue-review-multica-2, …), accumulating a fresh duplicate on every
+	// a collision-free sibling (issue-review, issue-review-liexiu,
+	// issue-review-liexiu-2, …), accumulating a fresh duplicate on every
 	// re-dispatch to the same issue. allocateCollisionFreeSkillDir exists to
 	// dodge *user*-owned skill dirs (the local_directory flow), not our own
 	// prior writes, so we undo them via the prior manifest first and let the
@@ -727,7 +693,7 @@ func Reuse(params ReuseParams, logger *slog.Logger) *Environment {
 	//      CleanupSidecars alone can't do this — it preserves any recorded dir
 	//      the agent populated (correct on the local_directory teardown path),
 	//      which would otherwise keep the canonical slug occupied and push the
-	//      refresh back to issue-review-multica.
+	//      refresh back to issue-review-liexiu.
 	//   2. CleanupSidecars rolls back the remaining sidecar files
 	//      (issue_context.md, project resources) and the manifest itself.
 	//
@@ -915,16 +881,14 @@ func hydrateCodexSkills(codexHome string, workspaceSkills []SkillContextForEnv, 
 	return ensureCodexDisabledSkillsConfig(filepath.Join(codexHome, "config.toml"), codexHome, disabledRuntimeSkills, workspaceSkills)
 }
 
-// GCMetaKind identifies which kind of parent record a task workdir belongs to.
-// The GC loop dispatches its decision tree on this value so chat / autopilot /
-// quick-create tasks are no longer forced through the issue-centric path.
+// GCMetaKind identifies which supported parent record a task workdir belongs to.
+// Unknown historical values are deliberately left opaque and use the
+// orphan-by-mtime fallback in the daemon.
 type GCMetaKind string
 
 const (
-	GCKindIssue        GCMetaKind = "issue"
-	GCKindChat         GCMetaKind = "chat"
-	GCKindAutopilotRun GCMetaKind = "autopilot_run"
-	GCKindQuickCreate  GCMetaKind = "quick_create"
+	GCKindIssue       GCMetaKind = "issue"
+	GCKindQuickCreate GCMetaKind = "quick_create"
 )
 
 // GCMeta is persisted to .gc_meta.json inside the env root so the GC loop
@@ -935,13 +899,11 @@ const (
 // Kind to GCKindIssue for backward compatibility — only IssueID was written
 // before, and only issue-centric tasks ever produced a meta file.
 type GCMeta struct {
-	Kind           GCMetaKind `json:"kind,omitempty"`
-	IssueID        string     `json:"issue_id,omitempty"`
-	ChatSessionID  string     `json:"chat_session_id,omitempty"`
-	AutopilotRunID string     `json:"autopilot_run_id,omitempty"`
-	TaskID         string     `json:"task_id,omitempty"`
-	WorkspaceID    string     `json:"workspace_id"`
-	CompletedAt    time.Time  `json:"completed_at"`
+	Kind        GCMetaKind `json:"kind,omitempty"`
+	IssueID     string     `json:"issue_id,omitempty"`
+	TaskID      string     `json:"task_id,omitempty"`
+	WorkspaceID string     `json:"workspace_id"`
+	CompletedAt time.Time  `json:"completed_at"`
 	// LocalDirectory marks tasks whose WorkDir pointed at a user-owned
 	// path rather than the synthesised envRoot/workdir. The GC loop honours
 	// this by never falling into the gcActionClean branch (which would
@@ -977,8 +939,9 @@ func WriteGCMeta(envRoot string, meta GCMeta, logger *slog.Logger) error {
 }
 
 // ReadGCMeta reads GC metadata from a task directory root. Pre-v2 meta files
-// (no kind field) are normalized to GCKindIssue so the legacy issue path
-// keeps working without a migration.
+// (no kind field) are normalized to GCKindIssue so the legacy issue path keeps
+// working without a migration. Unsupported historical kinds remain opaque and
+// are handled by the daemon's conservative default path.
 func ReadGCMeta(envRoot string) (*GCMeta, error) {
 	data, err := os.ReadFile(filepath.Join(envRoot, gcMetaFile))
 	if err != nil {
@@ -998,14 +961,14 @@ const managedEnvProvenanceFile = ".managed_env.json"
 
 // ManagedEnvProvenanceManagedBy discriminates a managed-env provenance file
 // the daemon wrote from any lookalike JSON that happens to share the path.
-const ManagedEnvProvenanceManagedBy = "multica-daemon-managed-env"
+const ManagedEnvProvenanceManagedBy = "liexiu-daemon-managed-env"
 
 // ManagedEnvProvenance is persisted to .managed_env.json inside the env root at
 // Prepare time (NOT on completion, unlike .gc_meta.json). It records that this
 // env root is a daemon-managed, non-local_directory issue env owned by a
 // specific workspace/issue/agent.
 //
-// Its whole reason to exist is timing. A squad-leader follow-up on the same
+// Its whole reason to exist is timing. A follow-up on the same
 // issue can be claimed the instant the prior task completes — the server's
 // task-complete handler reconciles the follow-up and wakes the runtime before
 // the prior task's daemon handler writes .gc_meta.json. Keying reuse

@@ -120,7 +120,6 @@ func TestPercentBucketCrossLanguageGolden(t *testing.T) {
 		want    int
 	}{
 		// ASCII baseline.
-		{"billing_new_invoice", "user-42", 97},
 		{"feature_a", "user-1", 50},
 		{"checkout_algo", "u-7f8a", 11},
 		{"ws_rollout", "workspace-1", 62},

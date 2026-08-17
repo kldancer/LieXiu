@@ -3,15 +3,14 @@ package main
 import (
 	"context"
 	"errors"
-	"math/rand/v2"
 	"testing"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
-	"github.com/multica-ai/multica/server/internal/util"
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
+	"github.com/kailonyang/liexiu/server/internal/util"
+	db "github.com/kailonyang/liexiu/server/pkg/db/generated"
 )
 
 // TestWorkspaceScopeGuard locks in the SQL-layer tenant guard added in PR #3027.
@@ -75,16 +74,6 @@ func TestWorkspaceScopeGuard(t *testing.T) {
 		assertRowExists(t, ctx, "skill", id)
 	})
 
-	t.Run("DeleteChatSession", func(t *testing.T) {
-		id := seedChatSession(t, ctx)
-		t.Cleanup(func() { testPool.Exec(ctx, `DELETE FROM chat_session WHERE id = $1`, util.UUIDToString(id)) })
-
-		if err := queries.DeleteChatSession(ctx, db.DeleteChatSessionParams{ID: id, WorkspaceID: wsB}); err != nil {
-			t.Fatalf("cross-workspace DeleteChatSession: expected nil error (no-op), got %v", err)
-		}
-		assertRowExists(t, ctx, "chat_session", id)
-	})
-
 	t.Run("UpdateIssueStatus", func(t *testing.T) {
 		id := seedIssue(t, ctx)
 		t.Cleanup(func() { testPool.Exec(ctx, `DELETE FROM issue WHERE id = $1`, util.UUIDToString(id)) })
@@ -133,14 +122,12 @@ func TestWorkspaceScopeGuard(t *testing.T) {
 func seedIssue(t *testing.T, ctx context.Context) pgtype.UUID {
 	t.Helper()
 	var s string
-	// number is unique per workspace; pick a high-range random value to
-	// avoid colliding with concurrent integration tests in the same DB.
-	n := 1_000_000 + rand.IntN(1_000_000)
 	if err := testPool.QueryRow(ctx, `
 		INSERT INTO issue (workspace_id, title, status, priority, creator_type, creator_id, position, number)
-		VALUES ($1, 'scope-guard test issue', 'todo', 'none', 'member', $2, 0, $3)
+		VALUES ($1, 'scope-guard test issue', 'todo', 'none', 'member', $2, 0,
+		        (SELECT COALESCE(MAX(number), 0) + 1 FROM issue WHERE workspace_id = $1))
 		RETURNING id
-	`, testWorkspaceID, testUserID, n).Scan(&s); err != nil {
+	`, testWorkspaceID, testUserID).Scan(&s); err != nil {
 		t.Fatalf("seed issue: %v", err)
 	}
 	return parseUUID(s)
@@ -175,34 +162,12 @@ func seedProject(t *testing.T, ctx context.Context) pgtype.UUID {
 func seedSkill(t *testing.T, ctx context.Context) pgtype.UUID {
 	t.Helper()
 	var s string
-	// skill name is UNIQUE per workspace; add a random suffix to avoid colliding
-	// with previous runs on the same DB.
-	name := uniqueName("scope-guard skill")
 	if err := testPool.QueryRow(ctx, `
 		INSERT INTO skill (workspace_id, name, description, content, config, created_by)
 		VALUES ($1, $2, '', '', '{}'::jsonb, $3)
 		RETURNING id
-	`, testWorkspaceID, name, testUserID).Scan(&s); err != nil {
+	`, testWorkspaceID, uniqueName("scope-guard skill"), testUserID).Scan(&s); err != nil {
 		t.Fatalf("seed skill: %v", err)
-	}
-	return parseUUID(s)
-}
-
-func seedChatSession(t *testing.T, ctx context.Context) pgtype.UUID {
-	t.Helper()
-	var agentID string
-	if err := testPool.QueryRow(ctx, `
-		SELECT id FROM agent WHERE workspace_id = $1 LIMIT 1
-	`, testWorkspaceID).Scan(&agentID); err != nil {
-		t.Fatalf("find test agent: %v", err)
-	}
-	var s string
-	if err := testPool.QueryRow(ctx, `
-		INSERT INTO chat_session (workspace_id, agent_id, creator_id, title, runtime_id)
-		VALUES ($1, $2, $3, 'scope-guard chat', (SELECT runtime_id FROM agent WHERE id = $2))
-		RETURNING id
-	`, testWorkspaceID, agentID, testUserID).Scan(&s); err != nil {
-		t.Fatalf("seed chat_session: %v", err)
 	}
 	return parseUUID(s)
 }

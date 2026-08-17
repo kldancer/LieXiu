@@ -17,14 +17,14 @@ import {
   issueKeys,
   issueTableGroupsOptions,
   issueTableRowPageOptions,
-} from "@multica/core/issues/queries";
+} from "@liexiu/core/issues/queries";
 import type {
   Issue,
   IssueTableGroupDescriptor,
   IssueTableGroupsRequest,
   IssueTableQuerySpec,
   IssueTableRowsResponse,
-} from "@multica/core/types";
+} from "@liexiu/core/types";
 
 export interface IssueGroupPageState {
   total: number;
@@ -105,14 +105,6 @@ function issueMatchesDescriptor(
       return issue.project_id === owner.project_id;
     case "parent":
       return issue.parent_issue_id === owner.parent_id;
-    case "property": {
-      const propertyValue = issue.properties?.[owner.property_id];
-      if (owner.value_state === "unset") return propertyValue === undefined;
-      if (owner.value_state === "value") return propertyValue === owner.value;
-      return owner.value !== undefined
-        ? propertyValue === owner.value
-        : propertyValue !== undefined;
-    }
     case "status":
       return issue.status === owner.status;
   }
@@ -137,9 +129,8 @@ export function useIssueGroupBranches({
   /** For compound groups, keep exact lane descriptors/counts while observing
    * rows only for the currently visible secondary buckets. */
   secondaryValues?: readonly string[];
-  /** Compound and include-empty property responses carry zero-count keys.
-   * Activate those when their mounted sentinel becomes visible so drag
-   * targets have live heads. */
+  /** Activate zero-count branches when their mounted sentinel becomes
+   * visible so drag targets have live heads. */
   observeEmptyBranches?: boolean;
   enabled: boolean;
 }): IssueGroupBranches {

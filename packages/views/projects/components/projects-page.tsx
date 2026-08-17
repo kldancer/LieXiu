@@ -10,8 +10,6 @@ import {
   FolderKanban,
   LayoutGrid,
   MoreHorizontal,
-  Pin,
-  PinOff,
   Plus,
   Rows3,
   Search,
@@ -29,25 +27,20 @@ import {
   type ProjectListFilters,
   type ProjectSortField,
   type ProjectViewMode,
-} from "@multica/core/projects";
-import {
-  pinListOptions,
-  useCreatePin,
-  useDeletePin,
-} from "@multica/core/pins";
-import { useWorkspaceId } from "@multica/core/hooks";
-import { useWorkspacePaths } from "@multica/core/paths";
-import { useAuthStore } from "@multica/core/auth";
-import { useActorName } from "@multica/core/workspace/hooks";
-import { memberListOptions } from "@multica/core/workspace/queries";
-import { useModalStore } from "@multica/core/modals";
+} from "@liexiu/core/projects";
+import { useWorkspaceId } from "@liexiu/core/hooks";
+import { useWorkspacePaths } from "@liexiu/core/paths";
+import { useAuthStore } from "@liexiu/core/auth";
+import { useActorName } from "@liexiu/core/workspace/hooks";
+import { memberListOptions } from "@liexiu/core/workspace/queries";
+import { useModalStore } from "@liexiu/core/modals";
 import { AppLink, useIntentNavigate, useRowLink } from "../../navigation";
 import { ActorAvatar } from "../../common/actor-avatar";
 import { FILTER_ITEM_CLASS, HoverCheck } from "../../common/hover-check";
-import { Skeleton } from "@multica/ui/components/ui/skeleton";
-import { Button } from "@multica/ui/components/ui/button";
-import { Checkbox } from "@multica/ui/components/ui/checkbox";
-import { Input } from "@multica/ui/components/ui/input";
+import { Skeleton } from "@liexiu/ui/components/ui/skeleton";
+import { Button } from "@liexiu/ui/components/ui/button";
+import { Checkbox } from "@liexiu/ui/components/ui/checkbox";
+import { Input } from "@liexiu/ui/components/ui/input";
 import {
   Dialog,
   DialogContent,
@@ -55,7 +48,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@multica/ui/components/ui/dialog";
+} from "@liexiu/ui/components/ui/dialog";
 import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
@@ -70,7 +63,7 @@ import {
   DropdownMenuSubContent,
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
-} from "@multica/ui/components/ui/dropdown-menu";
+} from "@liexiu/ui/components/ui/dropdown-menu";
 import {
   ListGrid,
   ListGridCell,
@@ -79,25 +72,25 @@ import {
   ListGridRow,
   LIST_GRID_BOTTOM_CLEARANCE,
   type ListGridSortDirection,
-} from "@multica/ui/components/ui/list-grid";
+} from "@liexiu/ui/components/ui/list-grid";
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
-} from "@multica/ui/components/ui/popover";
-import { Switch } from "@multica/ui/components/ui/switch";
+} from "@liexiu/ui/components/ui/popover";
+import { Switch } from "@liexiu/ui/components/ui/switch";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
-} from "@multica/ui/components/ui/tooltip";
+} from "@liexiu/ui/components/ui/tooltip";
 import type {
   MemberWithUser,
   Project,
   ProjectPriority,
   ProjectStatus,
   UpdateProjectRequest,
-} from "@multica/core/types";
+} from "@liexiu/core/types";
 import {
   CollectionPageHeader,
   CollectionPageHeaderAction,
@@ -110,7 +103,7 @@ import { useFormatRelativeDate } from "./labels";
 import { ProjectStatusBadge, ProjectPriorityBadge } from "./project-badge";
 import { ProjectLeadPicker } from "./project-lead-picker";
 import { PAGE_GUTTER, PAGE_TOOLBAR } from "../../layout/page-header";
-import { cn } from "@multica/ui/lib/utils";
+import { cn } from "@liexiu/ui/lib/utils";
 
 // Sort order maps for the enum columns (header sort needs a total order).
 const PRIORITY_ORDER: Record<ProjectPriority, number> = {
@@ -223,26 +216,17 @@ function ProgressRing({ project }: { project: Project }) {
 // menu so action clicks do not bubble into the rowLink handler.
 function ProjectRowActions({
   project,
-  pinned,
   canDelete,
 }: {
   project: Project;
-  pinned: boolean;
   canDelete: boolean;
 }) {
   const { t } = useT("projects");
   const { t: tCommon } = useT("common");
   const wsPaths = useWorkspacePaths();
   const intentNavigate = useIntentNavigate();
-  const createPin = useCreatePin();
-  const deletePin = useDeletePin();
   const deleteProject = useDeleteProject();
   const [deleteOpen, setDeleteOpen] = useState(false);
-
-  const togglePin = () => {
-    if (pinned) deletePin.mutate({ itemType: "project", itemId: project.id });
-    else createPin.mutate({ item_type: "project", item_id: project.id });
-  };
 
   return (
     <>
@@ -272,14 +256,6 @@ function ProjectRowActions({
             {tCommon(($) => $.navigation.open_in_new_tab)}
           </DropdownMenuItem>
           <DropdownMenuSeparator />
-          <DropdownMenuItem onClick={togglePin}>
-            {pinned ? (
-              <PinOff className="size-3.5" />
-            ) : (
-              <Pin className="size-3.5" />
-            )}
-            {pinned ? t(($) => $.page.unpin) : t(($) => $.page.pin)}
-          </DropdownMenuItem>
           {canDelete && (
             <>
               <DropdownMenuSeparator />
@@ -364,7 +340,6 @@ function CheckboxCell({
 
 function ProjectTableRow({
   project,
-  pinned,
   canDelete,
   isColVisible,
   selected,
@@ -373,7 +348,6 @@ function ProjectTableRow({
   rowLink,
 }: {
   project: Project;
-  pinned: boolean;
   canDelete: boolean;
   isColVisible: (key: ProjectColumnKey) => boolean;
   selected: boolean;
@@ -467,7 +441,7 @@ function ProjectTableRow({
 
       <ListGridCell className="justify-end px-0">
         <span onClick={stopRowNavigation} onAuxClick={stopRowNavigation} className="flex items-center">
-          <ProjectRowActions project={project} pinned={pinned} canDelete={canDelete} />
+          <ProjectRowActions project={project} canDelete={canDelete} />
         </span>
       </ListGridCell>
     </ListGridRow>
@@ -578,11 +552,9 @@ function ProjectTableHeader({
 
 function ProjectCard({
   project,
-  pinned,
   canDelete,
 }: {
   project: Project;
-  pinned: boolean;
   canDelete: boolean;
 }) {
   const { t } = useT("projects");
@@ -609,7 +581,7 @@ function ProjectCard({
             <ProjectIcon project={project} size="sm" />
             <h3 className="truncate text-body font-medium">{project.title}</h3>
           </AppLink>
-          <ProjectRowActions project={project} pinned={pinned} canDelete={canDelete} />
+          <ProjectRowActions project={project} canDelete={canDelete} />
           <ProjectStatusBadge project={project} handleUpdate={handleUpdate} triggerClassName="shrink-0" />
         </div>
 
@@ -694,27 +666,21 @@ function countActiveFilters(f: ProjectListFilters): number {
   return c;
 }
 
-// Batch toolbar — page-anchored (not viewport). Pin all selected (any
-// member) + Delete (workspace admin). Mirrors the other lists.
+// Batch toolbar — page-anchored (not viewport). Delete (workspace admin).
 function ProjectBatchToolbar({
   rows,
-  pinnedIds,
   canDelete,
   onClear,
 }: {
   rows: Project[];
-  pinnedIds: Set<string>;
   canDelete: boolean;
   onClear: () => void;
 }) {
   const { t } = useT("projects");
-  const createPin = useCreatePin();
   const deleteProject = useDeleteProject();
   const [confirmDelete, setConfirmDelete] = useState(false);
 
   if (rows.length === 0) return null;
-  const anyUnpinned = rows.some((p) => !pinnedIds.has(p.id));
-
   return (
     <>
       <div className="absolute bottom-6 left-1/2 z-50 flex -translate-x-1/2 items-center gap-1 rounded-lg border bg-background px-2 py-1.5 shadow-lg max-md:above-chat-launcher">
@@ -731,23 +697,6 @@ function ProjectBatchToolbar({
             <X className="size-3.5 text-muted-foreground" />
           </button>
         </div>
-        {anyUnpinned && (
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => {
-              for (const p of rows) {
-                if (!pinnedIds.has(p.id)) {
-                  createPin.mutate({ item_type: "project", item_id: p.id });
-                }
-              }
-              onClear();
-            }}
-          >
-            <Pin className="mr-1 size-3.5" />
-            {t(($) => $.page.pin)}
-          </Button>
-        )}
         {canDelete && (
           <Button
             variant="ghost"
@@ -819,10 +768,6 @@ export function ProjectsPage() {
 
   const { data: projects = [], isLoading } = useQuery(projectListOptions(wsId));
   const { data: members = [] } = useQuery(memberListOptions(wsId));
-  const { data: pins = [] } = useQuery({
-    ...pinListOptions(wsId, currentUser?.id ?? ""),
-    enabled: !!wsId && !!currentUser?.id,
-  });
   const openCreateProject = () => useModalStore.getState().open("create-project");
 
   const isWorkspaceAdmin = useMemo(() => {
@@ -830,12 +775,6 @@ export function ProjectsPage() {
     const me = members.find((m: MemberWithUser) => m.user_id === currentUser.id);
     return me?.role === "owner" || me?.role === "admin";
   }, [members, currentUser]);
-
-  const pinnedProjectIds = useMemo(() => {
-    const s = new Set<string>();
-    for (const pin of pins) if (pin.item_type === "project") s.add(pin.item_id);
-    return s;
-  }, [pins]);
 
   const [search, setSearch] = useState("");
   const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(new Set());
@@ -1254,7 +1193,6 @@ export function ProjectsPage() {
                   <ProjectTableRow
                     key={project.id}
                     project={project}
-                    pinned={pinnedProjectIds.has(project.id)}
                     canDelete={isWorkspaceAdmin}
                     isColVisible={isColVisible}
                     selected={selectedIds.has(project.id)}
@@ -1275,7 +1213,6 @@ export function ProjectsPage() {
                   <ProjectCard
                     key={project.id}
                     project={project}
-                    pinned={pinnedProjectIds.has(project.id)}
                     canDelete={isWorkspaceAdmin}
                   />
                 ))}
@@ -1285,7 +1222,6 @@ export function ProjectsPage() {
 
           <ProjectBatchToolbar
             rows={selectedProjects}
-            pinnedIds={pinnedProjectIds}
             canDelete={isWorkspaceAdmin}
             onClear={() => setSelectedIds(new Set())}
           />

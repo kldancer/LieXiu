@@ -4,11 +4,11 @@ import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { ChevronRight, Loader2, Zap } from "lucide-react";
 import { toast } from "sonner";
-import { dispatchReasonCode } from "@multica/core/api";
-import { useCurrentWorkspace } from "@multica/core/paths";
-import { quickActionListOptions, useRunQuickAction } from "@multica/core/quick-actions";
-import type { Comment, CommentTriggerOutcome, QuickAction } from "@multica/core/types";
-import { QUICK_ACTION_SIDEBAR_LIMIT } from "@multica/core/types";
+import { dispatchReasonCode } from "@liexiu/core/api";
+import { useCurrentWorkspace } from "@liexiu/core/paths";
+import { quickActionListOptions, useRunQuickAction } from "@liexiu/core/quick-actions";
+import type { Comment, CommentTriggerOutcome, QuickAction } from "@liexiu/core/types";
+import { QUICK_ACTION_SIDEBAR_LIMIT } from "@liexiu/core/types";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -17,9 +17,9 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "@multica/ui/components/ui/alert-dialog";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@multica/ui/components/ui/tooltip";
-import { cn } from "@multica/ui/lib/utils";
+} from "@liexiu/ui/components/ui/alert-dialog";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@liexiu/ui/components/ui/tooltip";
+import { cn } from "@liexiu/ui/lib/utils";
 import { ActorAvatar } from "../../common/actor-avatar";
 import { useT } from "../../i18n";
 
@@ -212,7 +212,7 @@ function QuickActionRow({
         <span className="min-w-0 flex-1 truncate">{action.name}</span>
         {action.target_name ? (
           <ActorAvatar
-            actorType={action.assignee_type === "squad" ? "squad" : "agent"}
+            actorType="agent"
             actorId={action.assignee_id}
             size="xs"
             className="shrink-0"

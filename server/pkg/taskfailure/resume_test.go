@@ -219,7 +219,7 @@ func TestAuthMethodUnresolved(t *testing.T) {
 }
 
 // TestAuthMethodUnresolvedMatchesResumeQueryGuard asserts the Go predicate and
-// the SQL guard in GetLastTaskSession / GetLastChatTaskSession agree on the
+// the SQL guard in GetLastTaskSession agrees on the
 // phrase. They are two independent implementations of the same rule — the
 // daemon's in-turn retry reads this one, and rows written by a daemon too old
 // to have it are caught by the SQL one — so a drift would leave one layer

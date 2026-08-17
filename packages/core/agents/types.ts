@@ -5,7 +5,7 @@
 //
 // Two orthogonal dimensions, derived independently and answering only
 // "what's true right now?" — historical / error context lives on the
-// agent detail page (Recent Work, failure_reason) and Inbox, not in the
+// agent detail page (Recent Work, failure_reason), not in the
 // list-level summary state:
 //
 //   1. AgentAvailability — "Can this agent take work right now?"
@@ -21,7 +21,7 @@
 //                  is offline/unstable; momentary if online)
 //        idle    → nothing to do
 //      No `failed` / `completed` / `cancelled` states — those are historical,
-//      surfaced via Recent Work + Inbox.
+//      surfaced via Recent Work.
 
 // Runtime-reachability dimension. `unstable` is the transient amber state
 // during the runtime sweeper's grace window (offline < 5 min); it decays
@@ -42,7 +42,7 @@ export type AgentAvailability =
   | "archived"; // ⚫ agent.archived_at set — retired, wins over runtime health
 
 // Current task load on this agent. Three states — never historical,
-// never an error predictor (Inbox + Recent Work handle that):
+// never an error predictor (Recent Work handles that):
 //
 //   working → runningCount > 0. The runningCount/queuedCount on the detail
 //             object preserve the breakdown for display.

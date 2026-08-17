@@ -8,7 +8,7 @@ import (
 	"testing"
 
 	"github.com/jackc/pgx/v5/pgtype"
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
+	db "github.com/kailonyang/liexiu/server/pkg/db/generated"
 )
 
 // parseExpectedActiveAgentIDs is the cascade endpoint's input validator.
@@ -204,45 +204,6 @@ func TestRuntimeDeleteLockBlocksConcurrentAgentBinding(t *testing.T) {
 			$2, 'workspace', 1, $3)
 	`, testWorkspaceID, runtimeID, testUserID); err == nil {
 		t.Fatal("agent bind unexpectedly bypassed the runtime delete lock")
-	}
-}
-
-func TestAutopilotAssignmentLockBlocksRuntimeTeardown(t *testing.T) {
-	if testHandler == nil {
-		t.Skip("database not available")
-	}
-	ctx := context.Background()
-	runtimeID := createCascadeFixtureRuntime(t, ctx, "Autopilot Assignment Lock")
-	agentID := createCascadeFixtureAgent(t, ctx, runtimeID, "Autopilot Assignment Agent")
-
-	assignmentTx, err := testPool.Begin(ctx)
-	if err != nil {
-		t.Fatalf("begin assignment transaction: %v", err)
-	}
-	defer assignmentTx.Rollback(ctx)
-	if _, err := testHandler.Queries.WithTx(assignmentTx).LockAgentForAutopilotAssignment(
-		ctx,
-		db.LockAgentForAutopilotAssignmentParams{
-			ID:          parseUUID(agentID),
-			WorkspaceID: parseUUID(testWorkspaceID),
-		},
-	); err != nil {
-		t.Fatalf("lock Agent for Autopilot assignment: %v", err)
-	}
-
-	deleteTx, err := testPool.Begin(ctx)
-	if err != nil {
-		t.Fatalf("begin delete transaction: %v", err)
-	}
-	defer deleteTx.Rollback(ctx)
-	if _, err := deleteTx.Exec(ctx, `SET LOCAL lock_timeout = '50ms'`); err != nil {
-		t.Fatalf("set lock timeout: %v", err)
-	}
-	if _, err := testHandler.Queries.WithTx(deleteTx).ListUserAgentsByRuntimeForUpdate(
-		ctx,
-		parseUUID(runtimeID),
-	); err == nil {
-		t.Fatal("runtime teardown unexpectedly bypassed the Autopilot assignment lock")
 	}
 }
 

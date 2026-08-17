@@ -2,7 +2,7 @@ import { act, type ReactNode } from "react";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { I18nProvider } from "@multica/core/i18n/react";
+import { I18nProvider } from "@liexiu/core/i18n/react";
 import { SearchCommand } from "./search-command";
 import { useSearchStore } from "./search-store";
 import enCommon from "../locales/en/common.json";
@@ -36,7 +36,6 @@ const {
   mockGetShareableUrl,
   mockMembers,
   mockAgents,
-  mockSquads,
   mockOpenModal,
   mockToastSuccess,
   mockClipboardWrite,
@@ -54,7 +53,7 @@ const {
   mockSetTheme: vi.fn(),
   mockTheme: { current: "system" as "light" | "dark" | "system" },
   mockPathname: { current: "/ws-test/issues" as string },
-  mockGetShareableUrl: vi.fn((p: string) => `https://app.multica/${p}`),
+  mockGetShareableUrl: vi.fn((p: string) => `https://app.liexiu/${p}`),
   mockMembers: {
     current: [] as Array<{
       id: string;
@@ -74,13 +73,6 @@ const {
       avatar_url: string | null;
     }>,
   },
-  mockSquads: {
-    current: [] as Array<{
-      id: string;
-      name: string;
-      avatar_url: string | null;
-    }>,
-  },
   mockOpenModal: vi.fn(),
   mockToastSuccess: vi.fn(),
   mockClipboardWrite: vi.fn(() => Promise.resolve()),
@@ -91,7 +83,7 @@ const {
   mockResolvedExpandAll: vi.fn(),
 }));
 
-vi.mock("@multica/core/api", () => ({
+vi.mock("@liexiu/core/api", () => ({
   api: {
     getBaseUrl: () => "http://127.0.0.1:8080",
     searchIssues: mockSearchIssues,
@@ -112,9 +104,7 @@ vi.mock("../common/actor-avatar", () => ({
         ? mockMembers.current.find((m) => m.user_id === actorId)?.name
         : actorType === "agent"
           ? mockAgents.current.find((a) => a.id === actorId)?.name
-          : actorType === "squad"
-            ? mockSquads.current.find((s) => s.id === actorId)?.name
-            : undefined;
+          : undefined;
     return (
       <span
         data-testid="issue-assignee-avatar"
@@ -124,7 +114,7 @@ vi.mock("../common/actor-avatar", () => ({
   },
 }));
 
-vi.mock("@multica/core/issues/stores", () => {
+vi.mock("@liexiu/core/issues/stores", () => {
   const EMPTY: Array<{ id: string; visitedAt: number }> = [];
   return {
     useRecentIssuesStore: (
@@ -156,16 +146,15 @@ vi.mock("@multica/core/issues/stores", () => {
   };
 });
 
-vi.mock("@multica/core", () => ({
+vi.mock("@liexiu/core", () => ({
   useWorkspaceId: () => "ws-test",
 }));
 
-vi.mock("@multica/core/paths", async (importOriginal) => ({
+vi.mock("@liexiu/core/paths", async (importOriginal) => ({
   // Spread the real module so pure helpers (resolveRouteIconName, used to
   // derive each nav page's icon from its href) stay intact.
-  ...(await importOriginal<typeof import("@multica/core/paths")>()),
+  ...(await importOriginal<typeof import("@liexiu/core/paths")>()),
   useWorkspacePaths: () => ({
-    inbox: () => "/ws-test/inbox",
     myIssues: () => "/ws-test/my-issues",
     issues: () => "/ws-test/issues",
     projects: () => "/ws-test/projects",
@@ -176,12 +165,11 @@ vi.mock("@multica/core/paths", async (importOriginal) => ({
     issueDetail: (id: string) => `/ws-test/issues/${id}`,
     memberDetail: (id: string) => `/ws-test/members/${id}`,
     agentDetail: (id: string) => `/ws-test/agents/${id}`,
-    squadDetail: (id: string) => `/ws-test/squads/${id}`,
     projectDetail: (id: string) => `/ws-test/projects/${id}`,
   }),
 }));
 
-vi.mock("@multica/core/issues/queries", () => ({
+vi.mock("@liexiu/core/issues/queries", () => ({
   issueDetailOptions: (_wsId: string, id: string) => ({
     queryKey: ["issues", "ws-test", "detail", id],
   }),
@@ -190,13 +178,11 @@ vi.mock("@multica/core/issues/queries", () => ({
   }),
 }));
 
-vi.mock("@multica/core/workspace/queries", () => ({
+vi.mock("@liexiu/core/workspace/queries", () => ({
   memberListOptions: () => ({ queryKey: ["workspaces", "ws-test", "members"] }),
-  agentListOptions: () => ({ queryKey: ["workspaces", "ws-test", "agents"] }),
-  squadListOptions: () => ({ queryKey: ["workspaces", "ws-test", "squads"] }),
 }));
 
-vi.mock("@multica/core/modals", () => ({
+vi.mock("@liexiu/core/modals", () => ({
   useModalStore: Object.assign(vi.fn(), {
     getState: () => ({ open: mockOpenModal }),
   }),
@@ -216,12 +202,6 @@ vi.mock("@tanstack/react-query", () => ({
     const key = opts.queryKey;
     if (key[0] === "workspaces" && key[2] === "members") {
       return { data: mockMembers.current };
-    }
-    if (key[0] === "workspaces" && key[2] === "agents") {
-      return { data: mockAgents.current };
-    }
-    if (key[0] === "workspaces" && key[2] === "squads") {
-      return { data: mockSquads.current };
     }
     if (opts.enabled === false) return { data: undefined };
     return { data: resolveIssue(key) };
@@ -251,7 +231,7 @@ vi.mock("../navigation/context", () => {
   };
 });
 
-vi.mock("@multica/ui/components/common/theme-provider", () => ({
+vi.mock("@liexiu/ui/components/common/theme-provider", () => ({
   useTheme: () => ({ theme: mockTheme.current, setTheme: mockSetTheme }),
 }));
 
@@ -267,11 +247,10 @@ describe("SearchCommand", () => {
     mockRecentItems.current = [];
     mockAllIssues.current = [];
     mockAgents.current = [];
-    mockSquads.current = [];
     mockSetTheme.mockReset();
     mockTheme.current = "system";
     mockPathname.current = "/ws-test/issues";
-    mockGetShareableUrl.mockReset().mockImplementation((p: string) => `https://app.multica/${p}`);
+    mockGetShareableUrl.mockReset().mockImplementation((p: string) => `https://app.liexiu/${p}`);
     mockMembers.current = [];
     mockOpenModal.mockReset();
     mockToastSuccess.mockReset();
@@ -335,7 +314,6 @@ describe("SearchCommand", () => {
       // HighlightText splits text, so use a function matcher
       expect(screen.getByText((_, el) => el?.textContent === "Settings" && el?.tagName === "SPAN")).toBeInTheDocument();
     });
-    expect(screen.queryByText("Inbox")).not.toBeInTheDocument();
   });
 
   it("navigates to page on selection", async () => {
@@ -364,7 +342,7 @@ describe("SearchCommand", () => {
     fireEvent.click(settingsItem, { metaKey: true });
 
     expect(open).toHaveBeenCalledWith(
-      "https://app.multica//ws-test/settings",
+      "https://app.liexiu//ws-test/settings",
       "_blank",
       "noopener,noreferrer",
     );
@@ -384,7 +362,7 @@ describe("SearchCommand", () => {
     fireEvent.keyDown(input, { key: "Enter", metaKey: true });
 
     expect(open).toHaveBeenCalledWith(
-      "https://app.multica//ws-test/settings",
+      "https://app.liexiu//ws-test/settings",
       "_blank",
       "noopener,noreferrer",
     );
@@ -539,7 +517,7 @@ describe("SearchCommand", () => {
     await user.click(linkItem);
 
     expect(mockGetShareableUrl).toHaveBeenCalledWith("/ws-test/issues/issue-1");
-    expect(mockClipboardWrite).toHaveBeenCalledWith("https://app.multica//ws-test/issues/issue-1");
+    expect(mockClipboardWrite).toHaveBeenCalledWith("https://app.liexiu//ws-test/issues/issue-1");
     expect(mockToastSuccess).toHaveBeenCalledWith("Link copied");
 
     // Reopen palette and test identifier copy

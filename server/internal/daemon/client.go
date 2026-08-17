@@ -13,7 +13,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/multica-ai/multica/server/pkg/protocol"
+	"github.com/kailonyang/liexiu/server/pkg/protocol"
 )
 
 // requestError is returned by postJSON/getJSON when the server responds with an error status.
@@ -87,7 +87,7 @@ func isRuntimeNotFoundError(err error) bool {
 	return strings.Contains(strings.ToLower(reqErr.Body), "runtime not found")
 }
 
-// Client handles HTTP communication with the Multica server daemon API.
+// Client handles HTTP communication with the LieXiu server daemon API.
 type Client struct {
 	baseURL string
 	token   string
@@ -359,7 +359,7 @@ type TaskCancelAck struct {
 // AckTaskCancelled tells the server this daemon observed the task's
 // cancellation and has finished flushing the transcript (runner.run only
 // returns after executeAndDrain's drain wait), so the server can settle its
-// deferred chat finalization now instead of waiting out the sweeper grace
+// deferred task finalization now instead of waiting out the sweeper grace
 // period (#5219). Idempotent server-side.
 //
 // Retried on transient errors like the complete/fail callbacks: when the ack
@@ -730,43 +730,6 @@ func (c *Client) getLegacyIssueGCChecks(ctx context.Context, issueIDs []string) 
 func (c *Client) GetIssueGCCheck(ctx context.Context, issueID string) (*IssueGCStatus, error) {
 	var resp IssueGCStatus
 	if err := c.getJSON(ctx, fmt.Sprintf("/api/daemon/issues/%s/gc-check", issueID), &resp); err != nil {
-		return nil, err
-	}
-	return &resp, nil
-}
-
-// ChatSessionGCStatus mirrors IssueGCStatus for chat sessions.
-type ChatSessionGCStatus struct {
-	Status    string    `json:"status"`
-	UpdatedAt time.Time `json:"updated_at"`
-}
-
-// GetChatSessionGCCheck returns the status of a chat session for GC decisions.
-// A 404 from this endpoint indicates the session row was hard-deleted (the
-// user explicitly removed it), which the caller treats as an immediate-clean
-// signal.
-func (c *Client) GetChatSessionGCCheck(ctx context.Context, sessionID string) (*ChatSessionGCStatus, error) {
-	var resp ChatSessionGCStatus
-	if err := c.getJSON(ctx, fmt.Sprintf("/api/daemon/chat-sessions/%s/gc-check", sessionID), &resp); err != nil {
-		return nil, err
-	}
-	return &resp, nil
-}
-
-// AutopilotRunGCStatus carries the status of an autopilot run. CompletedAt
-// is the run's terminal timestamp (zero for non-terminal runs). The GC loop
-// reclaims a terminal run's never-reused workdir as soon as it sees the
-// terminal status, so it no longer gates on CompletedAt; the field is kept for
-// the API response contract and diagnostics.
-type AutopilotRunGCStatus struct {
-	Status      string    `json:"status"`
-	CompletedAt time.Time `json:"completed_at"`
-}
-
-// GetAutopilotRunGCCheck returns the status of an autopilot run for GC decisions.
-func (c *Client) GetAutopilotRunGCCheck(ctx context.Context, runID string) (*AutopilotRunGCStatus, error) {
-	var resp AutopilotRunGCStatus
-	if err := c.getJSON(ctx, fmt.Sprintf("/api/daemon/autopilot-runs/%s/gc-check", runID), &resp); err != nil {
 		return nil, err
 	}
 	return &resp, nil

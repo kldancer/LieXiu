@@ -56,8 +56,6 @@ func TestConcurrentIndexCleanupsMatchTheirMigrations(t *testing.T) {
 		"273_agent_task_queue_runtime_id_index",
 		"274_task_token_workspace_id_index",
 		"275_task_token_agent_id_index",
-		"276_chat_draft_restore_task_id_index",
-		"277_autopilot_run_task_id_index",
 	} {
 		if _, ok := concurrentIndexCleanups[version]; !ok {
 			t.Errorf("%s: missing from concurrentIndexCleanups", version)

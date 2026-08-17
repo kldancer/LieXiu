@@ -25,7 +25,7 @@ func TestRequireHumanActor_AllowsHumanRequest(t *testing.T) {
 
 	mw := RequireHumanActor(next)
 
-	req := httptest.NewRequest(http.MethodGet, "/api/cloud-billing/balance", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/account/sensitive", nil)
 	// No X-Actor-Source — this is the JWT / mul_ PAT shape.
 	w := httptest.NewRecorder()
 	mw.ServeHTTP(w, req)
@@ -51,12 +51,12 @@ func TestRequireHumanActor_BlocksMachineCredentials(t *testing.T) {
 	}{
 		// mat_ task token — set in middleware/auth.go's mat_ branch.
 		// An agent process holding its task-scoped token must not be
-		// able to read its owner's billing data.
+		// able to access its owner's account-level data.
 		{name: "task_token", actorSource: "task_token"},
 		// mcn_ cloud-node PAT — set in BOTH middleware/auth.go and
 		// middleware/daemon_auth.go's mcn_ branches. A cloud-runtime
 		// EC2 node operating on the owner's behalf is the same kind
-		// of machine credential as mat_ for billing-authorization
+		// of machine credential as mat_ for account-level authorization
 		// purposes.
 		{name: "cloud_pat", actorSource: "cloud_pat"},
 	}
@@ -68,7 +68,7 @@ func TestRequireHumanActor_BlocksMachineCredentials(t *testing.T) {
 			})
 			mw := RequireHumanActor(next)
 
-			req := httptest.NewRequest(http.MethodGet, "/api/cloud-billing/balance", nil)
+			req := httptest.NewRequest(http.MethodGet, "/api/account/sensitive", nil)
 			// This is what the Auth (or DaemonAuth) middleware sets
 			// for the matching token kind. Setting it directly here
 			// proves the gate triggers on the header regardless of
@@ -101,13 +101,13 @@ func TestRequireHumanActor_BlocksMachineCredentials(t *testing.T) {
 //     `service_account` token), this gate's silence on the new value
 //     is a CONSCIOUS DECISION POINT, not an accident. The added auth
 //     branch is the right place to decide whether the new kind should
-//     be allowed at billing endpoints — and that decision belongs in
+//     be allowed at sensitive endpoints — and that decision belongs in
 //     a security review at the time, not in a default-deny rule here
 //     that pre-emptively shuts out hypothetical use cases we cannot
 //     reason about today.
 //
 // If you are reading this comment because a new actor kind needs to
-// reach billing or needs to be blocked from it, update
+// reach a sensitive account-level endpoint or needs to be blocked from it, update
 // RequireHumanActor to handle the new kind explicitly (and update
 // this test's expectation accordingly).
 func TestRequireHumanActor_IgnoresUnknownActorSource(t *testing.T) {
@@ -120,7 +120,7 @@ func TestRequireHumanActor_IgnoresUnknownActorSource(t *testing.T) {
 	mw := RequireHumanActor(next)
 
 	// A hypothetical future value the gate doesn't know about.
-	req := httptest.NewRequest(http.MethodGet, "/api/cloud-billing/balance", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/account/sensitive", nil)
 	req.Header.Set("X-Actor-Source", "future_kind")
 	w := httptest.NewRecorder()
 	mw.ServeHTTP(w, req)
@@ -133,25 +133,24 @@ func TestRequireHumanActor_IgnoresUnknownActorSource(t *testing.T) {
 	}
 }
 
-
 // TestRequireHumanActor_AppliedViaChiRouterUse pins the wiring side of
 // the contract: when the guard is attached to a chi route group via
 // r.Use, every endpoint in that group is protected, and a task-token
 // request never reaches the handler — even one we add later. This is
-// what router.go's r.Route("/api/cloud-billing", ...) + r.Use(...)
-// guarantees in production; the test is small but a developer adding
-// a new billing endpoint and forgetting to re-attach the middleware
+// what a protected account-level route group + r.Use(...) guarantees
+// in production; the test is small but a developer adding
+// a new sensitive endpoint and forgetting to re-attach the middleware
 // would not be caught by the per-handler tests above.
 func TestRequireHumanActor_AppliedViaChiRouterUse(t *testing.T) {
 	// Use a real chi router so we exercise r.Use(), not just the
 	// middleware function in isolation.
 	r := chi.NewRouter()
 	r.Use(RequireHumanActor)
-	r.Get("/billing/probe", func(_ http.ResponseWriter, _ *http.Request) {
+	r.Get("/account/sensitive", func(_ http.ResponseWriter, _ *http.Request) {
 		t.Fatal("inner handler must NOT run when guard rejects")
 	})
 
-	req := httptest.NewRequest(http.MethodGet, "/billing/probe", nil)
+	req := httptest.NewRequest(http.MethodGet, "/account/sensitive", nil)
 	req.Header.Set("X-Actor-Source", "task_token")
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)

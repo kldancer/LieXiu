@@ -2,8 +2,8 @@
 
 import { useQuery } from "@tanstack/react-query";
 import type { ReactNode } from "react";
-import type { RuntimeModel } from "@multica/core/types";
-import { runtimeModelsOptions } from "@multica/core/runtimes";
+import type { RuntimeModel } from "@liexiu/core/types";
+import { runtimeModelsOptions } from "@liexiu/core/runtimes";
 import { PropRow } from "../../../common/prop-row";
 import { SettingsRow } from "../../../settings/components/settings-layout";
 import { useT } from "../../../i18n";

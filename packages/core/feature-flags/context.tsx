@@ -70,8 +70,8 @@ export function FeatureFlagsProvider({
  * never throws. This keeps tests and stories independent of the provider.
  *
  * @example
- *   const showNewBilling = useFlag("billing_v2_dashboard", false);
- *   return showNewBilling ? <BillingV2 /> : <BillingV1 />;
+ *   const showNewSurface = useFlag("surface_v2", false);
+ *   return showNewSurface ? <SurfaceV2 /> : <SurfaceV1 />;
  */
 export function useFlag(key: string, defaultValue: boolean): boolean {
   const value = useContext(FeatureFlagContext);

@@ -3,7 +3,7 @@ import { Editor } from "@tiptap/core";
 import StarterKit from "@tiptap/starter-kit";
 import { Markdown } from "@tiptap/markdown";
 import { Slice } from "@tiptap/pm/model";
-import type { UploadResult } from "@multica/core/hooks/use-file-upload";
+import type { UploadResult } from "@liexiu/core/hooks/use-file-upload";
 import { ImageExtension, createEditorExtensions } from "./index";
 import { FileCardExtension } from "./file-card";
 import {
@@ -59,8 +59,6 @@ function makeUpload(
     workspace_id: "ws-1",
     issue_id: null,
     comment_id: null,
-    chat_session_id: null,
-    chat_message_id: null,
     uploader_type: "member",
     uploader_id: "user-1",
     url: overrides.link,

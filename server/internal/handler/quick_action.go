@@ -12,9 +12,9 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/multica-ai/multica/server/internal/logger"
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
-	"github.com/multica-ai/multica/server/pkg/protocol"
+	"github.com/kailonyang/liexiu/server/internal/logger"
+	db "github.com/kailonyang/liexiu/server/pkg/db/generated"
+	"github.com/kailonyang/liexiu/server/pkg/protocol"
 )
 
 // Issue Quick Actions (MUL-5465): workspace-level presets for "who to call and
@@ -23,8 +23,8 @@ import (
 // Contract highlights:
 //   - Running one is NOT a new dispatch path. It renders the prompt, posts an
 //     ordinary comment carrying the target's mention markup (marked with
-//     quick_action_id), and hands off to triggerTasksForComment. Permission, attribution, squad routing,
-//     the execution log, and pending-task coalescing are inherited from the
+//     quick_action_id), and hands off to triggerTasksForComment. Permission,
+//     attribution, the execution log, and pending-task coalescing are inherited from the
 //     comment path rather than reimplemented — the MUL-3375 lesson about four
 //     drifting copies of one trigger decision.
 //   - PERMISSION IS CHECKED IN EXACTLY ONE PLACE: RunQuickAction. The list
@@ -56,7 +56,7 @@ const (
 // quickActionTemplateTokenRe catches any `{{...}}` in a prompt.
 //
 // Templating is deliberately unsupported, but silence is not the same as
-// safety: someone carrying the habit over from autopilot's issue-title
+// safety: someone carrying the habit over from a legacy issue-title
 // template would otherwise have `{{issue.title}}` rendered literally into an
 // agent's instructions and never notice. Rejecting at write time is a fraction
 // of the cost of the interpolation engine it replaces, and it keeps the door
@@ -68,18 +68,18 @@ var quickActionTemplateTokenRe = regexp.MustCompile(`\{\{[^}]*\}\}`)
 // The prompt is appended verbatim to a comment that then runs through the
 // normal mention pipeline, so a mention inside it acts on every click:
 //
-//   - agent / squad / all -> enqueues a SECOND target beside the configured
+//   - agent / all -> enqueues a SECOND target beside the configured
 //     one, breaking the invariant the permission model rests on (a public
 //     action runs exactly the target it was validated against). The sidebar
 //     reports only the first outcome, so the extra run is invisible.
-//   - member -> notification_listeners.go adds them to the mention recipients
-//     and creates an inbox item, so a saved prompt pings that person on every
-//     single click. This one was initially allowed on the reasoning that it
-//     "only renders a link"; that was wrong.
+//   - member -> the ordinary mention pipeline adds them to the recipients,
+//     so a saved prompt pings that person on every single click. This one was
+//     initially allowed on the reasoning that it "only renders a link"; that
+//     was wrong.
 //
 // `mention://issue/...` is the sole exception: it renders as a link and
 // reaches nobody, so a prompt may legitimately point at related work.
-var quickActionSideEffectMentionRe = regexp.MustCompile(`mention://(agent|squad|member|all)/`)
+var quickActionSideEffectMentionRe = regexp.MustCompile(`mention://(agent|member|all)/`)
 
 // ---------------------------------------------------------------------------
 // Types
@@ -167,14 +167,14 @@ func validateQuickActionPrompt(raw string) (string, error) {
 		return "", fmt.Errorf("template variables are not supported yet; remove %s — the agent already reads this issue", token)
 	}
 	if quickActionSideEffectMentionRe.MatchString(prompt) {
-		return "", fmt.Errorf("the prompt cannot @mention an agent, squad, or person; a quick action reaches exactly the one target it is bound to (an issue link is fine)")
+		return "", fmt.Errorf("the prompt cannot @mention an agent or person; a quick action reaches exactly the one target it is bound to (an issue link is fine)")
 	}
 	return prompt, nil
 }
 
 func validateQuickActionAssignee(assigneeType, assigneeID string) error {
-	if assigneeType != "agent" && assigneeType != "squad" {
-		return fmt.Errorf("assignee_type must be \"agent\" or \"squad\"")
+	if assigneeType != "agent" {
+		return fmt.Errorf("assignee_type must be \"agent\"")
 	}
 	if strings.TrimSpace(assigneeID) == "" {
 		return fmt.Errorf("assignee_id is required")
@@ -199,8 +199,6 @@ func normalizeQuickActionVisibility(raw string) (string, error) {
 
 // quickActionTarget is the resolved execution target of an action: the agent
 // that will actually run, plus the display identity the client should show.
-// For a squad binding, Agent is the squad leader and Name is the SQUAD's name,
-// because the squad is what the user bound and what the mention will address.
 type quickActionTarget struct {
 	Agent     db.Agent
 	Name      string
@@ -208,42 +206,16 @@ type quickActionTarget struct {
 	// MentionType is the mention:// scheme the rendered comment must use so
 	// the existing trigger path routes it exactly as a hand-typed mention.
 	MentionType string
-	// MentionID is the id inside the mention link: the agent id, or the SQUAD
-	// id for a squad binding (the trigger path resolves the leader itself).
+	// MentionID is the agent id inside the mention link.
 	MentionID string
 	Found     bool
 }
 
 // resolveQuickActionTarget loads the execution target. A missing/archived
-// agent, or a missing/archived squad, resolves to Found=false — the caller
+// agent resolves to Found=false — the caller
 // renders that as an unavailable target rather than failing the whole list.
 func (h *Handler) resolveQuickActionTarget(ctx context.Context, qa db.QuickAction) quickActionTarget {
-	switch qa.AssigneeType {
-	case "squad":
-		squad, err := h.Queries.GetSquadInWorkspace(ctx, db.GetSquadInWorkspaceParams{
-			ID:          qa.AssigneeID,
-			WorkspaceID: qa.WorkspaceID,
-		})
-		if err != nil || squad.ArchivedAt.Valid {
-			return quickActionTarget{}
-		}
-		leader, err := h.Queries.GetAgent(ctx, squad.LeaderID)
-		if err != nil || leader.ArchivedAt.Valid {
-			return quickActionTarget{}
-		}
-		avatar := ""
-		if squad.AvatarUrl.Valid {
-			avatar = squad.AvatarUrl.String
-		}
-		return quickActionTarget{
-			Agent:       leader,
-			Name:        squad.Name,
-			AvatarURL:   avatar,
-			MentionType: "squad",
-			MentionID:   uuidToString(squad.ID),
-			Found:       true,
-		}
-	default:
+	if qa.AssigneeType == "agent" {
 		agent, err := h.Queries.GetAgent(ctx, qa.AssigneeID)
 		if err != nil || agent.ArchivedAt.Valid || uuidToString(agent.WorkspaceID) != uuidToString(qa.WorkspaceID) {
 			return quickActionTarget{}
@@ -261,6 +233,7 @@ func (h *Handler) resolveQuickActionTarget(ctx context.Context, qa db.QuickActio
 			Found:       true,
 		}
 	}
+	return quickActionTarget{}
 }
 
 // agentInvocableByEveryone reports whether every workspace member may invoke
@@ -287,15 +260,14 @@ func (h *Handler) agentInvocableByEveryone(ctx context.Context, agent db.Agent) 
 
 // quickActionCatalog is a batched resolver for the list endpoint.
 //
-// The single-row path issues a GetAgent (plus GetSquad) AND a
+// The single-row path issues a GetAgent and a
 // ListAgentInvocationTargets per action. At the 30-action cap that is 60-90
 // sequential round-trips on every sidebar and settings load. This loads the
-// workspace's agents, squads, and invocation targets in THREE queries and
+// workspace's agents and invocation targets in two queries and
 // answers from memory. Workspaces are small-team scale, so listing all agents
 // costs less than thirty point lookups.
 type quickActionCatalog struct {
 	agents map[string]db.Agent
-	squads map[string]db.Squad
 	// publicAgents holds agent ids every workspace member may invoke.
 	publicAgents map[string]bool
 }
@@ -303,7 +275,6 @@ type quickActionCatalog struct {
 func (h *Handler) loadQuickActionCatalog(ctx context.Context, workspaceID pgtype.UUID) quickActionCatalog {
 	cat := quickActionCatalog{
 		agents:       map[string]db.Agent{},
-		squads:       map[string]db.Squad{},
 		publicAgents: map[string]bool{},
 	}
 
@@ -318,12 +289,6 @@ func (h *Handler) loadQuickActionCatalog(ctx context.Context, workspaceID pgtype
 	for _, a := range agents {
 		cat.agents[uuidToString(a.ID)] = a
 		agentIDs = append(agentIDs, a.ID)
-	}
-
-	if squads, err := h.Queries.ListSquads(ctx, workspaceID); err == nil {
-		for _, sq := range squads {
-			cat.squads[uuidToString(sq.ID)] = sq
-		}
 	}
 
 	if len(agentIDs) > 0 {
@@ -343,18 +308,8 @@ func (h *Handler) loadQuickActionCatalog(ctx context.Context, workspaceID pgtype
 // entirely from the pre-loaded maps. The two must agree; the shared shape of
 // quickActionTarget is what keeps them honest.
 func (c quickActionCatalog) resolve(qa db.QuickAction) (quickActionTarget, bool) {
-	if qa.AssigneeType == "squad" {
-		squad, ok := c.squads[uuidToString(qa.AssigneeID)]
-		if !ok || squad.ArchivedAt.Valid {
-			return quickActionTarget{}, false
-		}
-		leader, ok := c.agents[uuidToString(squad.LeaderID)]
-		if !ok {
-			return quickActionTarget{}, false
-		}
-		name := squad.Name
-		return quickActionTarget{Agent: leader, Name: name, Found: true},
-			c.publicAgents[uuidToString(leader.ID)] && leader.PermissionMode == "public_to"
+	if qa.AssigneeType != "agent" {
+		return quickActionTarget{}, false
 	}
 	agent, ok := c.agents[uuidToString(qa.AssigneeID)]
 	if !ok {
@@ -654,7 +609,7 @@ func (h *Handler) UpdateQuickAction(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// assignee_type and assignee_id move together so a type swap can never
-	// land with a mismatched id (the same rule autopilot enforces). The
+	// land with a mismatched id. The
 	// binding is re-validated against the RESULTING visibility, so flipping an
 	// action to public with a private agent still bound is caught here.
 	newType := existing.AssigneeType
@@ -904,7 +859,7 @@ func (h *Handler) RunQuickAction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	resp := commentToResponse(comment, nil, nil)
+	resp := commentToResponse(comment, nil)
 	h.publish(protocol.EventCommentCreated, workspaceID, actorType, actorID, map[string]any{
 		"comment":             resp,
 		"issue_title":         issue.Title,
@@ -913,8 +868,7 @@ func (h *Handler) RunQuickAction(w http.ResponseWriter, r *http.Request) {
 		"issue_status":        issue.Status,
 	})
 
-	delegationAuthority := h.autopilotDelegationAuthorityFromRequest(r, issue, actorType, actorID)
-	resp.TriggerOutcomes = h.triggerTasksForComment(r.Context(), issue, comment, nil, actorType, actorID, originatorUserID, delegationAuthority, nil)
+	resp.TriggerOutcomes = h.triggerTasksForComment(r.Context(), issue, comment, nil, actorType, actorID, originatorUserID, nil)
 
 	// Usage telemetry is best-effort and deliberately outside the run's
 	// success path: a failed counter must never cost the user the run.

@@ -49,12 +49,12 @@ func NewService(provider Provider, opts ...Option) *Service {
 // errors, the supplied default is returned so business code can ship with
 // confidence that a missing flag never crashes a request.
 //
-// IsEnabled is the most common Toggle Point in business code:
+// IsEnabled is the most common Toggle Point for a feature flag:
 //
-//	if flags.IsEnabled(ctx, "billing_new_invoice_email", false) {
-//	    return s.sendNewInvoiceEmail(ctx, invoice)
+//	if flags.IsEnabled(ctx, "demo_flag", false) {
+//	return enableNewFlow()
 //	}
-//	return s.sendLegacyInvoiceEmail(ctx, invoice)
+//	return useLegacyFlow()
 func (s *Service) IsEnabled(ctx context.Context, key string, defaultVal bool) bool {
 	return s.Decision(ctx, key, defaultVal).Enabled
 }

@@ -1,4 +1,4 @@
-.PHONY: help makehelp dev server daemon cli multica build test migrate-up migrate-down sqlc seed clean setup start stop check worktree-env setup-main start-main stop-main check-main setup-worktree start-worktree stop-worktree check-worktree remove-worktree db-up db-down db-drop db-reset selfhost selfhost-build selfhost-stop
+.PHONY: help makehelp dev server daemon cli liexiu build test migrate-up migrate-down sqlc seed clean setup start stop check worktree-env setup-main start-main stop-main check-main setup-worktree start-worktree stop-worktree check-worktree remove-worktree db-up db-down db-drop db-reset selfhost selfhost-build selfhost-stop
 
 MAIN_ENV_FILE ?= .env
 WORKTREE_ENV_FILE ?= .env.worktree
@@ -8,27 +8,27 @@ ifneq ($(wildcard $(ENV_FILE)),)
 include $(ENV_FILE)
 endif
 
-POSTGRES_DB ?= multica
-POSTGRES_USER ?= multica
-POSTGRES_PASSWORD ?= multica
+POSTGRES_DB ?= liexiu
+POSTGRES_USER ?= liexiu
+POSTGRES_PASSWORD ?= liexiu
 POSTGRES_PORT ?= 5432
+SQLC_VERSION ?= v1.31.1
 PORT := $(or $(BACKEND_PORT),$(API_PORT),$(SERVER_PORT),$(PORT),8080)
-ifeq ($(origin MULTICA_PUBLIC_URL), undefined)
-MULTICA_PUBLIC_URL := http://localhost:$(PORT)
+ifeq ($(origin LIEXIU_PUBLIC_URL), undefined)
+LIEXIU_PUBLIC_URL := http://localhost:$(PORT)
 endif
 FRONTEND_PORT ?= 3000
 FRONTEND_ORIGIN ?= http://localhost:$(FRONTEND_PORT)
-MULTICA_APP_URL ?= $(FRONTEND_ORIGIN)
+LIEXIU_APP_URL ?= $(FRONTEND_ORIGIN)
 DATABASE_URL ?= postgres://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@localhost:$(POSTGRES_PORT)/$(POSTGRES_DB)?sslmode=disable
 NEXT_PUBLIC_API_URL ?= http://localhost:$(PORT)
 NEXT_PUBLIC_WS_URL ?= ws://localhost:$(PORT)/ws
-GOOGLE_REDIRECT_URI ?= $(FRONTEND_ORIGIN)/auth/callback
-MULTICA_SERVER_URL ?= ws://localhost:$(PORT)/ws
+LIEXIU_SERVER_URL ?= ws://localhost:$(PORT)/ws
 LOCAL_UPLOAD_BASE_URL ?= http://localhost:$(PORT)
 
 export
 
-MULTICA_ARGS ?= $(ARGS)
+LIEXIU_ARGS ?= $(ARGS)
 
 COMPOSE := docker compose
 
@@ -85,30 +85,33 @@ selfhost: ## Create .env if needed, then pull and start the official self-hosted
 		echo "==> Creating .env from .env.example..."; \
 		cp .env.example .env; \
 		JWT=$$(openssl rand -hex 32); \
+		OWNERKEY=$$(openssl rand -hex 32); \
 		PGPASS=$$(openssl rand -hex 24); \
 		VCSKEY=$$(openssl rand -base64 32); \
 		if [ "$$(uname)" = "Darwin" ]; then \
 			sed -i '' "s/^JWT_SECRET=.*/JWT_SECRET=$$JWT/" .env; \
+			sed -i '' "s/^LIEXIU_OWNER_BOOTSTRAP_SECRET=.*/LIEXIU_OWNER_BOOTSTRAP_SECRET=$$OWNERKEY/" .env; \
 			sed -i '' "s/^POSTGRES_PASSWORD=.*/POSTGRES_PASSWORD=$$PGPASS/" .env; \
 			sed -i '' -E "s#^(DATABASE_URL=postgres://[^:]+:)[^@]*(@.*)#\1$$PGPASS\2#" .env; \
-			sed -i '' "s#^MULTICA_VCS_SECRET_KEY=.*#MULTICA_VCS_SECRET_KEY=$$VCSKEY#" .env; \
+			sed -i '' "s#^LIEXIU_VCS_SECRET_KEY=.*#LIEXIU_VCS_SECRET_KEY=$$VCSKEY#" .env; \
 		else \
 			sed -i "s/^JWT_SECRET=.*/JWT_SECRET=$$JWT/" .env; \
+			sed -i "s/^LIEXIU_OWNER_BOOTSTRAP_SECRET=.*/LIEXIU_OWNER_BOOTSTRAP_SECRET=$$OWNERKEY/" .env; \
 			sed -i "s/^POSTGRES_PASSWORD=.*/POSTGRES_PASSWORD=$$PGPASS/" .env; \
 			sed -i -E "s#^(DATABASE_URL=postgres://[^:]+:)[^@]*(@.*)#\1$$PGPASS\2#" .env; \
-			sed -i "s#^MULTICA_VCS_SECRET_KEY=.*#MULTICA_VCS_SECRET_KEY=$$VCSKEY#" .env; \
+			sed -i "s#^LIEXIU_VCS_SECRET_KEY=.*#LIEXIU_VCS_SECRET_KEY=$$VCSKEY#" .env; \
 		fi; \
-		echo "==> Generated random JWT_SECRET, POSTGRES_PASSWORD, and MULTICA_VCS_SECRET_KEY"; \
+		echo "==> Generated random JWT_SECRET, LIEXIU_OWNER_BOOTSTRAP_SECRET, POSTGRES_PASSWORD, and LIEXIU_VCS_SECRET_KEY"; \
 	fi
-	@echo "==> Pulling official Multica images..."
+	@echo "==> Pulling official LieXiu images..."
 	@if ! $(COMPOSE) -f docker-compose.selfhost.yml pull; then \
 		echo ""; \
-		echo "Official images for tag '$${MULTICA_IMAGE_TAG:-latest}' are not published yet."; \
+		echo "Official images for tag '$${LIEXIU_IMAGE_TAG:-latest}' are not published yet."; \
 		echo "If this is before the first GHCR release, build from the current checkout:"; \
 		echo "  make selfhost-build"; \
 		exit 1; \
 	fi
-	@echo "==> Starting Multica via Docker Compose..."
+	@echo "==> Starting LieXiu via Docker Compose..."
 	$(COMPOSE) -f docker-compose.selfhost.yml up -d
 	@bash scripts/selfhost-wait.sh official
 
@@ -118,28 +121,31 @@ selfhost-build: ## Build backend/web from the current checkout and start the sel
 		echo "==> Creating .env from .env.example..."; \
 		cp .env.example .env; \
 		JWT=$$(openssl rand -hex 32); \
+		OWNERKEY=$$(openssl rand -hex 32); \
 		PGPASS=$$(openssl rand -hex 24); \
 		VCSKEY=$$(openssl rand -base64 32); \
 		if [ "$$(uname)" = "Darwin" ]; then \
 			sed -i '' "s/^JWT_SECRET=.*/JWT_SECRET=$$JWT/" .env; \
+			sed -i '' "s/^LIEXIU_OWNER_BOOTSTRAP_SECRET=.*/LIEXIU_OWNER_BOOTSTRAP_SECRET=$$OWNERKEY/" .env; \
 			sed -i '' "s/^POSTGRES_PASSWORD=.*/POSTGRES_PASSWORD=$$PGPASS/" .env; \
 			sed -i '' -E "s#^(DATABASE_URL=postgres://[^:]+:)[^@]*(@.*)#\1$$PGPASS\2#" .env; \
-			sed -i '' "s#^MULTICA_VCS_SECRET_KEY=.*#MULTICA_VCS_SECRET_KEY=$$VCSKEY#" .env; \
+			sed -i '' "s#^LIEXIU_VCS_SECRET_KEY=.*#LIEXIU_VCS_SECRET_KEY=$$VCSKEY#" .env; \
 		else \
 			sed -i "s/^JWT_SECRET=.*/JWT_SECRET=$$JWT/" .env; \
+			sed -i "s/^LIEXIU_OWNER_BOOTSTRAP_SECRET=.*/LIEXIU_OWNER_BOOTSTRAP_SECRET=$$OWNERKEY/" .env; \
 			sed -i "s/^POSTGRES_PASSWORD=.*/POSTGRES_PASSWORD=$$PGPASS/" .env; \
 			sed -i -E "s#^(DATABASE_URL=postgres://[^:]+:)[^@]*(@.*)#\1$$PGPASS\2#" .env; \
-			sed -i "s#^MULTICA_VCS_SECRET_KEY=.*#MULTICA_VCS_SECRET_KEY=$$VCSKEY#" .env; \
+			sed -i "s#^LIEXIU_VCS_SECRET_KEY=.*#LIEXIU_VCS_SECRET_KEY=$$VCSKEY#" .env; \
 		fi; \
-		echo "==> Generated random JWT_SECRET, POSTGRES_PASSWORD, and MULTICA_VCS_SECRET_KEY"; \
+		echo "==> Generated random JWT_SECRET, LIEXIU_OWNER_BOOTSTRAP_SECRET, POSTGRES_PASSWORD, and LIEXIU_VCS_SECRET_KEY"; \
 	fi
-	@echo "==> Building Multica from the current checkout..."
+	@echo "==> Building LieXiu from the current checkout..."
 	$(COMPOSE) -f docker-compose.selfhost.yml -f docker-compose.selfhost.build.yml up -d --build
 	@bash scripts/selfhost-wait.sh build
 
 selfhost-stop: ## Stop the self-hosted Docker Compose stack
 	$(REQUIRE_COMPOSE)
-	@echo "==> Stopping Multica services..."
+	@echo "==> Stopping LieXiu services..."
 	$(COMPOSE) -f docker-compose.selfhost.yml down
 	@echo "✓ All services stopped."
 
@@ -267,13 +273,13 @@ server: ## Run only the Go server for the current checkout
 	cd server && go run ./cmd/server
 
 daemon: ## Restart the local agent daemon using the CLI's stored auth/session
-	@$(MAKE) multica MULTICA_ARGS="daemon restart --profile local"
+	@$(MAKE) liexiu LIEXIU_ARGS="daemon restart --profile local"
 
-cli: ## Run the multica CLI with ARGS or MULTICA_ARGS from source
-	@$(MAKE) multica MULTICA_ARGS="$(MULTICA_ARGS)"
+cli: ## Run the liexiu CLI with ARGS or LIEXIU_ARGS from source
+	@$(MAKE) liexiu LIEXIU_ARGS="$(LIEXIU_ARGS)"
 
-multica: ## Run the multica CLI entrypoint directly from the Go source tree
-	cd server && go run -ldflags "-X main.version=$(VERSION) -X main.commit=$(COMMIT) -X main.date=$(DATE)" ./cmd/multica $(MULTICA_ARGS)
+liexiu: ## Run the liexiu CLI entrypoint directly from the Go source tree
+	cd server && go run -ldflags "-X main.version=$(VERSION) -X main.commit=$(COMMIT) -X main.date=$(DATE)" ./cmd/liexiu $(LIEXIU_ARGS)
 
 VERSION ?= $(shell git describe --tags --match 'v[0-9]*' --always --dirty 2>/dev/null || echo dev)
 COMMIT  ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
@@ -281,7 +287,7 @@ DATE    ?= $(shell date -u '+%Y-%m-%dT%H:%M:%SZ')
 
 build: ## Build the server, CLI, and migrate binaries into server/bin
 	cd server && go build -ldflags "-X main.version=$(VERSION) -X main.commit=$(COMMIT)" -o bin/server ./cmd/server
-	cd server && go build -ldflags "-X main.version=$(VERSION) -X main.commit=$(COMMIT) -X main.date=$(DATE)" -o bin/multica ./cmd/multica
+	cd server && go build -ldflags "-X main.version=$(VERSION) -X main.commit=$(COMMIT) -X main.date=$(DATE)" -o bin/liexiu ./cmd/liexiu
 	cd server && go build -o bin/migrate ./cmd/migrate
 
 test: ## Run Go tests after ensuring the target DB exists and migrations are applied
@@ -304,14 +310,14 @@ migrate-down: ## Create the target DB if needed, then roll back database migrati
 	cd server && go run ./cmd/migrate down
 
 sqlc: ## Regenerate sqlc code
-	cd server && sqlc generate
+	go -C server run github.com/sqlc-dev/sqlc/cmd/sqlc@$(SQLC_VERSION) generate
 
 # Cleanup
 ##@ Cleanup
 
 clean: ## Remove build caches, generated binaries, and temp files
 	rm -rf server/bin server/tmp
-	rm -rf apps/*/.next apps/*/.source apps/*/.expo
+	rm -rf apps/*/.next apps/*/.source
 	rm -rf apps/*/out apps/*/dist apps/*/dist-electron packages/*/dist
 	rm -rf .turbo apps/*/.turbo packages/*/.turbo
 	rm -rf apps/*/*.tsbuildinfo packages/*/*.tsbuildinfo

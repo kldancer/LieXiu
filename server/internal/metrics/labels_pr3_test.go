@@ -10,8 +10,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/multica-ai/multica/server/internal/analytics"
-	"github.com/multica-ai/multica/server/internal/metrics"
+	"github.com/kailonyang/liexiu/server/internal/analytics"
+	"github.com/kailonyang/liexiu/server/internal/metrics"
 )
 
 func TestNormalizePR3LabelsCollapseUnknownValues(t *testing.T) {
@@ -31,12 +31,6 @@ func TestNormalizePR3LabelsCollapseUnknownValues(t *testing.T) {
 		{"signup_source_json_utm", metrics.NormalizeSignupSource, `{"utm_source":"twitter","utm_medium":"social"}`, "twitter", "other"},
 		{"signup_source_url_host", metrics.NormalizeSignupSource, "https://news.ycombinator.com/item?id=42", "hacker_news", "other"},
 		{"onboarding_path_unknown", metrics.NormalizeOnboardingPath, "ab-experiment-123", "unknown", "unknown"},
-		{"autopilot_cadence_unknown", metrics.NormalizeAutopilotCadence, "every_5_min", "unknown", "unknown"},
-		{"autopilot_trigger_unknown", metrics.NormalizeAutopilotTrigger, "future_kind", "unknown", "unknown"},
-		{"autopilot_skip_reason_unknown", metrics.NormalizeAutopilotSkipReason, "lunar_phase", "other", "other"},
-		{"webhook_provider_unknown", metrics.NormalizeWebhookProvider, "internal-billing", "other", "other"},
-		{"webhook_status_unknown", metrics.NormalizeWebhookDeliveryStatus, "exotic", "other", "other"},
-		{"webhook_gate_unknown", metrics.NormalizeWebhookRateLimitGate, "exotic", "other", "other"},
 		{"github_event_unknown", metrics.NormalizeGithubEventKind, "deploy_status", "other", "other"},
 		{"github_action_empty", metrics.NormalizeGithubAction, "", "none", "none"},
 		{"github_action_unknown", metrics.NormalizeGithubAction, "rerequested_by_user", "other", "other"},
@@ -46,8 +40,6 @@ func TestNormalizePR3LabelsCollapseUnknownValues(t *testing.T) {
 		{"cloudruntime_status_5xx_string", metrics.NormalizeCloudRuntimeStatus, "503", "5xx", "error"},
 		{"cloudruntime_status_garbage", metrics.NormalizeCloudRuntimeStatus, "lol", "error", "error"},
 		{"daemon_ws_kind_unknown", metrics.NormalizeDaemonWSKind, "future_event", "other", "other"},
-		{"feedback_kind_unknown", metrics.NormalizeFeedbackKind, "rant", "other", "other"},
-		{"contact_sales_source_unknown", metrics.NormalizeContactSalesSource, "homepage_modal", "other", "other"},
 	}
 
 	for _, tt := range tests {
@@ -85,7 +77,7 @@ func TestOnboardingStartedUnknownPlatformCollapses(t *testing.T) {
 	// present: web and unknown. Anything else means the raw header
 	// leaked into the label.
 	families := metrics.GatherForTest(t, m)
-	famName := "multica_onboarding_started_total"
+	famName := "liexiu_onboarding_started_total"
 	fam, ok := families[famName]
 	if !ok {
 		t.Fatalf("metric family %s not present in registry output", famName)

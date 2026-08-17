@@ -1,6 +1,6 @@
 import { useParams, useSearchParams } from "react-router-dom";
-import { AttachmentPreviewPage } from "@multica/views/attachments";
-import { ErrorBoundary } from "@multica/ui/components/common/error-boundary";
+import { AttachmentPreviewPage } from "@liexiu/views/attachments";
+import { ErrorBoundary } from "@liexiu/ui/components/common/error-boundary";
 
 export function AttachmentPreviewRoute() {
   const { id } = useParams<{ id: string }>();

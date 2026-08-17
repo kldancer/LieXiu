@@ -1,15 +1,12 @@
 package metrics
 
 import (
-	"github.com/multica-ai/multica/server/internal/analytics"
+	"github.com/kailonyang/liexiu/server/internal/analytics"
 	"github.com/prometheus/client_golang/prometheus"
 )
 
-// PR3: funnel / commercial / community counters paired with PostHog events.
-//
-// Every PostHog Capture(...) call site goes through metrics.RecordEvent(...)
-// (see event_recorder.go) so the two sides cannot drift. Lint test in
-// business_pairing_test.go enforces that.
+// Local funnel and execution counters. Events are dispatched only to bounded
+// Prometheus collectors and are never transmitted to an external service.
 
 // runtimeReadyBuckets covers cold-start runtime readiness from <1s to ~5min.
 // Most provider boots land in 5–60s; the long tail catches stuck pulls.
@@ -40,10 +37,7 @@ type businessEventMetrics struct {
 	onboardingCompleted             *prometheus.CounterVec
 	cloudWaitlistJoined             *prometheus.CounterVec
 	issueCreated                    *prometheus.CounterVec
-	chatMessageSent                 *prometheus.CounterVec
 	agentCreated                    *prometheus.CounterVec
-	squadCreated                    *prometheus.CounterVec
-	autopilotCreated                *prometheus.CounterVec
 	issueExecuted                   *prometheus.CounterVec
 	runtimeRegistered               *prometheus.CounterVec
 	runtimeReady                    *prometheus.CounterVec
@@ -51,162 +45,110 @@ type businessEventMetrics struct {
 	runtimeFailed                   *prometheus.CounterVec
 	runtimeOffline                  *prometheus.CounterVec
 	daemonWSMessageReceived         *prometheus.CounterVec
-	autopilotRunStarted             *prometheus.CounterVec
-	autopilotRunTerminal            *prometheus.CounterVec
-	autopilotRunSkipped             *prometheus.CounterVec
-	webhookDelivery                 *prometheus.CounterVec
-	webhookRateLimited              *prometheus.CounterVec
 	githubEventReceived             *prometheus.CounterVec
 	githubPRReview                  *prometheus.CounterVec
 	githubPRMergeSeconds            prometheus.Histogram
 	cloudRuntimeRequest             *prometheus.CounterVec
 	cloudRuntimeRequestDurationSecs *prometheus.HistogramVec
-	feedbackSubmitted               *prometheus.CounterVec
-	contactSalesSubmitted           *prometheus.CounterVec
-	chatOutputLocalPath             *prometheus.CounterVec
 }
 
 func newBusinessEventMetrics() *businessEventMetrics {
 	return &businessEventMetrics{
 		signup: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "multica_signup_total",
+			Name: "liexiu_signup_total",
 			Help: "Total user signups (account creations).",
-		}, metricLabels("multica_signup_total")),
+		}, metricLabels("liexiu_signup_total")),
 		workspaceCreated: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "multica_workspace_created_total",
+			Name: "liexiu_workspace_created_total",
 			Help: "Total workspaces created.",
-		}, metricLabels("multica_workspace_created_total")),
+		}, metricLabels("liexiu_workspace_created_total")),
 		teamInviteSent: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "multica_team_invite_sent_total",
+			Name: "liexiu_team_invite_sent_total",
 			Help: "Total workspace invitations sent.",
-		}, metricLabels("multica_team_invite_sent_total")),
+		}, metricLabels("liexiu_team_invite_sent_total")),
 		teamInviteAccepted: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "multica_team_invite_accepted_total",
+			Name: "liexiu_team_invite_accepted_total",
 			Help: "Total workspace invitations accepted.",
-		}, metricLabels("multica_team_invite_accepted_total")),
+		}, metricLabels("liexiu_team_invite_accepted_total")),
 		onboardingStarted: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "multica_onboarding_started_total",
+			Name: "liexiu_onboarding_started_total",
 			Help: "Total onboarding flows started.",
-		}, metricLabels("multica_onboarding_started_total")),
+		}, metricLabels("liexiu_onboarding_started_total")),
 		onboardingQuestionnaireSubmit: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "multica_onboarding_questionnaire_submitted_total",
+			Name: "liexiu_onboarding_questionnaire_submitted_total",
 			Help: "Total onboarding questionnaires submitted.",
-		}, metricLabels("multica_onboarding_questionnaire_submitted_total")),
+		}, metricLabels("liexiu_onboarding_questionnaire_submitted_total")),
 		onboardingSourceSubmit: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "multica_onboarding_source_submitted_total",
+			Name: "liexiu_onboarding_source_submitted_total",
 			Help: "Total acquisition-source answers or declines recorded (workspace backfill prompt).",
-		}, metricLabels("multica_onboarding_source_submitted_total")),
+		}, metricLabels("liexiu_onboarding_source_submitted_total")),
 		onboardingCompleted: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "multica_onboarding_completed_total",
+			Name: "liexiu_onboarding_completed_total",
 			Help: "Total onboarding flows completed.",
-		}, metricLabels("multica_onboarding_completed_total")),
+		}, metricLabels("liexiu_onboarding_completed_total")),
 		cloudWaitlistJoined: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "multica_cloud_waitlist_joined_total",
+			Name: "liexiu_cloud_waitlist_joined_total",
 			Help: "Total users that joined the cloud waitlist.",
-		}, metricLabels("multica_cloud_waitlist_joined_total")),
+		}, metricLabels("liexiu_cloud_waitlist_joined_total")),
 		issueCreated: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "multica_issue_created_total",
+			Name: "liexiu_issue_created_total",
 			Help: "Total issues created (any source).",
-		}, metricLabels("multica_issue_created_total")),
-		chatMessageSent: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "multica_chat_message_sent_total",
-			Help: "Total user chat messages sent (excludes agent replies).",
-		}, metricLabels("multica_chat_message_sent_total")),
+		}, metricLabels("liexiu_issue_created_total")),
 		agentCreated: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "multica_agent_created_total",
+			Name: "liexiu_agent_created_total",
 			Help: "Total agents created.",
-		}, metricLabels("multica_agent_created_total")),
-		squadCreated: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "multica_squad_created_total",
-			Help: "Total squads created.",
-		}, metricLabels("multica_squad_created_total")),
-		autopilotCreated: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "multica_autopilot_created_total",
-			Help: "Total autopilots created.",
-		}, metricLabels("multica_autopilot_created_total")),
+		}, metricLabels("liexiu_agent_created_total")),
 		issueExecuted: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "multica_issue_executed_total",
+			Name: "liexiu_issue_executed_total",
 			Help: "First task completion per issue (per-issue exactly-once activation keystone).",
-		}, metricLabels("multica_issue_executed_total")),
+		}, metricLabels("liexiu_issue_executed_total")),
 		runtimeRegistered: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "multica_runtime_registered_total",
+			Name: "liexiu_runtime_registered_total",
 			Help: "Total first-time runtime registrations.",
-		}, metricLabels("multica_runtime_registered_total")),
+		}, metricLabels("liexiu_runtime_registered_total")),
 		runtimeReady: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "multica_runtime_ready_total",
+			Name: "liexiu_runtime_ready_total",
 			Help: "Total runtimes that reached ready state.",
-		}, metricLabels("multica_runtime_ready_total")),
+		}, metricLabels("liexiu_runtime_ready_total")),
 		runtimeReadySeconds: prometheus.NewHistogramVec(prometheus.HistogramOpts{
-			Name:    "multica_runtime_ready_seconds",
+			Name:    "liexiu_runtime_ready_seconds",
 			Help:    "Time from runtime registration to ready (seconds).",
 			Buckets: runtimeReadyBuckets,
-		}, metricLabels("multica_runtime_ready_seconds")),
+		}, metricLabels("liexiu_runtime_ready_seconds")),
 		runtimeFailed: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "multica_runtime_failed_total",
+			Name: "liexiu_runtime_failed_total",
 			Help: "Total runtime failures by canonical reason.",
-		}, metricLabels("multica_runtime_failed_total")),
+		}, metricLabels("liexiu_runtime_failed_total")),
 		runtimeOffline: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "multica_runtime_offline_total",
+			Name: "liexiu_runtime_offline_total",
 			Help: "Total runtime offline transitions.",
-		}, metricLabels("multica_runtime_offline_total")),
+		}, metricLabels("liexiu_runtime_offline_total")),
 		daemonWSMessageReceived: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "multica_daemon_ws_message_received_total",
+			Name: "liexiu_daemon_ws_message_received_total",
 			Help: "Total daemon WebSocket inbound messages by handler kind.",
-		}, metricLabels("multica_daemon_ws_message_received_total")),
-		autopilotRunStarted: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "multica_autopilot_run_started_total",
-			Help: "Total autopilot runs started.",
-		}, metricLabels("multica_autopilot_run_started_total")),
-		autopilotRunTerminal: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "multica_autopilot_run_terminal_total",
-			Help: "Total autopilot runs that reached a terminal status.",
-		}, metricLabels("multica_autopilot_run_terminal_total")),
-		autopilotRunSkipped: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "multica_autopilot_run_skipped_total",
-			Help: "Total autopilot runs that admission-skipped (concurrency / cooldown / other).",
-		}, metricLabels("multica_autopilot_run_skipped_total")),
-		webhookDelivery: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "multica_webhook_delivery_total",
-			Help: "Total inbound webhook deliveries by provider and outcome.",
-		}, metricLabels("multica_webhook_delivery_total")),
-		webhookRateLimited: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "multica_webhook_rate_limited_total",
-			Help: "Total webhook admissions or worker dispatches delayed by a bounded safety gate.",
-		}, metricLabels("multica_webhook_rate_limited_total")),
+		}, metricLabels("liexiu_daemon_ws_message_received_total")),
 		githubEventReceived: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "multica_github_event_received_total",
+			Name: "liexiu_github_event_received_total",
 			Help: "Total GitHub webhook events received by event kind and action.",
-		}, metricLabels("multica_github_event_received_total")),
+		}, metricLabels("liexiu_github_event_received_total")),
 		githubPRReview: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "multica_github_pr_review_total",
+			Name: "liexiu_github_pr_review_total",
 			Help: "Total GitHub pull request reviews observed by result.",
-		}, metricLabels("multica_github_pr_review_total")),
+		}, metricLabels("liexiu_github_pr_review_total")),
 		githubPRMergeSeconds: prometheus.NewHistogram(prometheus.HistogramOpts{
-			Name:    "multica_github_pr_merge_seconds",
+			Name:    "liexiu_github_pr_merge_seconds",
 			Help:    "Time from PR opened to merged (seconds).",
 			Buckets: prMergeSecondsBuckets,
 		}),
 		cloudRuntimeRequest: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "multica_cloudruntime_request_total",
+			Name: "liexiu_cloudruntime_request_total",
 			Help: "Total outbound cloud runtime requests by op and status bucket.",
-		}, metricLabels("multica_cloudruntime_request_total")),
+		}, metricLabels("liexiu_cloudruntime_request_total")),
 		cloudRuntimeRequestDurationSecs: prometheus.NewHistogramVec(prometheus.HistogramOpts{
-			Name:    "multica_cloudruntime_request_duration_seconds",
+			Name:    "liexiu_cloudruntime_request_duration_seconds",
 			Help:    "Outbound cloud runtime request duration (seconds).",
 			Buckets: cloudRuntimeRequestBuckets,
-		}, metricLabels("multica_cloudruntime_request_duration_seconds")),
-		feedbackSubmitted: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "multica_feedback_submitted_total",
-			Help: "Total in-app feedback submissions.",
-		}, metricLabels("multica_feedback_submitted_total")),
-		contactSalesSubmitted: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "multica_contact_sales_submitted_total",
-			Help: "Total contact-sales inquiries submitted.",
-		}, metricLabels("multica_contact_sales_submitted_total")),
-		chatOutputLocalPath: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "multica_chat_output_local_path_total",
-			Help: "Total agent chat replies that referenced a runtime-local path, by evidence kind. Observation only — the reply is still delivered.",
-		}, metricLabels("multica_chat_output_local_path_total")),
+		}, metricLabels("liexiu_cloudruntime_request_duration_seconds")),
 	}
 }
 
@@ -225,10 +167,7 @@ func (e *businessEventMetrics) collectors() []prometheus.Collector {
 		e.onboardingCompleted,
 		e.cloudWaitlistJoined,
 		e.issueCreated,
-		e.chatMessageSent,
 		e.agentCreated,
-		e.squadCreated,
-		e.autopilotCreated,
 		e.issueExecuted,
 		e.runtimeRegistered,
 		e.runtimeReady,
@@ -236,41 +175,18 @@ func (e *businessEventMetrics) collectors() []prometheus.Collector {
 		e.runtimeFailed,
 		e.runtimeOffline,
 		e.daemonWSMessageReceived,
-		e.autopilotRunStarted,
-		e.autopilotRunTerminal,
-		e.autopilotRunSkipped,
-		e.webhookDelivery,
-		e.webhookRateLimited,
 		e.githubEventReceived,
 		e.githubPRReview,
 		e.githubPRMergeSeconds,
 		e.cloudRuntimeRequest,
 		e.cloudRuntimeRequestDurationSecs,
-		e.feedbackSubmitted,
-		e.contactSalesSubmitted,
-		e.chatOutputLocalPath,
 	}
 }
 
-// RecordEvent increments the matching Prometheus counter and, for any event
-// that still ships to PostHog, enqueues the PostHog event too — so the two
-// cannot drift. Pass `client = nil` (no PostHog) or `m = nil` (no metrics)
-// safely; both sides are best-effort and never block the request path.
-//
-// As of MUL-4127 every server-side event is flagged by analytics.IsMetricsOnly
-// (all product events plus the runtime_* / autopilot_run_* lifecycle), so the
-// client.Capture below is skipped for all of them — server analytics is served
-// from the DB and Grafana, not PostHog. The Capture path is retained only so a
-// future non-metrics-only event name would still ship.
-//
-// This is the canonical way to record any funnel / community / commercial event
-// from server code. Direct analytics.Client.Capture(...) with an event
-// constructed from analytics.* is rejected by the lint test in
-// business_pairing_test.go.
-func RecordEvent(client analytics.Client, m *BusinessMetrics, ev analytics.Event) {
-	if client != nil && !analytics.IsMetricsOnly(ev.Name) {
-		client.Capture(ev)
-	}
+// RecordEvent increments the matching local Prometheus counter. The client
+// parameter is retained temporarily so Wave 1C domain deletion does not force a
+// cross-cutting constructor rewrite; it is deliberately ignored.
+func RecordEvent(_ analytics.Client, m *BusinessMetrics, ev analytics.Event) {
 	if m != nil {
 		m.IncForEvent(ev)
 	}
@@ -307,17 +223,11 @@ func (m *BusinessMetrics) IncForEvent(ev analytics.Event) {
 			NormalizeTaskSource(stringProp(ev.Properties, "source")),
 			NormalizePlatform(stringProp(ev.Properties, "platform")),
 		).Inc()
-	case analytics.EventChatMessageSent:
-		m.events.chatMessageSent.WithLabelValues(NormalizePlatform(stringProp(ev.Properties, "platform"))).Inc()
 	case analytics.EventAgentCreated:
 		m.events.agentCreated.WithLabelValues(
 			NormalizeRuntimeMode(stringProp(ev.Properties, "runtime_mode")),
 			NormalizeTaskSource(stringProp(ev.Properties, "source")),
 		).Inc()
-	case analytics.EventSquadCreated:
-		m.events.squadCreated.WithLabelValues().Inc()
-	case analytics.EventAutopilotCreated:
-		m.events.autopilotCreated.WithLabelValues(NormalizeAutopilotCadence(stringProp(ev.Properties, "cadence"))).Inc()
 	case analytics.EventIssueExecuted:
 		m.events.issueExecuted.WithLabelValues(NormalizeTaskSource(stringProp(ev.Properties, "source"))).Inc()
 	case analytics.EventRuntimeRegistered:
@@ -344,30 +254,6 @@ func (m *BusinessMetrics) IncForEvent(ev analytics.Event) {
 			NormalizeRuntimeMode(stringProp(ev.Properties, "runtime_mode")),
 			NormalizeRuntimeProvider(stringProp(ev.Properties, "provider")),
 		).Inc()
-	case analytics.EventAutopilotRunStarted:
-		m.events.autopilotRunStarted.WithLabelValues(
-			NormalizeAutopilotCadence(stringProp(ev.Properties, "cadence")),
-			NormalizeAutopilotTrigger(stringProp(ev.Properties, "trigger_kind")),
-		).Inc()
-	case analytics.EventAutopilotRunCompleted:
-		m.events.autopilotRunTerminal.WithLabelValues(
-			NormalizeAutopilotCadence(stringProp(ev.Properties, "cadence")),
-			NormalizeAutopilotTrigger(stringProp(ev.Properties, "trigger_kind")),
-			"completed",
-		).Inc()
-	case analytics.EventAutopilotRunFailed:
-		m.events.autopilotRunTerminal.WithLabelValues(
-			NormalizeAutopilotCadence(stringProp(ev.Properties, "cadence")),
-			NormalizeAutopilotTrigger(stringProp(ev.Properties, "trigger_kind")),
-			"failed",
-		).Inc()
-	case analytics.EventFeedbackSubmitted:
-		m.events.feedbackSubmitted.WithLabelValues(
-			NormalizeFeedbackKind(stringProp(ev.Properties, "kind")),
-			NormalizePlatform(stringProp(ev.Properties, "platform")),
-		).Inc()
-	case analytics.EventContactSalesSubmitted:
-		m.events.contactSalesSubmitted.WithLabelValues(NormalizeContactSalesSource(stringProp(ev.Properties, "form_source"))).Inc()
 	default:
 		// agent_task_* lifecycle telemetry is recorded straight to Prometheus
 		// via the typed BusinessMetrics.RecordTask* methods (they take
@@ -377,36 +263,7 @@ func (m *BusinessMetrics) IncForEvent(ev analytics.Event) {
 	}
 }
 
-// ---- non-PostHog Record* helpers (typed; no analytics.Event source) -------
-
-// RecordAutopilotRunSkipped counts an autopilot admission-skip with reason.
-func (m *BusinessMetrics) RecordAutopilotRunSkipped(cadence, reason string) {
-	if m == nil || m.events == nil {
-		return
-	}
-	m.events.autopilotRunSkipped.WithLabelValues(
-		NormalizeAutopilotCadence(cadence),
-		NormalizeAutopilotSkipReason(reason),
-	).Inc()
-}
-
-// RecordWebhookDelivery counts an inbound webhook outcome.
-func (m *BusinessMetrics) RecordWebhookDelivery(provider, status string) {
-	if m == nil || m.events == nil {
-		return
-	}
-	m.events.webhookDelivery.WithLabelValues(
-		NormalizeWebhookProvider(provider),
-		NormalizeWebhookDeliveryStatus(status),
-	).Inc()
-}
-
-func (m *BusinessMetrics) RecordWebhookRateLimited(gate string) {
-	if m == nil || m.events == nil {
-		return
-	}
-	m.events.webhookRateLimited.WithLabelValues(NormalizeWebhookRateLimitGate(gate)).Inc()
-}
+// ---- Typed Record* helpers (no generic analytics.Event source) ------------
 
 // RecordGithubEventReceived counts a GitHub webhook event by event kind / action.
 func (m *BusinessMetrics) RecordGithubEventReceived(eventKind, action string) {
@@ -448,22 +305,6 @@ func (m *BusinessMetrics) RecordCloudRuntimeRequest(op, status string, durationS
 	if durationSeconds >= 0 {
 		m.events.cloudRuntimeRequestDurationSecs.WithLabelValues(op).Observe(durationSeconds)
 	}
-}
-
-// RecordChatOutputLocalPath counts a chat reply that referenced a runtime-local
-// path, by evidence kind ("file_url" / "workdir_path").
-//
-// Observation only: the reply is delivered either way. The server cannot judge
-// these paths the way the CLI lint can — it has no access to the daemon's
-// filesystem to stat them — so this measures whether the MUL-4899 prompt
-// contract is landing, and must never gate delivery on a lexical guess. The
-// label is a closed enum precisely so no fragment of the path or reply body can
-// reach Prometheus.
-func (m *BusinessMetrics) RecordChatOutputLocalPath(kind string) {
-	if m == nil || m.events == nil {
-		return
-	}
-	m.events.chatOutputLocalPath.WithLabelValues(NormalizeChatOutputLocalPathKind(kind)).Inc()
 }
 
 // RecordDaemonWSMessageReceived counts an inbound daemon WS message by handler kind.

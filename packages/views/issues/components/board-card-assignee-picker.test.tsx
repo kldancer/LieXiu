@@ -1,6 +1,6 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import type { Issue, IssueAssigneeType } from "@multica/core/types";
+import type { Issue, IssueAssigneeType } from "@liexiu/core/types";
 import { AppLink, NavigationProvider, type NavigationAdapter } from "../../navigation";
 import {
   IssueSurfaceActionsProvider,
@@ -13,30 +13,26 @@ vi.mock("@tanstack/react-query", async (importOriginal) => ({
   useQuery: () => ({ data: [] }),
 }));
 
-vi.mock("@multica/core/hooks", () => ({
+vi.mock("@liexiu/core/hooks", () => ({
   useWorkspaceId: () => "ws-1",
 }));
 
-vi.mock("@multica/core/properties", () => ({
-  propertyListOptions: () => ({ queryKey: ["properties"] }),
-}));
 
-vi.mock("@multica/core/auth", () => ({
+vi.mock("@liexiu/core/auth", () => ({
   useAuthStore: (selector: (state: { user: { id: string } }) => unknown) =>
     selector({ user: { id: "viewer-1" } }),
 }));
 
-vi.mock("@multica/core/agents", () => ({
+vi.mock("@liexiu/core/agents", () => ({
   isAgentRuntimeBound: () => true,
   useAgentPresenceDetail: () => ({ availability: "offline", workload: null }),
 }));
 
-vi.mock("@multica/core/paths", () => ({
+vi.mock("@liexiu/core/paths", () => ({
   useCurrentWorkspace: () => ({ id: "ws-1", slug: "acme" }),
   useWorkspacePaths: () => ({
     memberDetail: (id: string) => `/acme/members/${id}`,
     agentDetail: (id: string) => `/acme/agents/${id}`,
-    squadDetail: (id: string) => `/acme/squads/${id}`,
   }),
 }));
 
@@ -51,14 +47,13 @@ const viewState = vi.hoisted(() => ({
     childProgress: false,
     labels: false,
   },
-  cardPropertyIds: [],
 }));
 
-vi.mock("@multica/core/issues/stores/view-store-context", () => ({
+vi.mock("@liexiu/core/issues/stores/view-store-context", () => ({
   useViewStore: (selector: (state: typeof viewState) => unknown) => selector(viewState),
 }));
 
-vi.mock("@multica/core/workspace/hooks", () => ({
+vi.mock("@liexiu/core/workspace/hooks", () => ({
   useActorName: () => ({
     getActorName: (type: string) => `Assigned ${type}`,
     getActorInitials: () => "AA",
@@ -81,10 +76,6 @@ vi.mock("../../agents/components/agent-live-peek-card", () => ({
 
 vi.mock("../../members/member-profile-card", () => ({
   MemberProfileCard: () => null,
-}));
-
-vi.mock("../../squads/components/squad-profile-card", () => ({
-  SquadProfileCard: () => null,
 }));
 
 vi.mock("./issue-agent-activity-indicator", () => ({
@@ -130,7 +121,6 @@ function makeIssue(assigneeType: IssueAssigneeType): Issue {
     start_date: "2026-08-12",
     due_date: "2026-08-13",
     metadata: {},
-    properties: {},
     labels: [],
     created_at: "2026-08-12T00:00:00Z",
     updated_at: "2026-08-12T00:00:00Z",
@@ -138,7 +128,7 @@ function makeIssue(assigneeType: IssueAssigneeType): Issue {
 }
 
 describe("BoardCardContent assignee picker", () => {
-  it.each<IssueAssigneeType>(["member", "agent", "squad"])(
+  it.each<Extract<IssueAssigneeType, "member" | "agent">>(["member", "agent"])(
     "opens the picker from an avatar-only %s assignee without navigating the card",
     (assigneeType) => {
       const issue = makeIssue(assigneeType);

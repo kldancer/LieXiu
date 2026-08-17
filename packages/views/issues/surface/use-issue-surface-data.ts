@@ -2,13 +2,11 @@
 
 import { useCallback, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
-import type { Issue, Project } from "@multica/core/types";
-import { ALL_STATUSES } from "@multica/core/issues/config";
-import { projectListOptions } from "@multica/core/projects/queries";
-import { childIssueProgressOptions } from "@multica/core/issues/queries";
-import { issueSurfaceGanttOptions } from "@multica/core/issues/surface/repository";
-import type { IssueSurfaceQueryPlan } from "@multica/core/issues/surface/query-plan";
-import type { IssueStatus } from "@multica/core/types";
+import type { Issue, Project } from "@liexiu/core/types";
+import { ALL_STATUSES } from "@liexiu/core/issues/config";
+import { projectListOptions } from "@liexiu/core/projects/queries";
+import { childIssueProgressOptions } from "@liexiu/core/issues/queries";
+import type { IssueStatus } from "@liexiu/core/types";
 import {
   applyIssueFilters,
   type IssueFilterState,
@@ -25,36 +23,12 @@ const EMPTY_ISSUES: Issue[] = [];
 const EMPTY_CHILD_PROGRESS = new Map<string, ChildProgress>();
 const EMPTY_PROJECTS: Project[] = [];
 
-/**
- * The rows the gantt canvas actually draws, on top of the shared filters.
- *
- * The canvas adds two rules of its own: a row needs a date to be placed, and
- * completed work is hidden unless the user asks for it. The data source only
- * delivers scheduled issues (server-side `scheduled=true`), but a row can
- * still arrive without a date — e.g. a WS-driven optimistic patch that just
- * cleared start_date / due_date and is waiting for the cache to refetch — so
- * the date check stays defensive.
- *
- * These rules live HERE rather than privately inside GanttView so the header
- * chip can narrow the same set the canvas draws. A view that filters its own
- * rows in secret is exactly how the chip's count drifted from the list in the
- * first place (MUL-4884); duplicating the rules in both places would just
- * reintroduce the drift with extra steps.
- */
-function ganttCanvasRows(issues: Issue[], showCompleted: boolean): Issue[] {
-  const dated = issues.filter((i) => i.start_date || i.due_date);
-  if (showCompleted) return dated;
-  return dated.filter((i) => i.status !== "done" && i.status !== "cancelled");
-}
-
 export interface IssueSurfaceData {
   surfaceIssues: Issue[];
   projectIssues: Issue[];
   issues: Issue[];
   swimlaneIssues: Issue[];
-  /** Gantt only: the canvas rows the agents-working filter would leave on
-   *  screen. `undefined` on every other view mode, where the header chip
-   *  sources its count from the `working_agents` server facet instead. */
+  /** Retained as an empty compatibility field for old controller consumers. */
   ganttWorkingScopeIssues: Issue[] | undefined;
   filteredGanttIssues: Issue[];
   ganttIssues: Issue[];
@@ -82,13 +56,8 @@ export interface IssueSurfaceData {
 
 export function useIssueSurfaceData({
   wsId,
-  queryPlan,
-  projectId,
-  usesGantt,
-  usesTable,
   serverStatusBranches,
   serverGroupBranches,
-  ganttShowCompleted,
   statusFilters,
   priorityFilters,
   assigneeFilters,
@@ -98,21 +67,13 @@ export function useIssueSurfaceData({
   projectFilters,
   includeNoProject,
   labelFilters,
-  propertyFilters,
   workingIssueIDs,
   showSubIssues,
   loadProjects,
 }: {
   wsId: string;
-  queryPlan: IssueSurfaceQueryPlan;
-  projectId?: string;
-  usesGantt: boolean;
-  usesTable: boolean;
   serverStatusBranches: IssueStatusBranches;
   serverGroupBranches: IssueGroupBranches;
-  /** Gantt's "show completed" display toggle. The canvas hides done/cancelled
-   *  rows without it, so the working scope has to honour it too. */
-  ganttShowCompleted: boolean;
   statusFilters: IssueStatus[];
   priorityFilters: IssueFilterState["priorityFilters"];
   assigneeFilters: IssueFilterState["assigneeFilters"];
@@ -122,16 +83,11 @@ export function useIssueSurfaceData({
   projectFilters: string[];
   includeNoProject: boolean;
   labelFilters: string[];
-  propertyFilters: Record<string, string[]>;
   /** Distinct running-task issue ids projected by `/api/working-agents`. */
   workingIssueIDs: ReadonlySet<string>;
   showSubIssues: boolean;
   loadProjects: boolean;
 }): IssueSurfaceData {
-  const ganttIssuesQuery = useQuery({
-    ...issueSurfaceGanttOptions(wsId, projectId ?? "", queryPlan),
-    enabled: usesGantt,
-  });
   const workingFilterContext = useMemo(
     () => ({ runningIssueIds: workingIssueIDs }),
     [workingIssueIDs],
@@ -147,12 +103,7 @@ export function useIssueSurfaceData({
   // board / swimlane columns, header facet counts, batch selection, and the
   // isEmpty check. The status filter narrows this set like any other status —
   // it no longer unlocks an otherwise-hidden bucket.
-  const ganttIssues = ganttIssuesQuery.data ?? EMPTY_ISSUES;
-  const surfaceIssues = usesGantt
-    ? ganttIssues
-    : usesTable
-      ? EMPTY_ISSUES
-      : bucketedIssues;
+  const surfaceIssues = bucketedIssues;
 
   const baseFilterState = useMemo<IssueFilterState>(
     () => ({
@@ -164,7 +115,6 @@ export function useIssueSurfaceData({
       projectFilters,
       includeNoProject,
       labelFilters,
-      propertyFilters,
       workingOnly: agentRunningFilter,
       showSubIssues,
     }),
@@ -177,7 +127,6 @@ export function useIssueSurfaceData({
       labelFilters,
       priorityFilters,
       projectFilters,
-      propertyFilters,
       showSubIssues,
       statusFilters,
     ],
@@ -217,55 +166,6 @@ export function useIssueSurfaceData({
       ),
     [statuslessFilterState, surfaceIssues, workingFilterContext],
   );
-
-  const filteredGanttIssues = useMemo(
-    () =>
-      ganttCanvasRows(
-        applyIssueFilters(ganttIssues, baseFilterState, workingFilterContext),
-        ganttShowCompleted,
-      ),
-    [
-      baseFilterState,
-      ganttIssues,
-      ganttShowCompleted,
-      workingFilterContext,
-    ],
-  );
-
-  const workingFilterState = useMemo<IssueFilterState>(
-    () => ({
-      ...baseFilterState,
-      workingOnly: true,
-    }),
-    [baseFilterState],
-  );
-
-  // The Gantt canvas rows the agents-working filter would leave on screen —
-  // i.e. exactly what you get when you click the header chip in Gantt.
-  //
-  // Gantt is the one surface whose membership is NOT server-owned: it draws
-  // from a fully materialized scheduled-issue window, and its canvas
-  // projection (scheduled + dated + showCompleted) cannot be expressed in the
-  // Table query spec. So the header chip cannot source its count from the
-  // `working_agents` server facet here, and derives it from this set instead.
-  //
-  // Every other view mode (list / board / swimlane / table) resolves the same
-  // question through that facet, against the identical scope + filters the
-  // rows come from. Rebuilding a second complete issue window client-side to
-  // decorate the chip is what the server facet exists to avoid.
-  const ganttWorkingScopeIssues = useMemo(() => {
-    if (!usesGantt) return undefined;
-    return ganttCanvasRows(
-      applyIssueFilters(ganttIssues, workingFilterState, workingFilterContext),
-      ganttShowCompleted,
-    );
-  }, [
-    ganttIssues,
-    ganttShowCompleted,
-    usesGantt,
-    workingFilterState,
-    workingFilterContext,
-  ]);
 
   const {
     data: childProgressData,
@@ -345,7 +245,6 @@ export function useIssueSurfaceData({
       projectFilters,
       includeNoProject,
       labelFilters,
-      propertyFilters,
       showSubIssues,
     }),
     [
@@ -355,7 +254,6 @@ export function useIssueSurfaceData({
       includeNoAssignee,
       includeNoProject,
       labelFilters,
-      propertyFilters,
       priorityFilters,
       projectFilters,
       showSubIssues,
@@ -365,15 +263,11 @@ export function useIssueSurfaceData({
 
   const isLoading = serverGroupBranches.enabled
     ? serverGroupBranches.isLoading
-    : usesGantt
-      ? ganttIssuesQuery.isLoading
-      : serverStatusBranches.enabled
+    : serverStatusBranches.enabled
         ? serverStatusBranches.isLoading
         : false;
 
-  // Placeholder-backed revalidation of the ACTIVE query only. First loads are
-  // isLoading (no previous data to place-hold); gantt has no placeholder
-  // phase (its key carries no sort/filter).
+  // Placeholder-backed revalidation of the active list/group query.
   const isRefreshing = serverGroupBranches.enabled
     ? serverGroupBranches.isRefreshing
     : serverStatusBranches.enabled
@@ -385,9 +279,9 @@ export function useIssueSurfaceData({
     projectIssues: surfaceIssues,
     issues,
     swimlaneIssues,
-    ganttWorkingScopeIssues,
-    filteredGanttIssues,
-    ganttIssues,
+    ganttWorkingScopeIssues: undefined,
+    filteredGanttIssues: EMPTY_ISSUES,
+    ganttIssues: EMPTY_ISSUES,
     visibleStatuses,
     hiddenStatuses,
     statusPagination: serverStatusBranches.pagination,
@@ -397,18 +291,9 @@ export function useIssueSurfaceData({
     resolveTableExportLookups,
     isLoading,
     isRefreshing,
-    // isEmpty asserts "this window has no issues". The board/list/swimlane
-    // data IS the full window, so an empty result proves it. The gantt query
-    // is a scheduled-only PROJECTION — an empty subset cannot prove the
-    // window is empty, so never claim it (same "uncertain → don't assert"
-    // rule as surface membership). GanttView renders its own accurate
-    // "no scheduled issues" empty state instead of the generic create-issue
-    // one. Table owns its own branch-level loading, empty and retry states,
-    // so this shared legacy surface projection never asserts Table empty.
+    // The board/list data is the full window, so an empty result proves it.
     isEmpty:
       !isLoading &&
-      !usesGantt &&
-      !usesTable &&
       (serverStatusBranches.enabled
         ? serverStatusBranches.isTotalKnown &&
           serverStatusBranches.total === 0

@@ -11,8 +11,8 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/multica-ai/multica/server/internal/middleware"
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
+	"github.com/kailonyang/liexiu/server/internal/middleware"
+	db "github.com/kailonyang/liexiu/server/pkg/db/generated"
 )
 
 const clientUsageBodyLimit = 16 * 1024
@@ -119,18 +119,6 @@ func (h *Handler) UpsertClientUsage(w http.ResponseWriter, r *http.Request) {
 		}
 		defer tx.Rollback(r.Context())
 		queries = h.Queries.WithTx(tx)
-		// Share the explicit workspace delete/create lock protocol: if deletion
-		// wins, the row is gone and this report fails; if reporting wins, deletion
-		// waits and clears the context after the upsert commits.
-		if _, err := queries.LockWorkspaceForChatSessionCreate(r.Context(), workspaceUUID); err != nil {
-			if errors.Is(err, pgx.ErrNoRows) {
-				writeError(w, http.StatusForbidden, "workspace not found")
-				return
-			}
-			slog.Error("failed to lock client usage workspace", "error", err)
-			writeError(w, http.StatusInternalServerError, "failed to record client usage")
-			return
-		}
 		if _, err := queries.GetMemberByUserAndWorkspace(r.Context(), db.GetMemberByUserAndWorkspaceParams{
 			UserID: userUUID, WorkspaceID: workspaceUUID,
 		}); err != nil {

@@ -1,27 +1,17 @@
 "use client";
 
-import { useEffect } from "react";
-import { captureException } from "@multica/core/analytics";
-
 /**
  * Route-level error boundary for the web app. Next.js renders this (replacing
  * the root layout) when an error escapes everything below it — the full-page
- * white-screen case. React catches these before they reach window.onerror, so
- * posthog-js's automatic exception capture never sees them; we report them
- * explicitly here. Section-level failures are handled in place by
- * `@multica/ui` ErrorBoundary and don't reach this far.
+ * white-screen case. It keeps the local error display and reload action;
+ * section-level failures are handled in place by `@liexiu/ui` ErrorBoundary.
  */
 export default function GlobalError({
-  error,
   reset,
 }: {
   error: Error & { digest?: string };
   reset: () => void;
 }) {
-  useEffect(() => {
-    captureException(error, { source: "global-error", digest: error.digest });
-  }, [error]);
-
   return (
     <html>
       <body

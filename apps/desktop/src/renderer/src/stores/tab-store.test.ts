@@ -45,7 +45,7 @@ describe("sanitizeTabPath", () => {
 
   it("passes through user slugs that happen to look path-like but aren't reserved", () => {
     expect(sanitizeTabPath("/acme-issues/issues")).toBe("/acme-issues/issues");
-    expect(sanitizeTabPath("/project-x/inbox")).toBe("/project-x/inbox");
+    expect(sanitizeTabPath("/project-x/issues")).toBe("/project-x/issues");
   });
 
   it("normalizes a bare workspace url to its default surface (replaces the in-router index redirect)", () => {
@@ -432,11 +432,11 @@ describe("navigateActiveSession", () => {
     store.goBack();
     store.goBack();
 
-    store.navigateActiveSession("/acme/inbox");
+    store.navigateActiveSession("/acme/missions");
 
     const active = getActiveTab(useTabStore.getState())!;
     expect(active.history).toEqual({
-      stack: ["/acme/issues", "/acme/inbox"],
+      stack: ["/acme/issues", "/acme/missions"],
       index: 1,
     });
   });
@@ -563,18 +563,18 @@ describe("commitScrollMemento", () => {
     const store = useTabStore.getState();
     store.switchWorkspace("acme");
     const tabId = useTabStore.getState().byWorkspace.acme.tabs[0].id;
-    store.commitViewState(tabId, "/acme/inbox", "highlight:i1", "c1");
-    store.commitScrollMemento(tabId, "/acme/inbox", {
+    store.commitViewState(tabId, "/acme/issues", "highlight:i1", "c1");
+    store.commitScrollMemento(tabId, "/acme/issues", {
       list: { top: 500, height: 8000 },
     });
 
     // Scrolled back to 0 before leaving: REPLACE clears the route's scroll
     // entries — but never its view-state entries.
-    store.commitScrollMemento(tabId, "/acme/inbox", {});
+    store.commitScrollMemento(tabId, "/acme/issues", {});
 
     expect(useTabStore.getState().byWorkspace.acme.tabs[0].memento).toEqual({
       scroll: {},
-      view: { "/acme/inbox::highlight:i1": "c1" },
+      view: { "/acme/issues::highlight:i1": "c1" },
     });
   });
 });
@@ -585,11 +585,11 @@ describe("commitViewState", () => {
     store.switchWorkspace("acme");
     const tabId = useTabStore.getState().byWorkspace.acme.tabs[0].id;
 
-    store.commitViewState(tabId, "/acme/inbox", "highlight:i1", "c1");
+    store.commitViewState(tabId, "/acme/issues", "highlight:i1", "c1");
 
     expect(useTabStore.getState().byWorkspace.acme.tabs[0].memento).toEqual({
       scroll: {},
-      view: { "/acme/inbox::highlight:i1": "c1" },
+      view: { "/acme/issues::highlight:i1": "c1" },
     });
   });
 
@@ -597,13 +597,13 @@ describe("commitViewState", () => {
     const store = useTabStore.getState();
     store.switchWorkspace("acme");
     const tabId = useTabStore.getState().byWorkspace.acme.tabs[0].id;
-    store.commitViewState(tabId, "/acme/inbox", "highlight:i1", "c1");
-    store.commitViewState(tabId, "/acme/inbox", "highlight:i2", "c2");
+    store.commitViewState(tabId, "/acme/issues", "highlight:i1", "c1");
+    store.commitViewState(tabId, "/acme/issues", "highlight:i2", "c2");
 
-    store.commitViewState(tabId, "/acme/inbox", "highlight:i1", undefined);
+    store.commitViewState(tabId, "/acme/issues", "highlight:i1", undefined);
 
     expect(useTabStore.getState().byWorkspace.acme.tabs[0].memento.view).toEqual({
-      "/acme/inbox::highlight:i2": "c2",
+      "/acme/issues::highlight:i2": "c2",
     });
   });
 
@@ -611,11 +611,11 @@ describe("commitViewState", () => {
     const store = useTabStore.getState();
     store.switchWorkspace("acme");
     const tabId = useTabStore.getState().byWorkspace.acme.tabs[0].id;
-    store.commitViewState(tabId, "/acme/inbox", "highlight:i1", "c1");
+    store.commitViewState(tabId, "/acme/issues", "highlight:i1", "c1");
     const before = useTabStore.getState().byWorkspace.acme;
 
-    store.commitViewState(tabId, "/acme/inbox", "highlight:i1", "c1");
-    store.commitViewState(tabId, "/acme/inbox", "highlight:absent", undefined);
+    store.commitViewState(tabId, "/acme/issues", "highlight:i1", "c1");
+    store.commitViewState(tabId, "/acme/issues", "highlight:absent", undefined);
 
     expect(useTabStore.getState().byWorkspace.acme).toBe(before);
   });
@@ -625,28 +625,28 @@ describe("commitViewState", () => {
     store.switchWorkspace("acme");
     const tabId = useTabStore.getState().byWorkspace.acme.tabs[0].id;
     for (let i = 0; i < 101; i++) {
-      store.commitViewState(tabId, "/acme/inbox", `highlight:i${i}`, "c");
+      store.commitViewState(tabId, "/acme/issues", `highlight:i${i}`, "c");
     }
 
     const view = useTabStore.getState().byWorkspace.acme.tabs[0].memento.view;
     expect(Object.keys(view)).toHaveLength(100);
-    expect(view["/acme/inbox::highlight:i0"]).toBeUndefined();
-    expect(view["/acme/inbox::highlight:i100"]).toBe("c");
+    expect(view["/acme/issues::highlight:i0"]).toBeUndefined();
+    expect(view["/acme/issues::highlight:i100"]).toBe("c");
   });
 
   it("preserves scroll entries when a view-state entry commits", () => {
     const store = useTabStore.getState();
     store.switchWorkspace("acme");
     const tabId = useTabStore.getState().byWorkspace.acme.tabs[0].id;
-    store.commitScrollMemento(tabId, "/acme/inbox", {
+    store.commitScrollMemento(tabId, "/acme/issues", {
       list: { top: 500, height: 8000 },
     });
 
-    store.commitViewState(tabId, "/acme/inbox", "highlight:i1", "c1");
+    store.commitViewState(tabId, "/acme/issues", "highlight:i1", "c1");
 
     expect(useTabStore.getState().byWorkspace.acme.tabs[0].memento).toEqual({
-      scroll: { "/acme/inbox::list": { top: 500, height: 8000 } },
-      view: { "/acme/inbox::highlight:i1": "c1" },
+      scroll: { "/acme/issues::list": { top: 500, height: 8000 } },
+      view: { "/acme/issues::highlight:i1": "c1" },
     });
   });
 });
@@ -1075,38 +1075,22 @@ describe("mergePersistedTabs (rehydration, MUL-4370)", () => {
     ).byWorkspace.acme.tabs[0];
   }
 
-  // A user who opened /acme/autopilots on an older build has "ListTodo"
-  // persisted for it. Carrying that value forward is what kept the tab bar
-  // showing the wrong icon after upgrade, while the sidebar showed the new
-  // one. The session must not hold an icon at all.
-  it("does not carry a stale persisted icon into the session", () => {
-    const tab = rehydrate(persistedTab("/acme/autopilots", { icon: "ListTodo" }));
-    expect(tab).not.toHaveProperty("icon");
-    expect(tab.url).toBe("/acme/autopilots");
-  });
-
   it("ignores an unknown or corrupted persisted icon", () => {
     const tab = rehydrate(persistedTab("/acme/projects", { icon: "NotARealIcon" }));
     expect(tab).not.toHaveProperty("icon");
     expect(tab.url).toBe("/acme/projects");
   });
 
-  it("rehydrates payloads with no icon field at all", () => {
-    const tab = rehydrate(persistedTab("/acme/squads"));
-    expect(tab).not.toHaveProperty("icon");
-    expect(tab.url).toBe("/acme/squads");
-  });
-
   // Payloads written before the generic view-state entries existed carry a
   // memento with only `scroll`; the session shape requires `view` too.
   it("normalizes a memento persisted without view-state entries", () => {
     const tab = rehydrate(
-      persistedTab("/acme/inbox", {
-        memento: { scroll: { "/acme/inbox::list": { top: 5, height: 100 } } },
+      persistedTab("/acme/issues", {
+        memento: { scroll: { "/acme/issues::list": { top: 5, height: 100 } } },
       }),
     );
     expect(tab.memento).toEqual({
-      scroll: { "/acme/inbox::list": { top: 5, height: 100 } },
+      scroll: { "/acme/issues::list": { top: 5, height: 100 } },
       view: {},
     });
   });

@@ -2,10 +2,10 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { LoaderCircle, Plus, Search, Trash2 } from "lucide-react";
-import { Input } from "@multica/ui/components/ui/input";
-import { Button } from "@multica/ui/components/ui/button";
-import { Badge } from "@multica/ui/components/ui/badge";
-import { Checkbox } from "@multica/ui/components/ui/checkbox";
+import { Input } from "@liexiu/ui/components/ui/input";
+import { Button } from "@liexiu/ui/components/ui/button";
+import { Badge } from "@liexiu/ui/components/ui/badge";
+import { Checkbox } from "@liexiu/ui/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -13,14 +13,14 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@multica/ui/components/ui/dialog";
+} from "@liexiu/ui/components/ui/dialog";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@multica/ui/components/ui/select";
+} from "@liexiu/ui/components/ui/select";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -30,27 +30,27 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "@multica/ui/components/ui/alert-dialog";
+} from "@liexiu/ui/components/ui/alert-dialog";
 import { toast } from "sonner";
 import {
   useInfiniteQuery,
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
-import { useAuthStore } from "@multica/core/auth";
-import { useWorkspaceId } from "@multica/core/hooks";
-import { useCurrentWorkspace } from "@multica/core/paths";
-import { memberListOptions, workspaceKeys } from "@multica/core/workspace/queries";
+import { useAuthStore } from "@liexiu/core/auth";
+import { useWorkspaceId } from "@liexiu/core/hooks";
+import { useCurrentWorkspace } from "@liexiu/core/paths";
+import { memberListOptions, workspaceKeys } from "@liexiu/core/workspace/queries";
 import {
   githubInstallationRepositoriesOptions,
   githubInstallationsOptions,
-} from "@multica/core/github";
-import { api } from "@multica/core/api";
+} from "@liexiu/core/github";
+import { api } from "@liexiu/core/api";
 import type {
   GitHubRepository,
   Workspace,
   WorkspaceRepo,
-} from "@multica/core/types";
+} from "@liexiu/core/types";
 import { useNavigation } from "../../navigation";
 import { useT } from "../../i18n";
 import {

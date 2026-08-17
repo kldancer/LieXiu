@@ -1,25 +1,7 @@
-import { useMemo } from "react";
 import { isRouteErrorResponse, useLocation, useRouteError } from "react-router-dom";
-import { AlertTriangle, Compass, RotateCw, Send, X } from "lucide-react";
-import { Button } from "@multica/ui/components/ui/button";
-import type { DesktopRouteErrorFeedbackContext } from "@multica/core/feedback";
-import { useModalStore } from "@multica/core/modals";
+import { AlertTriangle, Compass, RotateCw, X } from "lucide-react";
+import { Button } from "@liexiu/ui/components/ui/button";
 import { useTabStore } from "@/stores/tab-store";
-
-export function createRouteErrorFeedbackContext({
-  error,
-  trigger,
-}: {
-  error: unknown;
-  trigger: string;
-}): DesktopRouteErrorFeedbackContext {
-  const normalized = normalizeError(error);
-  return {
-    kind: "desktop_route_error",
-    trigger,
-    error: normalized,
-  };
-}
 
 /**
  * Resolve the workspace the user is actually in, for a recovery entry point.
@@ -70,7 +52,7 @@ function DesktopNotFoundPage() {
       <div className="space-y-2">
         <h2 className="text-title font-semibold">This page doesn&apos;t exist</h2>
         <p className="max-w-lg text-body text-muted-foreground">
-          Nothing in Multica matches this address. If you got here from a link,
+          Nothing in LieXiu matches this address. If you got here from a link,
           it probably points at a file on someone else&apos;s computer rather
           than a page.
         </p>
@@ -108,14 +90,6 @@ function DesktopNotFoundPage() {
 
 function DesktopUnexpectedErrorPage({ error }: { error: unknown }) {
   const recoveryRoute = useRecoveryRoute();
-  const feedbackContext = useMemo(
-    () =>
-      createRouteErrorFeedbackContext({
-        error,
-        trigger: "route-errorElement",
-      }),
-    [error],
-  );
   const message = normalizeError(error).message;
 
   return (
@@ -130,7 +104,7 @@ function DesktopUnexpectedErrorPage({ error }: { error: unknown }) {
         <h2 className="text-title font-semibold">Something went wrong in this tab</h2>
         <p className="max-w-lg text-body text-muted-foreground">
           A route-level renderer error was contained before it could take down the
-          desktop shell. Reload this tab, or send the report if it keeps happening.
+          desktop shell. Reload this tab if the problem keeps happening.
         </p>
         <p className="max-w-lg truncate text-caption text-muted-foreground">{message}</p>
       </div>
@@ -165,18 +139,6 @@ function DesktopUnexpectedErrorPage({ error }: { error: unknown }) {
         >
           <X className="mr-2 h-4 w-4" aria-hidden="true" />
           Close tab
-        </Button>
-        <Button
-          type="button"
-          onClick={() =>
-            useModalStore.getState().open("feedback", {
-              kind: "bug",
-              context: feedbackContext,
-            })
-          }
-        >
-          <Send className="mr-2 h-4 w-4" aria-hidden="true" />
-          Report error
         </Button>
       </div>
     </div>

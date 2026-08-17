@@ -43,7 +43,7 @@ export const useCustomPricingStore = create<CustomPricingState>()(
         }),
     }),
     {
-      name: "multica_runtime_custom_pricing",
+      name: "liexiu_runtime_custom_pricing",
       storage: createJSONStorage(() => stateStorage),
     },
   ),

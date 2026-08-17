@@ -11,7 +11,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { I18nProvider } from "@multica/core/i18n/react";
+import { I18nProvider } from "@liexiu/core/i18n/react";
 import enCommon from "../locales/en/common.json";
 import enModals from "../locales/en/modals.json";
 import enEditor from "../locales/en/editor.json";
@@ -32,8 +32,6 @@ function I18nWrapper({ children }: { children: ReactNode }) {
 const mockPush = vi.hoisted(() => vi.fn());
 const mockCreateIssue = vi.hoisted(() => vi.fn());
 const mockAttachLabel = vi.hoisted(() => vi.fn());
-const mockListProperties = vi.hoisted(() => vi.fn());
-const mockSetIssueProperty = vi.hoisted(() => vi.fn());
 const mockSetShared = vi.hoisted(() => vi.fn());
 const mockSetManual = vi.hoisted(() => vi.fn());
 const mockSetAgent = vi.hoisted(() => vi.fn());
@@ -54,8 +52,6 @@ type DraftAttachment = {
   workspace_id: string;
   issue_id: string | null;
   comment_id: string | null;
-  chat_session_id: string | null;
-  chat_message_id: string | null;
   uploader_type: string;
   uploader_id: string;
   filename: string;
@@ -90,22 +86,19 @@ const emptyIssueDraft = () => ({
     description: "",
     status: "todo" as const,
     startDate: null as string | null,
-    assigneeType: undefined as "agent" | "squad" | "member" | undefined,
+    assigneeType: undefined as "agent" | "member" | undefined,
     assigneeId: undefined as string | undefined,
     labelIds: [] as string[],
-    propertyValues: {} as Record<string, string | number | boolean | string[]>,
   },
   agent: {
     prompt: "",
-    actorType: undefined as "agent" | "squad" | undefined,
-    actorId: undefined as string | undefined,
   },
   activeMode: "manual" as "manual" | "agent",
 });
 
 const mockDraftStore = {
   draft: emptyIssueDraft(),
-  lastAssigneeType: undefined as "agent" | "squad" | "member" | undefined,
+  lastAssigneeType: undefined as "agent" | "member" | undefined,
   lastAssigneeId: undefined as string | undefined,
   setShared: mockSetShared,
   setManual: mockSetManual,
@@ -153,7 +146,7 @@ vi.mock("../navigation/context", () => ({
   useNavigation: () => ({ push: mockPush }),
 }));
 
-vi.mock("@multica/core/paths", () => ({
+vi.mock("@liexiu/core/paths", () => ({
   useCurrentWorkspace: () => ({ name: "Test Workspace" }),
   useWorkspacePaths: () => ({
     issueDetail: (id: string) => `/ws-test/issues/${id}`,
@@ -161,11 +154,11 @@ vi.mock("@multica/core/paths", () => ({
   }),
 }));
 
-vi.mock("@multica/core/hooks", () => ({
+vi.mock("@liexiu/core/hooks", () => ({
   useWorkspaceId: () => "ws-test",
 }));
 
-vi.mock("@multica/core/issues/queries", () => ({
+vi.mock("@liexiu/core/issues/queries", () => ({
   issueDetailOptions: (wsId: string, id: string) => ({
     queryKey: ["issues", wsId, "detail", id],
     queryFn: () => Promise.resolve(null),
@@ -188,18 +181,18 @@ vi.mock("../issues/hooks/use-issue-trigger-preview", () => ({
   }),
 }));
 
-vi.mock("@multica/core/workspace/hooks", () => ({
+vi.mock("@liexiu/core/workspace/hooks", () => ({
   useActorName: () => ({ getActorName: () => "Agent" }),
 }));
 
-// CreateRunHint now renders an ActorAvatar for agent/squad assignees. This
+// CreateRunHint now renders an ActorAvatar for agent assignees. This
 // suite is about the create form, not the avatar (whose own workspace/presence/
 // navigation hook tree is exercised elsewhere), so stub it inert.
 vi.mock("../common/actor-avatar", () => ({
   ActorAvatar: () => null,
 }));
 
-vi.mock("@multica/core/issues/stores/draft-store", () => ({
+vi.mock("@liexiu/core/issues/stores/draft-store", () => ({
   useIssueDraftStore: Object.assign(
     (selector?: (state: typeof mockDraftStore) => unknown) =>
       (selector ? selector(mockDraftStore) : mockDraftStore),
@@ -207,40 +200,25 @@ vi.mock("@multica/core/issues/stores/draft-store", () => ({
   ),
 }));
 
-vi.mock("@multica/core/issues/stores/quick-create-store", () => ({
+vi.mock("@liexiu/core/issues/stores/quick-create-store", () => ({
   useQuickCreateStore: (selector?: (state: typeof mockQuickCreateStore) => unknown) =>
     (selector ? selector(mockQuickCreateStore) : mockQuickCreateStore),
 }));
 
-vi.mock("@multica/core/issues/stores/issue-create-settings-store", () => ({
+vi.mock("@liexiu/core/issues/stores/issue-create-settings-store", () => ({
   useIssueCreateSettingsStore: (
     selector?: (state: typeof mockCreateSettingsStore) => unknown,
   ) => (selector ? selector(mockCreateSettingsStore) : mockCreateSettingsStore),
 }));
 
-vi.mock("@multica/core/issues/mutations", () => ({
+vi.mock("@liexiu/core/issues/mutations", () => ({
   useCreateIssue: () => ({ mutateAsync: mockCreateIssue }),
   useUpdateIssue: () => ({ mutate: vi.fn() }),
 }));
 
-vi.mock("@multica/core/labels", () => ({
+vi.mock("@liexiu/core/labels", () => ({
   useAttachLabelToIssue: () => ({ mutateAsync: mockAttachLabel }),
 }));
-
-vi.mock("@multica/core/properties", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@multica/core/properties")>();
-  return {
-    ...actual,
-    useSetIssueProperty: () => ({
-      mutateAsync: ({ issueId, propertyId, value }: {
-        issueId: string;
-        propertyId: string;
-        value: string | number | boolean | string[];
-      }) => mockSetIssueProperty(issueId, propertyId, value),
-    }),
-  };
-});
-
 
 // Hoisted ApiError class so both the vi.mock factory and the tests below
 // can construct/instanceof-check the same identity. vi.mock is hoisted, so
@@ -262,22 +240,20 @@ const { ApiError } = vi.hoisted(() => {
   return { ApiError: ApiErrorImpl };
 });
 
-vi.mock("@multica/core/api", async () => {
+vi.mock("@liexiu/core/api", async () => {
   // Pull real `parseWithFallback` + `DuplicateIssueErrorBodySchema` from the
   // schema modules so the drift-fallback branch in create-issue.tsx runs the
   // actual validation logic (not a stub). Only `ApiError` is local — the
   // component imports it from this module and the cross-realm `instanceof`
   // check requires a single class identity.
-  const { parseWithFallback } = await vi.importActual<typeof import("@multica/core/api/schema")>(
-    "@multica/core/api/schema",
+  const { parseWithFallback } = await vi.importActual<typeof import("@liexiu/core/api/schema")>(
+    "@liexiu/core/api/schema",
   );
   const { DuplicateIssueErrorBodySchema } = await vi.importActual<
-    typeof import("@multica/core/api/schemas")
-  >("@multica/core/api/schemas");
+    typeof import("@liexiu/core/api/schemas")
+  >("@liexiu/core/api/schemas");
   return {
     api: {
-      listProperties: mockListProperties,
-      setIssueProperty: mockSetIssueProperty,
       uploadFile: mockApiUploadFile,
     },
     ApiError,
@@ -424,19 +400,6 @@ vi.mock("../issues/components", () => ({
   ),
 }));
 
-vi.mock("../issues/components/pickers/custom-property-picker", () => ({
-  CustomPropertyValueInput: ({ property, onChange }: any) => (
-    <button
-      type="button"
-      aria-label={`Edit ${property.name}`}
-      onClick={() => onChange("option-enterprise")}
-    >
-      {property.name}
-    </button>
-  ),
-  CustomPropertyValueDisplay: ({ value }: any) => <span>{String(value)}</span>,
-}));
-
 vi.mock("../projects/components/project-picker", () => ({
   ProjectPicker: ({ projectId, onUpdate }: any) => (
     <button
@@ -450,7 +413,7 @@ vi.mock("../projects/components/project-picker", () => ({
   ),
 }));
 
-vi.mock("@multica/ui/components/ui/dialog", () => ({
+vi.mock("@liexiu/ui/components/ui/dialog", () => ({
   Dialog: ({ children }: { children: React.ReactNode }) => <div data-testid="dialog-root">{children}</div>,
   DialogContent: ({ children, className }: { children: React.ReactNode; className?: string }) => (
     <div className={className}>{children}</div>
@@ -460,7 +423,7 @@ vi.mock("@multica/ui/components/ui/dialog", () => ({
   ),
 }));
 
-vi.mock("@multica/ui/components/ui/dropdown-menu", () => ({
+vi.mock("@liexiu/ui/components/ui/dropdown-menu", () => ({
   DropdownMenu: ({ children }: { children: React.ReactNode }) => <>{children}</>,
   DropdownMenuTrigger: ({ render }: { render: React.ReactNode }) => <>{render}</>,
   DropdownMenuContent: ({ children }: { children: React.ReactNode }) => <>{children}</>,
@@ -491,14 +454,14 @@ vi.mock("./issue-picker-modal", () => ({
   IssuePickerModal: () => null,
 }));
 
-vi.mock("@multica/ui/components/ui/tooltip", () => ({
+vi.mock("@liexiu/ui/components/ui/tooltip", () => ({
   Tooltip: ({ children }: { children: React.ReactNode }) => <>{children}</>,
   TooltipTrigger: ({ render }: { render: React.ReactNode }) => <>{render}</>,
   TooltipContent: ({ children }: { children: React.ReactNode }) => <>{children}</>,
   TooltipProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
 }));
 
-vi.mock("@multica/ui/components/ui/button", () => ({
+vi.mock("@liexiu/ui/components/ui/button", () => ({
   Button: ({
     children,
     disabled,
@@ -520,7 +483,7 @@ vi.mock("@multica/ui/components/ui/button", () => ({
   ),
 }));
 
-vi.mock("@multica/ui/components/ui/switch", () => ({
+vi.mock("@liexiu/ui/components/ui/switch", () => ({
   Switch: ({
     checked,
     onCheckedChange,
@@ -537,7 +500,7 @@ vi.mock("@multica/ui/components/ui/switch", () => ({
   ),
 }));
 
-vi.mock("@multica/ui/components/common/file-upload-button", () => ({
+vi.mock("@liexiu/ui/components/common/file-upload-button", () => ({
   FileUploadButton: ({ onSelect }: { onSelect: (file: File) => void }) => (
     <button type="button" onClick={() => onSelect(new File(["test"], "test.txt"))}>
       Upload file
@@ -545,7 +508,7 @@ vi.mock("@multica/ui/components/common/file-upload-button", () => ({
   ),
 }));
 
-vi.mock("@multica/ui/lib/utils", () => ({
+vi.mock("@liexiu/ui/lib/utils", () => ({
   cn: (...values: Array<string | false | null | undefined>) => values.filter(Boolean).join(" "),
 }));
 
@@ -601,14 +564,12 @@ describe("CreateIssueModal", () => {
       workspace_id: "ws-test",
       issue_id: null,
       comment_id: null,
-      chat_session_id: null,
-      chat_message_id: null,
       uploader_type: "member",
       uploader_id: "user-1",
       filename: "shot.png",
       url: "https://cdn.example.test/shot.png",
       download_url: "https://cdn.example.test/shot.png?Signature=fresh",
-      markdown_url: "https://multica-api.copilothub.ai/api/attachments/11111111-2222-3333-4444-555555555555/download",
+      markdown_url: "https://liexiu-api.copilothub.ai/api/attachments/11111111-2222-3333-4444-555555555555/download",
       content_type: "image/png",
       size_bytes: 123,
       created_at: "2026-06-12T00:00:00Z",
@@ -624,29 +585,6 @@ describe("CreateIssueModal", () => {
       labels: [],
     });
     mockAttachLabel.mockResolvedValue({ labels: [] });
-    mockListProperties.mockResolvedValue({
-      properties: [
-        {
-          id: "property-tier",
-          workspace_id: "ws-test",
-          name: "Customer tier",
-          type: "select",
-          config: {
-            options: [
-              { id: "option-enterprise", name: "Enterprise", color: "#3b82f6" },
-            ],
-          },
-          position: 0,
-          archived: false,
-          created_at: "2026-01-01T00:00:00Z",
-          updated_at: "2026-01-01T00:00:00Z",
-        },
-      ],
-      total: 1,
-    });
-    mockSetIssueProperty.mockResolvedValue({
-      properties: { "property-tier": "option-enterprise" },
-    });
   });
 
   it("shows success feedback with a direct path to the new issue", async () => {
@@ -799,7 +737,6 @@ describe("CreateIssueModal", () => {
       assigneeId: undefined,
       startDate: null,
       labelIds: [],
-      propertyValues: {},
     });
     expect(mockSetShared).toHaveBeenCalledWith({
       priority: "none",
@@ -807,27 +744,6 @@ describe("CreateIssueModal", () => {
       dueDate: null,
       attachments: [],
     });
-  });
-
-  it("sets configured custom property values after the issue is created", async () => {
-    const user = userEvent.setup();
-
-    renderModal(<CreateIssueModal onClose={vi.fn()} />);
-
-    await screen.findByText("Customer tier");
-    await user.click(screen.getByText("Customer tier"));
-    await user.click(screen.getByRole("button", { name: "Edit Customer tier" }));
-    await user.type(screen.getByPlaceholderText("Issue title"), "Enterprise follow-up");
-    await user.click(screen.getByRole("button", { name: "Create Issue" }));
-
-    await waitFor(() => {
-      expect(mockSetIssueProperty).toHaveBeenCalledWith(
-        "issue-123",
-        "property-tier",
-        "option-enterprise",
-      );
-    });
-    expect(mockClearDraft).toHaveBeenCalled();
   });
 
   it("persists manual-mode uploads in the issue draft", async () => {
@@ -858,14 +774,12 @@ describe("CreateIssueModal", () => {
       workspace_id: "ws-test",
       issue_id: null,
       comment_id: null,
-      chat_session_id: null,
-      chat_message_id: null,
       uploader_type: "member",
       uploader_id: "user-1",
       filename: "shot.png",
       url: "https://cdn.example.test/shot.png",
       download_url: "",
-      markdown_url: "https://multica-api.copilothub.ai/api/attachments/11111111-2222-3333-4444-555555555555/download",
+      markdown_url: "https://liexiu-api.copilothub.ai/api/attachments/11111111-2222-3333-4444-555555555555/download",
       content_type: "image/png",
       size_bytes: 123,
       created_at: "2026-06-12T00:00:00Z",
@@ -908,14 +822,12 @@ describe("CreateIssueModal", () => {
       workspace_id: "ws-test",
       issue_id: null,
       comment_id: null,
-      chat_session_id: null,
-      chat_message_id: null,
       uploader_type: "member",
       uploader_id: "user-1",
       filename: "kept.png",
       url: "https://cdn.example.test/kept.png",
       download_url: "",
-      markdown_url: "https://multica-api.copilothub.ai/api/attachments/11111111-2222-3333-4444-555555555555/download",
+      markdown_url: "https://liexiu-api.copilothub.ai/api/attachments/11111111-2222-3333-4444-555555555555/download",
       content_type: "image/png",
       size_bytes: 123,
       created_at: "2026-06-12T00:00:00Z",
@@ -925,7 +837,7 @@ describe("CreateIssueModal", () => {
       id: "99999999-8888-7777-6666-555555555555",
       filename: "deleted.png",
       url: "https://cdn.example.test/deleted.png",
-      markdown_url: "https://multica-api.copilothub.ai/api/attachments/99999999-8888-7777-6666-555555555555/download",
+      markdown_url: "https://liexiu-api.copilothub.ai/api/attachments/99999999-8888-7777-6666-555555555555/download",
     };
     const wrap = (att: typeof referenced): DraftUploadEntry => ({
       clientUploadId: att.id,
@@ -958,14 +870,12 @@ describe("CreateIssueModal", () => {
       workspace_id: "ws-test",
       issue_id: null,
       comment_id: null,
-      chat_session_id: null,
-      chat_message_id: null,
       uploader_type: "member",
       uploader_id: "user-1",
       filename: "orphan.png",
       url: "https://cdn.example.test/orphan.png",
       download_url: "",
-      markdown_url: "https://multica-api.copilothub.ai/api/attachments/99999999-8888-7777-6666-555555555555/download",
+      markdown_url: "https://liexiu-api.copilothub.ai/api/attachments/99999999-8888-7777-6666-555555555555/download",
       content_type: "image/png",
       size_bytes: 5,
       created_at: "2026-06-12T00:00:00Z",
@@ -989,38 +899,6 @@ describe("CreateIssueModal", () => {
         attachments: [expect.objectContaining({ clientUploadId: "c-flight" })],
       });
     });
-  });
-
-  // Manual → agent must seed the agent actor from the picked squad. Without
-  // this the agent panel silently falls back to the persisted actor / first
-  // visible agent and the user loses the squad they just chose in manual.
-  it("seeds the agent actor from the picked squad when switching to agent mode", async () => {
-    mockDraftStore.draft.manual.assigneeType = "squad";
-    mockDraftStore.draft.manual.assigneeId = "squad-1";
-    const user = userEvent.setup();
-    const onSwitchMode = vi.fn();
-
-    renderModal(
-      <ManualCreatePanel
-        onClose={vi.fn()}
-        onSwitchMode={onSwitchMode}
-        isExpanded={false}
-        setIsExpanded={vi.fn()}
-      />,
-    );
-
-    await user.type(screen.getByPlaceholderText("Issue title"), "Refactor auth");
-    await user.click(screen.getByRole("button", { name: /Switch to Agent/i }));
-
-    expect(onSwitchMode).toHaveBeenCalledTimes(1);
-    // Prompt assist-init + squad actor land in the unified agent draft.
-    expect(mockSetAgent).toHaveBeenCalledWith({ prompt: "Refactor auth" });
-    expect(mockSetAgent).toHaveBeenCalledWith({
-      actorType: "squad",
-      actorId: "squad-1",
-    });
-    // Actor rides the store, not the carry; no parent here → carry is null.
-    expect(onSwitchMode.mock.calls[0]?.[0]).toBeNull();
   });
 
   // Reporter scenario: backend rejects same-titled create with a 409 +

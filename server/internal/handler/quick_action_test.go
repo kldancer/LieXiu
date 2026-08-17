@@ -9,7 +9,7 @@ import (
 // OUTLIVED the templating feature (MUL-5465).
 //
 // Variables were removed because every one of them named something the agent
-// already had. But someone carrying the habit over from autopilot's title
+// already had. But someone carrying the habit over from an old title field
 // template would otherwise get `{{issue.title}}` rendered literally into an
 // agent's instructions and never notice — the exact silent-typo failure the
 // whitelist existed to prevent. So the rejection stays even though the feature
@@ -99,15 +99,10 @@ func TestNormalizeQuickActionVisibility(t *testing.T) {
 	}
 }
 
-// TestValidateQuickActionAssignee locks the polymorphic binding to the two
-// supported actor kinds; anything else would store a target the run path
-// cannot resolve.
+// TestValidateQuickActionAssignee locks quick actions to runnable Agents.
 func TestValidateQuickActionAssignee(t *testing.T) {
 	if err := validateQuickActionAssignee("agent", "0f1e2d3c-4b5a-6978-8796-a5b4c3d2e1f0"); err != nil {
 		t.Fatalf("agent binding must be accepted, got %v", err)
-	}
-	if err := validateQuickActionAssignee("squad", "0f1e2d3c-4b5a-6978-8796-a5b4c3d2e1f0"); err != nil {
-		t.Fatalf("squad binding must be accepted, got %v", err)
 	}
 	if err := validateQuickActionAssignee("member", "0f1e2d3c-4b5a-6978-8796-a5b4c3d2e1f0"); err == nil {
 		t.Fatal("a member binding must be rejected: members are not runnable targets")
@@ -123,7 +118,7 @@ func TestValidateQuickActionAssignee(t *testing.T) {
 //
 // The prompt is appended verbatim to a comment that runs through the normal
 // mention pipeline, so every mention inside it acts on every click: agent /
-// squad / all enqueue a second target, and MEMBER creates an inbox
+// all enqueue a second target, and MEMBER creates an inbox
 // notification for that person. Member was allowed in the first pass on the
 // reasoning that it "only renders a link" — notification_listeners.go shows
 // otherwise, so it is refused too. Only issue links reach nobody.
@@ -139,7 +134,6 @@ func TestValidateQuickActionPromptRejectsSideEffectMentions(t *testing.T) {
 		{"issue mention reaches nobody", "see [MUL-1](mention://issue/" + id + ")", false},
 		{"member mention pings an inbox on every click", "ask [@Jia](mention://member/" + id + ")", true},
 		{"agent mention would enqueue a second target", "also [@Nova](mention://agent/" + id + ")", true},
-		{"squad mention would enqueue a second target", "also [@Core](mention://squad/" + id + ")", true},
 		{"@all would fan out", "[@all](mention://all/all)", true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

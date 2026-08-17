@@ -6,12 +6,12 @@ import {
   HoverCard,
   HoverCardTrigger,
   HoverCardContent,
-} from "@multica/ui/components/ui/hover-card";
-import { useWorkspaceId } from "@multica/core/hooks";
-import { agentTaskSnapshotOptions } from "@multica/core/agents";
-import type { AgentTask } from "@multica/core/types";
-import { cn } from "@multica/ui/lib/utils";
-import type { AvatarSize } from "@multica/ui/lib/avatar-size";
+} from "@liexiu/ui/components/ui/hover-card";
+import { useWorkspaceId } from "@liexiu/core/hooks";
+import { agentTaskSnapshotOptions } from "@liexiu/core/agents";
+import type { AgentTask } from "@liexiu/core/types";
+import { cn } from "@liexiu/ui/lib/utils";
+import type { AvatarSize } from "@liexiu/ui/lib/avatar-size";
 import { AgentAvatarStack } from "../../agents/components/agent-avatar-stack";
 import { AgentActivityHoverContent } from "../../agents/components/agent-activity-hover-content";
 import { selectIssueTasks, type IssueTaskGroups } from "../surface/activity";
@@ -22,7 +22,7 @@ const EMPTY_GROUPS: IssueTaskGroups = { running: [], queued: [] };
 // Dwell threshold before the activity card opens (MUL-5189).
 //
 // This badge is a passive cue riding on the right edge of dense scrolling
-// lists (inbox rows, issue rows, board cards), and it appears on every issue
+// lists (issue rows, board cards), and it appears on every issue
 // an agent currently touches. Base UI's 600ms default is tuned for a hover
 // target the user aims at; here the pointer crosses the badge constantly on
 // its way to the row, the archive button, or the next row, so 600ms fires on
@@ -45,7 +45,7 @@ interface IssueAgentActivityIndicatorProps {
   // densities while still showing the agent's face on hover-zoom.
   size?: AvatarSize;
   // Whether hovering opens the activity card. Opt OUT where the card's only
-  // incremental information is not worth a popup (Inbox — see below).
+// incremental information is not worth a popup.
   hoverCard?: boolean;
 }
 
@@ -70,10 +70,10 @@ interface IssueAgentActivityIndicatorProps {
  * navigation target for issue detail.
  *
  * Surfaces that only need the cue can pass `hoverCard={false}` and get the
- * badge alone. Inbox does (MUL-5189): the badge already shows who is running
+ * badge alone: the badge already shows who is running
  * and whether they are working or queued, so on a triage surface the card's
  * only incremental fact is elapsed time — which never changes the one
- * decision an inbox row exists to support ("do I open this?"). Issue lists
+ * decision an issue row exists to support ("do I open this?"). Issue lists
  * and board cards keep it: monitoring work in flight is what those views are
  * for, and elapsed time is load-bearing there.
  *

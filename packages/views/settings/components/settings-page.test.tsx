@@ -1,12 +1,8 @@
 import { fireEvent, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { SidebarProvider, useSidebar } from "@multica/ui/components/ui/sidebar";
-import { configStore } from "@multica/core/config";
-import {
-  BILLING_WORKSPACE_SUBSCRIPTIONS_FLAG,
-  PLUGINS_V1_FLAG,
-} from "@multica/core/feature-flags";
+import { SidebarProvider, useSidebar } from "@liexiu/ui/components/ui/sidebar";
+import { configStore } from "@liexiu/core/config";
 import { renderWithI18n } from "../../test/i18n";
 
 // This file tests the settings SHELL — the chrome around the tabs — so every
@@ -16,24 +12,18 @@ const stub = vi.hoisted(
 );
 vi.mock("./account-tab", stub("AccountTab"));
 vi.mock("./preferences-tab", stub("PreferencesTab"));
-vi.mock("./chat-tab", stub("ChatTab"));
 vi.mock("./issue-tab", stub("IssueTab"));
 vi.mock("./tokens-tab", stub("TokensTab"));
 vi.mock("./workspace-tab", stub("WorkspaceTab"));
-vi.mock("./members-tab", stub("MembersTab"));
 vi.mock("./repositories-tab", stub("RepositoriesTab"));
 vi.mock("./github-tab", stub("GitHubTab"));
 vi.mock("./integrations-tab", stub("IntegrationsTab"));
 vi.mock("./labs-tab", stub("LabsTab"));
-vi.mock("./notifications-tab", stub("NotificationsTab"));
 vi.mock("./labels-tab", stub("LabelsTab"));
-vi.mock("./properties-tab", stub("PropertiesTab"));
 vi.mock("./quick-actions-tab", stub("QuickActionsTab"));
 vi.mock("./keyboard-shortcuts-tab", stub("KeyboardShortcutsTab"));
-vi.mock("./plugins-tab", stub("PluginsTab"));
-vi.mock("./billing-tab", stub("BillingTab"));
 
-vi.mock("@multica/core/paths", () => ({
+vi.mock("@liexiu/core/paths", () => ({
   useCurrentWorkspace: () => ({ name: "Acme" }),
 }));
 
@@ -50,7 +40,7 @@ vi.mock("../../navigation", () => ({
 // Compact by default: that is the width where the nav is a sheet and this
 // trigger is the only way to reach it.
 const layout = { compact: true };
-vi.mock("@multica/ui/hooks/use-mobile", () => ({
+vi.mock("@liexiu/ui/hooks/use-mobile", () => ({
   useIsMobile: () => layout.compact,
   useIsCompact: () => layout.compact,
 }));
@@ -113,53 +103,5 @@ describe("SettingsPage nav trigger", () => {
       screen.queryByRole("button", { name: "Toggle Sidebar" }),
     ).not.toBeInTheDocument();
     expect(screen.getByText("Settings")).toBeInTheDocument();
-  });
-});
-
-describe("SettingsPage Plugin feature flag", () => {
-  it("hides Plugins and falls back from a direct tab URL when disabled", () => {
-    navigationState.search = "tab=plugins";
-
-    renderWithI18n(<SettingsPage />);
-
-    expect(screen.queryByRole("tab", { name: "Plugins" })).not.toBeInTheDocument();
-    expect(screen.queryByText("PluginsTab")).not.toBeInTheDocument();
-    expect(screen.getByText("AccountTab")).toBeInTheDocument();
-  });
-
-  it("shows and mounts Plugins when explicitly enabled", () => {
-    navigationState.search = "tab=plugins";
-    configStore.getState().setFeatureFlags({ [PLUGINS_V1_FLAG]: true });
-
-    renderWithI18n(<SettingsPage />);
-
-    expect(screen.getByRole("tab", { name: "Plugins" })).toBeInTheDocument();
-    expect(screen.getByText("PluginsTab")).toBeInTheDocument();
-  });
-});
-
-describe("SettingsPage workspace subscription feature flag", () => {
-  it("hides Billing and falls back to Workspace General from a direct URL", () => {
-    navigationState.search = "tab=billing";
-
-    renderWithI18n(<SettingsPage />);
-
-    expect(
-      screen.queryByRole("tab", { name: "Billing" }),
-    ).not.toBeInTheDocument();
-    expect(screen.queryByText("BillingTab")).not.toBeInTheDocument();
-    expect(screen.getByText("WorkspaceTab")).toBeInTheDocument();
-  });
-
-  it("shows and mounts Billing only when explicitly enabled", () => {
-    navigationState.search = "tab=billing";
-    configStore.getState().setFeatureFlags({
-      [BILLING_WORKSPACE_SUBSCRIPTIONS_FLAG]: true,
-    });
-
-    renderWithI18n(<SettingsPage />);
-
-    expect(screen.getByRole("tab", { name: "Billing" })).toBeInTheDocument();
-    expect(screen.getByText("BillingTab")).toBeInTheDocument();
   });
 });

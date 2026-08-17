@@ -21,12 +21,12 @@ import {
   Info,
   Coins,
 } from "lucide-react";
-import { cn } from "@multica/ui/lib/utils";
-import { copyText } from "@multica/ui/lib/clipboard";
-import { Button } from "@multica/ui/components/ui/button";
-import { Dialog, DialogContent, DialogTitle } from "@multica/ui/components/ui/dialog";
-import { Popover, PopoverContent, PopoverTrigger } from "@multica/ui/components/ui/popover";
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@multica/ui/components/ui/collapsible";
+import { cn } from "@liexiu/ui/lib/utils";
+import { copyText } from "@liexiu/ui/lib/clipboard";
+import { Button } from "@liexiu/ui/components/ui/button";
+import { Dialog, DialogContent, DialogTitle } from "@liexiu/ui/components/ui/dialog";
+import { Popover, PopoverContent, PopoverTrigger } from "@liexiu/ui/components/ui/popover";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@liexiu/ui/components/ui/collapsible";
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -36,21 +36,21 @@ import {
   DropdownMenuItem,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
-} from "@multica/ui/components/ui/dropdown-menu";
+} from "@liexiu/ui/components/ui/dropdown-menu";
 import { ActorAvatar } from "../actor-avatar";
 import { AttributionBadge } from "../../issues/components/attribution-badge";
 import { cancelReasonLabel } from "../../agents/components/tabs/task-failure";
 import { RichContent } from "../../rich-content";
-import { api } from "@multica/core/api";
+import { api } from "@liexiu/core/api";
 import {
   useTranscriptViewStore,
   type TranscriptDetailDensity,
   type TranscriptFilterKey,
   type TranscriptSortDirection,
-} from "@multica/core/agents/stores";
-import type { AgentTask, Agent, AgentRuntime } from "@multica/core/types/agent";
-import { runtimeDisplayName, providerDisplayName } from "@multica/core/runtimes";
-import { useCustomPricingStore } from "@multica/core/runtimes/custom-pricing-store";
+} from "@liexiu/core/agents/stores";
+import type { AgentTask, Agent, AgentRuntime } from "@liexiu/core/types/agent";
+import { runtimeDisplayName, providerDisplayName } from "@liexiu/core/runtimes";
+import { useCustomPricingStore } from "@liexiu/core/runtimes/custom-pricing-store";
 import { redactSecrets } from "./redact";
 import {
   createNewestFirstFollow,
@@ -88,8 +88,6 @@ interface AgentTranscriptDialogProps {
   isLive?: boolean;
   /**
    * Optional content rendered between the header chips and the event list.
-   * Used by autopilot run rows to surface the inbound webhook trigger
-   * payload so it's visible regardless of whether the agent echoes it.
    * The dialog stays generic — slot content is the caller's concern.
    */
   headerSlot?: React.ReactNode;
@@ -615,15 +613,11 @@ export function AgentTranscriptDialog({
     ? t(($) => $.transcript.trigger_retry)
     : task.kind === "comment" || task.trigger_comment_id
       ? t(($) => $.transcript.trigger_comment)
-      : task.kind === "autopilot" || task.autopilot_run_id
-        ? t(($) => $.transcript.trigger_autopilot)
-        : task.kind === "chat" || task.chat_session_id
-          ? t(($) => $.transcript.trigger_chat)
-          : task.kind === "quick_create"
-            ? t(($) => $.transcript.trigger_quick_create)
-            : task.kind === "direct" || task.handoff_note
-              ? t(($) => $.transcript.trigger_direct)
-              : t(($) => $.transcript.trigger_initial);
+      : task.kind === "quick_create"
+        ? t(($) => $.transcript.trigger_quick_create)
+        : task.kind === "direct" || task.handoff_note
+          ? t(($) => $.transcript.trigger_direct)
+          : t(($) => $.transcript.trigger_initial);
 
   // Diagnostic detail for the ⓘ popover: everything a reader needs only when
   // debugging this specific run, kept off the always-visible surface.

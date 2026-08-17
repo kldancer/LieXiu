@@ -44,7 +44,7 @@ export const DEFAULT_MANUAL_CREATE_FIELDS: ManualCreateField[] = [
 // Settings → Issue and read by both create dialogs; a field toggled off here
 // stays reachable from the dialog's ⋯ overflow and always re-surfaces while it
 // holds a value. Per-workspace via the workspace-aware storage (projects and
-// custom properties differ per workspace), per-user for free from
+// project selection differs per workspace), per-user for free from
 // localStorage being browser-profile-local — same scoping as quick-create's
 // actor/project memory.
 interface IssueCreateSettingsState {
@@ -73,7 +73,7 @@ export const useIssueCreateSettingsStore = create<IssueCreateSettingsState>()(
         })),
     }),
     {
-      name: "multica_issue_create_settings",
+      name: "liexiu_issue_create_settings",
       storage: createJSONStorage(() => createWorkspaceAwareStorage(defaultStorage)),
       merge: (persistedState, currentState) => {
         const persisted = (persistedState ?? {}) as Partial<IssueCreateSettingsState>;

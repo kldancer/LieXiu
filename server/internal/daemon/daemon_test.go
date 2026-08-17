@@ -21,10 +21,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/multica-ai/multica/server/internal/daemon/execenv"
-	"github.com/multica-ai/multica/server/internal/daemon/repocache"
-	"github.com/multica-ai/multica/server/pkg/agent"
-	"github.com/multica-ai/multica/server/pkg/taskfailure"
+	"github.com/kailonyang/liexiu/server/internal/daemon/execenv"
+	"github.com/kailonyang/liexiu/server/internal/daemon/repocache"
+	"github.com/kailonyang/liexiu/server/pkg/agent"
+	"github.com/kailonyang/liexiu/server/pkg/taskfailure"
 	"github.com/pelletier/go-toml/v2"
 )
 
@@ -68,7 +68,7 @@ func TestTriggerRestart_BrewLinuxCellarDeleted(t *testing.T) {
 	})
 
 	prefix := filepath.Join(t.TempDir(), "home", "linuxbrew", ".linuxbrew")
-	deletedCellarPath := filepath.Join(prefix, "Cellar", "multica", "0.2.9", "bin", "multica")
+	deletedCellarPath := filepath.Join(prefix, "Cellar", "liexiu", "0.2.9", "bin", "liexiu")
 	isBrewInstall = func() bool { return true }
 	getBrewPrefix = func() string { return prefix }
 
@@ -77,7 +77,7 @@ func TestTriggerRestart_BrewLinuxCellarDeleted(t *testing.T) {
 	}
 	d.triggerRestart()
 
-	want := filepath.Join(prefix, "bin", "multica")
+	want := filepath.Join(prefix, "bin", "liexiu")
 	if got := d.RestartBinary(); got != want {
 		t.Fatalf("restart binary = %q, want %q", got, want)
 	}
@@ -94,7 +94,7 @@ func TestTriggerRestart_UsesResolvedFallback(t *testing.T) {
 		isBrewInstall = originalIsBrewInstall
 	})
 
-	want := filepath.Join(t.TempDir(), "multica")
+	want := filepath.Join(t.TempDir(), "liexiu")
 	if err := os.WriteFile(want, []byte("test executable"), 0o755); err != nil {
 		t.Fatalf("write executable fixture: %v", err)
 	}
@@ -149,8 +149,8 @@ func TestIsBlockedEnvKey(t *testing.T) {
 		key  string
 		want bool
 	}{
-		{key: "MULTICA_TOKEN", want: true},
-		{key: "multica_runtime_id", want: true},
+		{key: "LIEXIU_TOKEN", want: true},
+		{key: "liexiu_runtime_id", want: true},
 		{key: "HOME", want: true},
 		{key: "PATH", want: true},
 		{key: "TMPDIR", want: true},
@@ -194,7 +194,7 @@ func TestPrepareReasonixTaskStateHome(t *testing.T) {
 	if err != nil {
 		t.Fatalf("prepareReasonixTaskStateHome: %v", err)
 	}
-	want := filepath.Join(home, ".multica", "profiles", "work", "reasonix-state", "runtime-1", "agent_2")
+	want := filepath.Join(home, ".liexiu", "profiles", "work", "reasonix-state", "runtime-1", "agent_2")
 	if got != want {
 		t.Fatalf("state home = %q, want %q", got, want)
 	}
@@ -216,7 +216,7 @@ func TestPrepareDshTaskSessionRoot(t *testing.T) {
 	if err != nil {
 		t.Fatalf("prepareDshTaskSessionRoot: %v", err)
 	}
-	want := filepath.Join(home, ".multica", "profiles", "work", "dsh-sessions", "runtime-1", "agent_2")
+	want := filepath.Join(home, ".liexiu", "profiles", "work", "dsh-sessions", "runtime-1", "agent_2")
 	if got != want {
 		t.Fatalf("session root = %q, want %q", got, want)
 	}
@@ -289,10 +289,10 @@ func TestLayerCustomEnvAndHermesHome(t *testing.T) {
 		},
 		{
 			name:        "blocklisted key dropped, overlay still applied",
-			customEnv:   map[string]string{"CODEX_HOME": "/evil", "MULTICA_TOKEN": "x"},
+			customEnv:   map[string]string{"CODEX_HOME": "/evil", "LIEXIU_TOKEN": "x"},
 			overlayHome: "/tmp/task/hermes-home",
 			wantHermes:  "/tmp/task/hermes-home",
-			wantAbsent:  []string{"CODEX_HOME", "MULTICA_TOKEN"},
+			wantAbsent:  []string{"CODEX_HOME", "LIEXIU_TOKEN"},
 		},
 	}
 
@@ -360,15 +360,15 @@ func TestConfigureCodexTaskShellEnvironment(t *testing.T) {
 			"SystemRoot=C:\\Windows",
 			"USERPROFILE=C:\\Users\\test",
 			"OPENAI_API_KEY=host-secret",
-			"MULTICA_LLM_API_KEY=daemon-secret",
+			"LIEXIU_LLM_API_KEY=daemon-secret",
 		}
 		agentEnv := map[string]string{
 			"CUSTOM_ACCESS_TOKEN":      "agent-secret",
 			"CUSTOM_FLAG":              "enabled",
 			"UNAUTHORIZED_TOKEN":       "daemon-secret",
-			"MULTICA_TASK_CONFIG_ROOT": "/task/multica-config",
-			"MULTICA_SERVER_URL":       "https://task.example",
-			"MULTICA_TOKEN":            "mat_task",
+			"LIEXIU_TASK_CONFIG_ROOT": "/task/liexiu-config",
+			"LIEXIU_SERVER_URL":       "https://task.example",
+			"LIEXIU_TOKEN":            "mat_task",
 		}
 		agentCustomEnv := map[string]string{
 			"CUSTOM_ACCESS_TOKEN": "agent-secret",
@@ -382,12 +382,12 @@ func TestConfigureCodexTaskShellEnvironment(t *testing.T) {
 			t.Fatalf("read config.toml: %v", err)
 		}
 		config := string(data)
-		for _, want := range []string{"SystemRoot", "USERPROFILE", "CUSTOM_ACCESS_TOKEN", "CUSTOM_FLAG", "MULTICA_TASK_CONFIG_ROOT", "MULTICA_SERVER_URL", "MULTICA_TOKEN"} {
+		for _, want := range []string{"SystemRoot", "USERPROFILE", "CUSTOM_ACCESS_TOKEN", "CUSTOM_FLAG", "LIEXIU_TASK_CONFIG_ROOT", "LIEXIU_SERVER_URL", "LIEXIU_TOKEN"} {
 			if !strings.Contains(config, want) {
 				t.Errorf("config.toml missing %q:\n%s", want, config)
 			}
 		}
-		for _, unwanted := range []string{"OPENAI_API_KEY", "MULTICA_LLM_API_KEY", "UNAUTHORIZED_TOKEN", "MULTICA_*", "agent-secret", "daemon-secret", "mat_task"} {
+		for _, unwanted := range []string{"OPENAI_API_KEY", "LIEXIU_LLM_API_KEY", "UNAUTHORIZED_TOKEN", "LIEXIU_*", "agent-secret", "daemon-secret", "mat_task"} {
 			if strings.Contains(config, unwanted) {
 				t.Errorf("config.toml unexpectedly contains %q:\n%s", unwanted, config)
 			}
@@ -396,7 +396,7 @@ func TestConfigureCodexTaskShellEnvironment(t *testing.T) {
 
 	t.Run("Codex without task home fails closed", func(t *testing.T) {
 		t.Parallel()
-		err := configureCodexTaskShellEnvironment("codex", "", nil, map[string]string{"MULTICA_TOKEN": "mat_task"}, nil, slog.Default())
+		err := configureCodexTaskShellEnvironment("codex", "", nil, map[string]string{"LIEXIU_TOKEN": "mat_task"}, nil, slog.Default())
 		if err == nil || !strings.Contains(err.Error(), "CODEX_HOME is missing") {
 			t.Fatalf("error = %v, want missing CODEX_HOME", err)
 		}
@@ -427,9 +427,9 @@ func TestCodexTaskShellEnvInheritsRealHome(t *testing.T) {
 	// task-scoped CODEX_HOME, and — since MUL-5578 — no HOME/XDG entry.
 	explicit := map[string]string{
 		"CODEX_HOME":               codexHome,
-		"MULTICA_TASK_CONFIG_ROOT": "/task/multica-config",
-		"MULTICA_TOKEN":            "mat_task",
-		"MULTICA_SERVER_URL":       "https://task.example",
+		"LIEXIU_TASK_CONFIG_ROOT": "/task/liexiu-config",
+		"LIEXIU_TOKEN":            "mat_task",
+		"LIEXIU_SERVER_URL":       "https://task.example",
 	}
 
 	if err := configureCodexTaskShellEnvironment("codex", codexHome, inherited, explicit, nil, slog.Default()); err != nil {
@@ -461,8 +461,8 @@ func TestCodexTaskShellEnvInheritsRealHome(t *testing.T) {
 	if !slices.Contains(include, "CODEX_HOME") {
 		t.Errorf("include_only missing CODEX_HOME, got %v", include)
 	}
-	if !slices.Contains(include, "MULTICA_TASK_CONFIG_ROOT") {
-		t.Errorf("include_only missing MULTICA_TASK_CONFIG_ROOT, got %v", include)
+	if !slices.Contains(include, "LIEXIU_TASK_CONFIG_ROOT") {
+		t.Errorf("include_only missing LIEXIU_TASK_CONFIG_ROOT, got %v", include)
 	}
 }
 
@@ -472,7 +472,7 @@ func TestCodexShellAuthorizedCustomEnvNamesUsesDaemonBlocklist(t *testing.T) {
 	got := codexShellAuthorizedCustomEnvNames(map[string]string{
 		"CUSTOM_ACCESS_TOKEN": "agent-secret",
 		"custom_secret":       "agent-secret",
-		"MULTICA_TOKEN":       "must-not-authorize",
+		"LIEXIU_TOKEN":       "must-not-authorize",
 		"PATH":                "/must/not/override",
 		"HOME":                "/must/not/override",
 		"CODEX_HOME":          "/must/not/override",
@@ -534,59 +534,59 @@ func TestTaskScopedAuthToken(t *testing.T) {
 	}
 }
 
-func TestTaskMulticaEnvironmentIncludesPrivateConfigRoot(t *testing.T) {
+func TestTaskLieXiuEnvironmentIncludesPrivateConfigRoot(t *testing.T) {
 	t.Parallel()
 
 	const (
 		fakeToken      = "mat_task_environment_sentinel"
-		taskRoot       = "/task/private-multica-config"
-		workspacesRoot = "/daemon/multica_workspaces_staging"
+		taskRoot       = "/task/private-liexiu-config"
+		workspacesRoot = "/daemon/liexiu_workspaces_staging"
 	)
 	task := Task{
 		ID:          "task-test",
 		AgentID:     "agent-test",
 		WorkspaceID: "workspace-test",
 	}
-	env := taskMulticaEnvironment(task, "agent-name", fakeToken, taskRoot, workspacesRoot, "https://task.example", 19514, 3, "/task/tmp")
+	env := taskLieXiuEnvironment(task, "agent-name", fakeToken, taskRoot, workspacesRoot, "https://task.example", 19514, 3, "/task/tmp")
 
 	want := map[string]string{
-		"MULTICA_TOKEN":                fakeToken,
-		"MULTICA_TASK_CONFIG_ROOT":     taskRoot,
-		"MULTICA_TASK_WORKSPACES_ROOT": workspacesRoot,
-		"MULTICA_SERVER_URL":           "https://task.example",
-		"MULTICA_DAEMON_PORT":          "19514",
-		"MULTICA_WORKSPACE_ID":         "workspace-test",
-		"MULTICA_AGENT_NAME":           "agent-name",
-		"MULTICA_AGENT_ID":             "agent-test",
-		"MULTICA_TASK_ID":              "task-test",
-		"MULTICA_TASK_SLOT":            "3",
+		"LIEXIU_TOKEN":                fakeToken,
+		"LIEXIU_TASK_CONFIG_ROOT":     taskRoot,
+		"LIEXIU_TASK_WORKSPACES_ROOT": workspacesRoot,
+		"LIEXIU_SERVER_URL":           "https://task.example",
+		"LIEXIU_DAEMON_PORT":          "19514",
+		"LIEXIU_WORKSPACE_ID":         "workspace-test",
+		"LIEXIU_AGENT_NAME":           "agent-name",
+		"LIEXIU_AGENT_ID":             "agent-test",
+		"LIEXIU_TASK_ID":              "task-test",
+		"LIEXIU_TASK_SLOT":            "3",
 		"TMPDIR":                       "/task/tmp",
 		"TMP":                          "/task/tmp",
 		"TEMP":                         "/task/tmp",
 	}
 	if !maps.Equal(env, want) {
-		t.Fatalf("taskMulticaEnvironment() = %#v, want %#v", env, want)
+		t.Fatalf("taskLieXiuEnvironment() = %#v, want %#v", env, want)
 	}
 
 	layerCustomEnvAndHermesHome(env, map[string]string{
-		"MULTICA_TASK_CONFIG_ROOT":     "/owner/config",
-		"MULTICA_TASK_WORKSPACES_ROOT": "/owner/multica_workspaces",
-		"MULTICA_TOKEN":                "mul_owner_sentinel",
+		"LIEXIU_TASK_CONFIG_ROOT":     "/owner/config",
+		"LIEXIU_TASK_WORKSPACES_ROOT": "/owner/liexiu_workspaces",
+		"LIEXIU_TOKEN":                "mul_owner_sentinel",
 	}, "", nil)
-	if env["MULTICA_TASK_CONFIG_ROOT"] != taskRoot {
-		t.Fatalf("custom env replaced task config root: %q", env["MULTICA_TASK_CONFIG_ROOT"])
+	if env["LIEXIU_TASK_CONFIG_ROOT"] != taskRoot {
+		t.Fatalf("custom env replaced task config root: %q", env["LIEXIU_TASK_CONFIG_ROOT"])
 	}
 	if env[TaskWorkspacesRootEnv] != workspacesRoot {
 		t.Fatalf("custom env replaced task workspaces root: %q", env[TaskWorkspacesRootEnv])
 	}
-	if env["MULTICA_TOKEN"] != fakeToken {
+	if env["LIEXIU_TOKEN"] != fakeToken {
 		t.Fatal("custom env replaced task-scoped token")
 	}
 }
 
 // When `brew --prefix` is unavailable but the executable path is under a
 // known Cellar root, triggerRestart must recover the prefix from the
-// known-prefix list and target <prefix>/bin/multica.
+// known-prefix list and target <prefix>/bin/liexiu.
 func TestTriggerRestart_BrewPrefixUnavailable_FallsBackToKnownPrefix(t *testing.T) {
 	originalIsBrewInstall := isBrewInstall
 	originalGetBrewPrefix := getBrewPrefix
@@ -600,7 +600,7 @@ func TestTriggerRestart_BrewPrefixUnavailable_FallsBackToKnownPrefix(t *testing.
 	})
 
 	const knownPrefix = "/home/linuxbrew/.linuxbrew"
-	cellarPath := filepath.Join(knownPrefix, "Cellar", "multica", "0.2.9", "bin", "multica")
+	cellarPath := filepath.Join(knownPrefix, "Cellar", "liexiu", "0.2.9", "bin", "liexiu")
 	isBrewInstall = func() bool { return true }
 	getBrewPrefix = func() string { return "" }
 	resolveSelfExecutable = func() (string, error) { return cellarPath, nil }
@@ -616,7 +616,7 @@ func TestTriggerRestart_BrewPrefixUnavailable_FallsBackToKnownPrefix(t *testing.
 	}
 	d.triggerRestart()
 
-	want := filepath.Join(knownPrefix, "bin", "multica")
+	want := filepath.Join(knownPrefix, "bin", "liexiu")
 	if got := d.RestartBinary(); got != want {
 		t.Fatalf("restart binary = %q, want %q", got, want)
 	}
@@ -624,7 +624,7 @@ func TestTriggerRestart_BrewPrefixUnavailable_FallsBackToKnownPrefix(t *testing.
 
 // When `brew --prefix` is unavailable AND the executable is not under any
 // known Cellar root, triggerRestart logs a warning and keeps the executable
-// path (no fabricated <prefix>/bin/multica path).
+// path (no fabricated <prefix>/bin/liexiu path).
 func TestTriggerRestart_BrewPrefixUnavailable_NoKnownPrefix_KeepsExecutable(t *testing.T) {
 	originalIsBrewInstall := isBrewInstall
 	originalGetBrewPrefix := getBrewPrefix
@@ -818,7 +818,7 @@ func TestBuildPromptContainsIssueID(t *testing.T) {
 	// Prompt should contain the issue ID and CLI hint.
 	for _, want := range []string{
 		issueID,
-		"multica issue get",
+		"liexiu issue get",
 	} {
 		if !strings.Contains(prompt, want) {
 			t.Fatalf("prompt missing %q", want)
@@ -833,116 +833,6 @@ func TestBuildPromptContainsIssueID(t *testing.T) {
 	}
 }
 
-// TestSessionContinuityNoticeMatchesSurface locks the MUL-5722 split. The same
-// event costs each surface something different, so it cannot be reported with
-// one sentence. The dividing question is whether the conversation can still be
-// READ, not whether it is a chat: an issue's comments, a Slack channel's
-// history, and a web chat's / Feishu's / WeCom's / DingTalk's stored
-// chat_message transcript all can; only a surface Multica stores no transcript
-// for cannot. Announcing a loss on the readable ones describes something that
-// did not happen — the user hears "the discussion is gone" when every word
-// survives.
-func TestSessionContinuityNoticeMatchesSurface(t *testing.T) {
-	t.Parallel()
-
-	cases := []struct {
-		name         string
-		task         Task
-		tellUser     bool
-		wantMentions string
-	}{
-		{
-			name:         "issue rebuilds from comments",
-			task:         Task{IssueID: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"},
-			tellUser:     false,
-			wantMentions: "comment history",
-		},
-		{
-			// Slack has a history reader, so the conversation is recoverable —
-			// just from the channel rather than from Multica. Telling the user it
-			// was lost contradicts the commands the same prompt hands the agent.
-			name:         "slack rebuilds from the channel",
-			task:         Task{ChatSessionID: "chat-1", ChatChannelType: execenv.ChannelTypeSlack},
-			tellUser:     false,
-			wantMentions: "multica chat history",
-		},
-		{
-			// Web chat history is persisted in chat_message, which `multica chat
-			// history` reads back — recoverable, just from Multica's store.
-			name:         "web chat rebuilds from the stored transcript",
-			task:         Task{ChatSessionID: "chat-1"},
-			tellUser:     false,
-			wantMentions: "multica chat history",
-		},
-		{
-			// Feishu's conversation is persisted to chat_message too, and the
-			// handler's non-Slack fallback reads it back via `multica chat history`.
-			name:         "feishu rebuilds from the stored transcript",
-			task:         Task{ChatSessionID: "chat-1", ChatChannelType: execenv.ChannelTypeFeishu},
-			tellUser:     false,
-			wantMentions: "multica chat history",
-		},
-		{
-			// WeCom is fully wired on main (persists chat_message, stamps
-			// ChatChannelType="wecom"), so its transcript is readable too — the
-			// handler's non-Slack fallback serves it just like Feishu's.
-			name:         "wecom rebuilds from the stored transcript",
-			task:         Task{ChatSessionID: "chat-1", ChatChannelType: execenv.ChannelTypeWecom},
-			tellUser:     false,
-			wantMentions: "multica chat history",
-		},
-		{
-			// DingTalk persists to chat_message through the same AppendUserMessage
-			// path as Feishu/WeCom, so its transcript is readable the same way.
-			name:         "dingtalk rebuilds from the stored transcript",
-			task:         Task{ChatSessionID: "chat-1", ChatChannelType: execenv.ChannelTypeDingtalk},
-			tellUser:     false,
-			wantMentions: "multica chat history",
-		},
-	}
-
-	for _, tc := range cases {
-		tc := tc
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-			notice := sessionContinuityNoticeFor(tc.task)
-			if got := strings.Contains(notice, "tell the user up front"); got != tc.tellUser {
-				t.Errorf("tells the user = %v, want %v:\n%s", got, tc.tellUser, notice)
-			}
-			if !strings.Contains(notice, tc.wantMentions) {
-				t.Errorf("notice missing %q, so the agent is not told where to rebuild from:\n%s", tc.wantMentions, notice)
-			}
-			// Where the conversation survives, the ONLY loss is the agent's
-			// unrecorded working memory, and it has to be told so or it assumes
-			// it still remembers work it no longer has. Where nothing survives
-			// that distinction is meaningless — everything is gone — so the
-			// requirement applies to the recoverable surfaces only.
-			if !tc.tellUser && !strings.Contains(notice, "your own working memory") {
-				t.Errorf("recoverable surface must name the real loss:\n%s", notice)
-			}
-		})
-	}
-
-	// The notice only renders when the resume actually failed.
-	if blocks := perTurnContextBlocks(Task{IssueID: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"}); strings.Contains(blocks, "Session Continuity Notice") {
-		t.Errorf("continuity notice leaked into a run that resumed fine:\n%s", blocks)
-	}
-	lost := perTurnContextBlocks(Task{
-		IssueID:                       "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
-		PriorSessionResumeUnavailable: true,
-	})
-	if !strings.Contains(lost, "Session Continuity Notice") {
-		t.Errorf("continuity notice missing when the resume was unavailable:\n%s", lost)
-	}
-}
-
-// TestBackendResumeContinuityNoticeSuppressedWhenPromptAlreadyHasIt is the
-// count guard Elon asked for, on the combination that actually occurs: the
-// codex overflow fresh retry. The daemon appends the notice to the prompt AND
-// hands the backend a notice to prepend, so before MUL-5722 one turn carried
-// the same paragraph twice — at full token price, from two hand-written
-// strings. Suppression is keyed on the prompt already carrying it, so the two
-// injectors cannot both fire.
 func TestBackendResumeContinuityNoticeSuppressedWhenPromptAlreadyHasIt(t *testing.T) {
 	t.Parallel()
 
@@ -1084,41 +974,6 @@ func TestBuildPromptNoIssueDetails(t *testing.T) {
 	}
 }
 
-func TestBuildPromptAutopilotRunOnly(t *testing.T) {
-	t.Parallel()
-
-	prompt := BuildPrompt(Task{
-		AutopilotRunID:       "run-1",
-		AutopilotID:          "autopilot-1",
-		AutopilotTitle:       "Daily dependency check",
-		AutopilotDescription: "Check dependencies and report outdated packages.",
-		AutopilotSource:      "manual",
-	}, "claude")
-
-	for _, want := range []string{
-		"run-only mode",
-		"Autopilot run ID: run-1",
-		"Daily dependency check",
-		"Check dependencies and report outdated packages.",
-		"multica autopilot get autopilot-1 --output json",
-	} {
-		if !strings.Contains(prompt, want) {
-			t.Fatalf("autopilot prompt missing %q\n---\n%s", want, prompt)
-		}
-	}
-
-	// The issue-command boundary is emitted ONCE, by the brief's autopilot
-	// workflow section (execenv.AutopilotIssueCommandsGuard). MUL-5696 found
-	// that a second hand-maintained per-turn copy drifts, so the per-turn
-	// prompt must not restate it in any form.
-	if strings.Contains(prompt, "Do not run `multica issue get`") {
-		t.Fatalf("autopilot prompt restates the issue-command boundary the brief owns (MUL-5696)\n---\n%s", prompt)
-	}
-	if strings.Contains(prompt, "Your assigned issue ID is:") {
-		t.Fatalf("autopilot prompt should not use issue assignment template\n---\n%s", prompt)
-	}
-}
-
 func TestBuildPromptCommentTriggered(t *testing.T) {
 	t.Parallel()
 
@@ -1142,11 +997,11 @@ func TestBuildPromptCommentTriggered(t *testing.T) {
 		commentContent,
 		"Focus on THIS comment",
 		commentID,
-		"multica issue comment add " + issueID + " --parent " + commentID,
+		"liexiu issue comment add " + issueID + " --parent " + commentID,
 		"do NOT reuse --parent values from previous turns",
 		// MUL-5442 (2026-08-06): with the generic no-reply rule retired,
 		// the reply command is framed as a plain imperative again — the
-		// squad leader's `no_action` block states its own exception.
+		// the explicit `no_action` block states its own exception.
 		"Post your reply as a comment",
 	} {
 		if !strings.Contains(prompt, want) {
@@ -1155,7 +1010,7 @@ func TestBuildPromptCommentTriggered(t *testing.T) {
 	}
 
 	// Should still contain CLI hint for fetching issue context.
-	if !strings.Contains(prompt, "multica issue get") {
+	if !strings.Contains(prompt, "liexiu issue get") {
 		t.Fatal("prompt missing CLI hint for issue context")
 	}
 }
@@ -1166,9 +1021,9 @@ func TestBuildPromptCommentTriggered(t *testing.T) {
 // GH#1576). Retired by MUL-5442 owner decision (2026-08-06): an agent
 // comment cannot wake an ordinary agent without an explicit @mention
 // (computeCommentAgentTriggers routes agent-authored comments only via
-// mentions, plus the squad-leader wake), so loop prevention belongs to the
+// mentions, plus the explicit wake path), so loop prevention belongs to the
 // mention discipline in the brief's `## Mentions`, and recorded silence
-// stays squad-leader-only (`no_action`). Retired pins, now negative
+// stays on the explicit (`no_action`) path. Retired pins, now negative
 // guards: "do not @mention the other agent as a sign-off", "Silence is
 // the preferred way".
 func TestBuildPromptCommentTriggeredByAgent(t *testing.T) {
@@ -1223,7 +1078,7 @@ func TestBuildPromptCommentTriggeredByMember(t *testing.T) {
 		t.Fatalf("member-triggered prompt should not claim the author was another agent")
 	}
 	// Must NOT use the old "You MUST respond" language: the reply command is
-	// shared across turn types, and a squad leader's `no_action` exit — the
+	// shared across turn types, and an explicit `no_action` exit — the
 	// one silent path left after MUL-5442 retired the generic no-reply rule —
 	// must not be shouted over by the per-turn channel. The unconditional
 	// one-comment contract for ordinary agents lives in the brief.
@@ -1246,57 +1101,8 @@ func TestBuildPromptCommentTriggeredNoContent(t *testing.T) {
 		Agent:            &AgentData{Name: "Test"},
 	}, "claude")
 
-	if !strings.Contains(prompt, "multica issue get") {
+	if !strings.Contains(prompt, "liexiu issue get") {
 		t.Fatal("prompt missing CLI hint")
-	}
-}
-
-// TestBuildPromptSquadLeaderNoActionProhibition verifies that when a squad
-// leader is triggered by another agent's comment, the per-turn prompt
-// explicitly forbids posting a comment whose only purpose is to announce
-// no_action or "exiting silently". This is the fix for MUL-2168.
-func TestBuildPromptSquadLeaderNoActionProhibition(t *testing.T) {
-	t.Parallel()
-
-	prompt := BuildPrompt(Task{
-		IssueID:               "issue-1",
-		TriggerCommentID:      "comment-1",
-		TriggerCommentContent: "Progress update: tests passing.",
-		TriggerAuthorType:     "agent",
-		TriggerAuthorName:     "Worker",
-		IsLeaderTask:          true,
-		LeaderRoleResolved:    true,
-		Agent: &AgentData{
-			Name:         "Leader",
-			Instructions: "You lead the team.\n\n## Squad Operating Protocol\n\nYou are the LEADER.",
-		},
-	}, "claude")
-
-	for _, want := range []string{
-		"Squad leader no_action rule",
-		"DO NOT post any comment",
-		"multica squad activity",
-	} {
-		if !strings.Contains(prompt, want) {
-			t.Fatalf("squad leader prompt missing %q\n---\n%s", want, prompt)
-		}
-	}
-
-	// Non-squad-leader agent should NOT get the squad leader rule.
-	nonLeaderPrompt := BuildPrompt(Task{
-		IssueID:               "issue-1",
-		TriggerCommentID:      "comment-1",
-		TriggerCommentContent: "Progress update: tests passing.",
-		TriggerAuthorType:     "agent",
-		TriggerAuthorName:     "Worker",
-		Agent: &AgentData{
-			Name:         "Regular",
-			Instructions: "You are a regular agent.",
-		},
-	}, "claude")
-
-	if strings.Contains(nonLeaderPrompt, "Squad leader no_action rule") {
-		t.Fatalf("non-squad-leader prompt should NOT contain squad leader rule\n---\n%s", nonLeaderPrompt)
 	}
 }
 
@@ -2509,7 +2315,7 @@ func TestExecuteAndDrain_NetworkFailureKeepsResumeSession(t *testing.T) {
 // TestExecuteAndDrain_AuthResolutionOnResumeRecoversInTurn is the GH #6777
 // regression, driven through the same two-attempt sequence the daemon runs.
 //
-// The reported symptom was a Chat that alternated success / failure forever:
+// The reported symptom alternated success / failure forever:
 // turn 1 opened a session and worked; turn 2 resumed it and died with the
 // provider's auth-resolution error; the server-side resume guards then
 // blacklisted that session so turn 3 started fresh and worked again, and so on.
@@ -2866,7 +2672,7 @@ func TestShouldRetryWithFreshSession(t *testing.T) {
 			want:           false,
 		},
 		{
-			// GH #6777: the alternating Chat failure. Hermes rebuilds the
+			// GH #6777: the alternating provider failure. Hermes rebuilds the
 			// resumed session but persists a normalised provider identity that
 			// can no longer resolve its credentials, so the turn dies with the
 			// SDK's auth-resolution message. Nothing rejected the resume, so
@@ -3726,7 +3532,7 @@ func TestEnsureRepoReadyRefreshesOnMiss(t *testing.T) {
 }
 
 // A project github_repo URL that the workspace itself does not bind must still
-// be allowed for `multica repo checkout` after registerTaskRepos runs. Without
+// be allowed for `liexiu repo checkout` after registerTaskRepos runs. Without
 // this, the new project-repos-override-workspace-repos behavior would surface
 // repos in the meta-skill that the agent then can't actually clone.
 func TestRegisterTaskReposAllowsProjectOnlyURL(t *testing.T) {
@@ -3950,8 +3756,8 @@ func TestContextLockCancelsWaitWithoutConsumingToken(t *testing.T) {
 }
 
 func TestShellArgsFromEnv(t *testing.T) {
-	t.Setenv("MULTICA_CLAUDE_ARGS", `--max-turns 60 --append-system-prompt "multi word"`)
-	got, err := shellArgsFromEnv("MULTICA_CLAUDE_ARGS")
+	t.Setenv("LIEXIU_CLAUDE_ARGS", `--max-turns 60 --append-system-prompt "multi word"`)
+	got, err := shellArgsFromEnv("LIEXIU_CLAUDE_ARGS")
 	if err != nil {
 		t.Fatalf("shellArgsFromEnv: %v", err)
 	}
@@ -3962,8 +3768,8 @@ func TestShellArgsFromEnv(t *testing.T) {
 }
 
 func TestShellArgsFromEnvEmptyIsNil(t *testing.T) {
-	t.Setenv("MULTICA_CODEX_ARGS", "   ")
-	got, err := shellArgsFromEnv("MULTICA_CODEX_ARGS")
+	t.Setenv("LIEXIU_CODEX_ARGS", "   ")
+	got, err := shellArgsFromEnv("LIEXIU_CODEX_ARGS")
 	if err != nil {
 		t.Fatalf("shellArgsFromEnv: %v", err)
 	}
@@ -4122,7 +3928,7 @@ func TestReportTaskResult_CancelledParentStillReportsTerminalState(t *testing.T)
 	}
 }
 
-// Pins the GitHub multica#1952 fail-closed behaviour: a task whose
+// Pins the GitHub liexiu#1952 fail-closed behaviour: a task whose
 // agent run never produced a real result (blocked, cancelled, or any
 // future status we forget to enumerate) MUST go through FailTask, so
 // the UI never shows a green "Completed" badge for a run that didn't
@@ -4206,7 +4012,7 @@ func TestReportTaskResult_NonCompletedHitsFailEndpoint(t *testing.T) {
 				t.Errorf("failure_reason: got %v, want %q", got, tc.wantFailureReason)
 			}
 			if rec.payload["session_id"] != "ses-x" {
-				t.Errorf("session_id should be forwarded on failure paths so chat resume keeps working, got %v", rec.payload["session_id"])
+				t.Errorf("session_id should be forwarded on failure paths so issue resume keeps working, got %v", rec.payload["session_id"])
 			}
 		})
 	}
@@ -5154,12 +4960,12 @@ func TestSanitizeAgentEnv(t *testing.T) {
 	in := map[string]string{
 		"HOME":        "/evil",
 		"PATH":        "/evil/bin",
-		"MULTICA_X":   "1",
+		"LIEXIU_X":   "1",
 		"TEAM_SKILLS": "/srv/team",
 		"HERMES_HOME": "/some/home",
 	}
 	got := sanitizeAgentEnv(in)
-	for _, blocked := range []string{"HOME", "PATH", "MULTICA_X"} {
+	for _, blocked := range []string{"HOME", "PATH", "LIEXIU_X"} {
 		if _, ok := got[blocked]; ok {
 			t.Errorf("blocklisted key %q must be dropped from the effective env", blocked)
 		}
@@ -5212,7 +5018,7 @@ func TestHermesLaunchArgsAndEnvByScenario(t *testing.T) {
 // TestHandleTask_AcksCancelAfterPollCancelled verifies the daemon posts
 // cancel-ack when the poll goroutine interrupts the run — by then
 // runner.run has returned, so the transcript flush is complete and the
-// server may settle its deferred chat finalization (#5219).
+// server may settle its deferred task finalization (#5219).
 func TestHandleTask_AcksCancelAfterPollCancelled(t *testing.T) {
 	t.Parallel()
 
@@ -5456,109 +5262,5 @@ func TestFreshSessionMayHelp(t *testing.T) {
 	const hermesAuth = "hermes provider error: \"Could not resolve authentication method. Expected either api_key or auth_token to be set. Or for one of the X-Api-Key or Authorization headers to be explicitly omitted\""
 	if !freshSessionMayHelp(hermesAuth) {
 		t.Fatalf("freshSessionMayHelp(auth-resolution error) = false; a fresh session cures this failure, it must report session-fixable")
-	}
-}
-
-// TestBuildPromptSquadLeaderReplyCommandCarvesOutNoAction renders the COMPLETE
-// leader prompt and pins the exception's scope relation (MUL-5442 #6493
-// review): the no_action rule and the reply imperative appear in the same
-// prompt, so the imperative must carry the carve-out itself — a bare
-// unconditional "Post your reply as a comment" anywhere in a leader prompt
-// re-opens the contradiction the carve-out exists to close.
-func TestBuildPromptSquadLeaderReplyCommandCarvesOutNoAction(t *testing.T) {
-	t.Parallel()
-
-	prompt := BuildPrompt(Task{
-		IssueID:               "issue-1",
-		TriggerCommentID:      "comment-1",
-		TriggerCommentContent: "team update posted",
-		TriggerAuthorType:     "member",
-		TriggerAuthorName:     "Bohan",
-		IsLeaderTask:          true,
-		LeaderRoleResolved:    true,
-		Agent: &AgentData{
-			Name:         "Lead",
-			Instructions: "Some instructions\n\n## Squad Operating Protocol\n\nYou are the LEADER...",
-		},
-	}, "claude")
-
-	if !strings.Contains(prompt, "Squad leader no_action rule") {
-		t.Fatalf("leader prompt missing the no_action rule\n---\n%s", prompt)
-	}
-	if !strings.Contains(prompt, "Unless your outcome is `no_action`, post your reply as a comment") {
-		t.Fatalf("leader prompt missing the carve-out reply imperative\n---\n%s", prompt)
-	}
-	if strings.Contains(prompt, "Post your reply as a comment") {
-		t.Fatalf("leader prompt still carries the unconditional reply imperative\n---\n%s", prompt)
-	}
-}
-
-// TestBuildPromptSquadLeaderMultiThreadCarvesOutNoAction renders the complete
-// leader prompt on the cross-thread fan-out path (MUL-5442 #6493 review): the
-// fan-out imperative fires AFTER the no_action rule, so its scope sentence
-// must govern the ENTIRE block — assert it precedes every later obligation,
-// not just the first verb. The ordinary fan-out output keeps the
-// unconditional form byte-for-byte.
-func TestBuildPromptSquadLeaderMultiThreadCarvesOutNoAction(t *testing.T) {
-	t.Parallel()
-
-	leaderTask := Task{
-		IssueID:               "issue-1",
-		TriggerCommentID:      "comment-9",
-		TriggerThreadID:       "thread-B",
-		TriggerCommentContent: "second update",
-		TriggerAuthorType:     "agent",
-		TriggerAuthorName:     "Worker",
-		CoalescedComments: []CoalescedCommentData{
-			{ID: "comment-8", ThreadID: "thread-A", Content: "first update"},
-		},
-		IsLeaderTask:       true,
-		LeaderRoleResolved: true,
-		Agent: &AgentData{
-			Name:         "Lead",
-			Instructions: "Some instructions\n\n## Squad Operating Protocol\n\nYou are the LEADER...",
-		},
-	}
-	prompt := BuildPrompt(leaderTask, "claude")
-	if !strings.Contains(prompt, "Squad leader no_action rule") {
-		t.Fatalf("leader multi-thread prompt missing the no_action rule\n---\n%s", prompt)
-	}
-	scope := strings.Index(prompt, "skip this ENTIRE fan-out block")
-	if scope < 0 {
-		t.Fatalf("leader multi-thread prompt missing the whole-block scope sentence\n---\n%s", prompt)
-	}
-	// Obligation strings track the converged fan-out block (MUL-5825). Pin
-	// ledger: "Post the replies in the order listed below" → the order rule
-	// merged into the targets header ("OLDEST thread first"); "For EACH
-	// thread above" → the embedded cookbook collapsed to the
-	// `## Comment Formatting` pointer plus the per-thread file delta
-	// ("DISTINCT body file per thread"). The assertion shape is unchanged:
-	// every obligation must sit AFTER the no_action scope sentence.
-	for _, obligation := range []string{
-		"multiple replies are required and correct",
-		"OLDEST thread first",
-		"DISTINCT body file per thread",
-	} {
-		idx := strings.Index(prompt, obligation)
-		if idx < 0 {
-			t.Fatalf("leader multi-thread prompt missing obligation %q\n---\n%s", obligation, prompt)
-		}
-		if idx < scope {
-			t.Fatalf("obligation %q precedes the no_action scope sentence — it escapes the carve-out\n---\n%s", obligation, prompt)
-		}
-	}
-	if strings.Contains(prompt, ". Post ONE reply per thread") {
-		t.Fatalf("leader multi-thread prompt still carries the unconditional imperative\n---\n%s", prompt)
-	}
-
-	ordinaryTask := leaderTask
-	ordinaryTask.IsLeaderTask = false
-	ordinaryTask.Agent = &AgentData{Name: "Reg", Instructions: "You are a regular agent."}
-	ordinary := BuildPrompt(ordinaryTask, "claude")
-	if !strings.Contains(ordinary, ". Post ONE reply per thread") {
-		t.Fatalf("ordinary multi-thread prompt missing the unconditional imperative\n---\n%s", ordinary)
-	}
-	if strings.Contains(ordinary, "Unless your outcome is") || strings.Contains(ordinary, "skip this ENTIRE fan-out block") {
-		t.Fatalf("ordinary multi-thread prompt leaked the leader carve-out\n---\n%s", ordinary)
 	}
 }

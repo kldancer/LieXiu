@@ -9,11 +9,11 @@ vi.mock("@tanstack/react-query", () => ({
   useQuery: vi.fn(),
 }));
 
-vi.mock("@multica/core/hooks", () => ({
+vi.mock("@liexiu/core/hooks", () => ({
   useWorkspaceId: () => "workspace-1",
 }));
 
-vi.mock("@multica/core/issues/queries", () => ({
+vi.mock("@liexiu/core/issues/queries", () => ({
   issueDetailOptions: (_workspaceId: string, issueId: string) => ({
     queryKey: ["issue", issueId],
   }),
@@ -51,7 +51,7 @@ vi.mock("../../common/actor-avatar", () => ({
 // row from being inlined back into the card body.
 const mockUseActorName = vi.hoisted(() => vi.fn(() => ({ getActorName: () => "zain" })));
 
-vi.mock("@multica/core/workspace/hooks", () => ({
+vi.mock("@liexiu/core/workspace/hooks", () => ({
   useActorName: mockUseActorName,
 }));
 
@@ -278,12 +278,12 @@ describe("IssueHoverCard", () => {
   it("shows a flattened description snippet clamped to two lines", async () => {
     mockIssue({
       ...BASE_ISSUE,
-      description: "**Set up** your first runtime so [Mika](/agents/mika) can pick up work",
+      description: "**Set up** your first runtime so an agent can pick up work",
     });
 
     await openCard();
 
-    const snippet = screen.getByText("Set up your first runtime so Mika can pick up work");
+    const snippet = screen.getByText("Set up your first runtime so an agent can pick up work");
     expect(snippet).toHaveClass("line-clamp-2");
   });
 

@@ -1,8 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  actorKindForViewVariant,
   assigneeTypesForActorKind,
-  myRelationForViewVariant,
   UnsupportedIssueScopeError,
   issueScopeKey,
 } from "./scope";
@@ -41,7 +39,7 @@ describe("issue surface scope", () => {
       buildIssueSurfaceQueryPlan({ type: "workspace", actorKind: "agents" }),
     ).toEqual({
       scopeKey: "workspace:agents",
-      queryFilter: { assignee_types: ["agent", "squad"] },
+      queryFilter: { assignee_types: ["agent"] },
       createDefaults: {},
     });
     expect(
@@ -91,29 +89,8 @@ describe("issue surface scope", () => {
 describe("assigneeTypesForActorKind", () => {
   it("maps the three tabs to their API values", () => {
     expect(assigneeTypesForActorKind("members")).toEqual(["member"]);
-    expect(assigneeTypesForActorKind("agents")).toEqual(["agent", "squad"]);
+    expect(assigneeTypesForActorKind("agents")).toEqual(["agent"]);
     expect(assigneeTypesForActorKind("all")).toBeUndefined();
     expect(assigneeTypesForActorKind(undefined)).toBeUndefined();
-  });
-});
-
-describe("actorKindForViewVariant", () => {
-  it("resolves saved-view variants to a tab, defaulting to all", () => {
-    expect(actorKindForViewVariant("members")).toBe("members");
-    expect(actorKindForViewVariant("agents")).toBe("agents");
-    expect(actorKindForViewVariant(null)).toBe("all");
-    expect(actorKindForViewVariant(undefined)).toBe("all");
-    expect(actorKindForViewVariant("involved")).toBe("all");
-  });
-});
-
-describe("myRelationForViewVariant", () => {
-  it("resolves my-view variants to a relation, defaulting to all", () => {
-    expect(myRelationForViewVariant("assigned")).toBe("assigned");
-    expect(myRelationForViewVariant("created")).toBe("created");
-    expect(myRelationForViewVariant("involved")).toBe("involved");
-    expect(myRelationForViewVariant("any")).toBe("all");
-    expect(myRelationForViewVariant(null)).toBe("all");
-    expect(myRelationForViewVariant("members")).toBe("all");
   });
 });

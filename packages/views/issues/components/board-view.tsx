@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useCallback, useMemo, useEffect, useRef, memo } from "react";
-import { useQuery } from "@tanstack/react-query";
 import {
   DndContext,
   DragOverlay,
@@ -13,20 +12,15 @@ import {
   type DragOverEvent,
 } from "@dnd-kit/core";
 import { arrayMove } from "@dnd-kit/sortable";
-import { toast } from "sonner";
 import type {
   Issue,
   IssueAssigneeType,
   IssueStatus,
   Project,
-  IssueProperty,
-} from "@multica/core/types";
-import { useViewStore } from "@multica/core/issues/stores/view-store-context";
-import { propertyIdFromViewKey } from "@multica/core/issues/stores/view-store";
-import { propertyListOptions, useSetIssueProperty, useUnsetIssueProperty } from "@multica/core/properties";
-import { useWorkspaceId } from "@multica/core/hooks";
-import type { IssueGrouping } from "@multica/core/issues/stores/view-store";
-import { useActorName } from "@multica/core/workspace/hooks";
+} from "@liexiu/core/types";
+import { useViewStore } from "@liexiu/core/issues/stores/view-store-context";
+import type { IssueGrouping } from "@liexiu/core/issues/stores/view-store";
+import { useActorName } from "@liexiu/core/workspace/hooks";
 import { BoardColumn, BOARD_CARD_WIDTH, type BoardColumnGroup } from "./board-column";
 import { BoardCardContent } from "./board-card";
 import { HiddenColumnsPanel, HiddenColumnRow } from "./hidden-columns-panel";
@@ -57,7 +51,6 @@ import {
   insertIdByPosition,
   issueMatchesGroup,
   getMoveUpdates,
-  propertyGroupId,
 } from "../utils/drag-utils";
 
 function isStatusGroup(
@@ -72,8 +65,6 @@ function buildGroups(
   grouping: IssueGrouping,
   getActorName: (type: string, id: string) => string,
   noAssigneeLabel: string,
-  groupingProperty: IssueProperty | null,
-  noValueLabel: string,
 ): BoardColumnGroup[] {
   if (grouping === "status") {
     return visibleStatuses.map((status) => ({
@@ -82,28 +73,6 @@ function buildGroups(
       status,
       createData: { status },
     }));
-  }
-
-  // Select-property board: one column per option (definition order) plus a
-  // trailing "No value" column. Empty columns stay visible — they are drop
-  // targets for assigning the value.
-  if (groupingProperty) {
-    const columns: BoardColumnGroup[] = (groupingProperty.config.options ?? []).map(
-      (option) => ({
-        id: propertyGroupId(groupingProperty.id, option.id),
-        title: option.name,
-        propertyId: groupingProperty.id,
-        propertyOptionId: option.id,
-        propertyOptionColor: option.color,
-      }),
-    );
-    columns.push({
-      id: propertyGroupId(groupingProperty.id, null),
-      title: noValueLabel,
-      propertyId: groupingProperty.id,
-      propertyOptionId: null,
-    });
-    return columns;
   }
 
   const groups = new Map<string, BoardColumnGroup>();
@@ -117,10 +86,13 @@ function buildGroups(
         title: getActorName(issue.assignee_type, issue.assignee_id),
         assigneeType: issue.assignee_type,
         assigneeId: issue.assignee_id,
-        createData: {
-          assignee_type: issue.assignee_type,
-          assignee_id: issue.assignee_id,
-        },
+        createData:
+          issue.assignee_type === "member" || issue.assignee_type === "agent"
+            ? {
+                assignee_type: issue.assignee_type,
+                assignee_id: issue.assignee_id,
+              }
+            : {},
       });
       continue;
     }
@@ -140,8 +112,7 @@ function buildGroups(
   const order: Record<string, number> = {
     member: 0,
     agent: 1,
-    squad: 2,
-    none: 3,
+    none: 2,
   };
 
   return Array.from(groups.values()).toSorted((a, b) => {
@@ -182,63 +153,12 @@ function BoardViewImpl({
   const { t } = useT("issues");
   const storeGrouping = useViewStore((s) => s.grouping);
   const sortBy = useViewStore((s) => s.sortBy);
-  const boardWsId = useWorkspaceId();
-  const { data: workspaceProperties = [] } = useQuery(propertyListOptions(boardWsId));
-  const groupingPropertyId = propertyIdFromViewKey(storeGrouping);
-  const groupingProperty = groupingPropertyId
-    ? workspaceProperties.find((p) => p.id === groupingPropertyId && p.type === "select") ?? null
-    : null;
-  // A persisted `property:<id>` grouping whose definition is gone (archived,
-  // deleted, other workspace) falls back to status columns.
-  const grouping: IssueGrouping =
-    groupingPropertyId && !groupingProperty ? "status" : storeGrouping;
-  const groupingOptionIds = useMemo(
-    () =>
-      groupingProperty
-        ? new Set((groupingProperty.config.options ?? []).map((option) => option.id))
-        : undefined,
-    [groupingProperty],
-  );
-  const setIssuePropertyMutation = useSetIssueProperty();
-  const unsetIssuePropertyMutation = useUnsetIssueProperty();
-  const applyPropertyGroupValue = useCallback(
-    (group: BoardColumnGroup, issueId: string) => {
-      if (group.propertyId === undefined) return;
-      // Surface failures like status/assignee drags do (use-issue-surface-
-      // actions): the mutation rolls the card back, but without a toast the
-      // snap-back reads as a UI glitch instead of a rejected write.
-      const onError = (err: unknown) => {
-        toast.error(
-          err instanceof Error && err.message
-            ? err.message
-            : t(($) => $.page.move_failed),
-        );
-      };
-      if (group.propertyOptionId === null) {
-        unsetIssuePropertyMutation.mutate(
-          { issueId, propertyId: group.propertyId },
-          { onError },
-        );
-      } else if (group.propertyOptionId !== undefined) {
-        setIssuePropertyMutation.mutate(
-          {
-            issueId,
-            propertyId: group.propertyId,
-            value: group.propertyOptionId,
-          },
-          { onError },
-        );
-      }
-    },
-    [setIssuePropertyMutation, t, unsetIssuePropertyMutation],
-  );
+  const grouping: IssueGrouping = storeGrouping === "assignee" ? "assignee" : "status";
+  const groupingOptionIds = undefined;
   const sortFieldKey = sortBy === "created_at" ? "created" : sortBy;
-  const sortPropertyId = propertyIdFromViewKey(sortBy);
   const sortLabel = sortBy !== "position"
     ? t(($) => $.board.ordered_by, {
-        field: sortPropertyId
-          ? workspaceProperties.find((p) => p.id === sortPropertyId)?.name ?? ""
-          : t(($) => $.display[`sort_${sortFieldKey}` as keyof typeof $.display]),
+        field: t(($) => $.display[`sort_${sortFieldKey}` as keyof typeof $.display]),
       })
     : null;
   const { getActorName } = useActorName();
@@ -253,9 +173,7 @@ function BoardViewImpl({
         const actorRef = descriptor.value.actor;
         const actor: { type: IssueAssigneeType; id: string } | null =
           actorRef &&
-          (actorRef.type === "member" ||
-            actorRef.type === "agent" ||
-            actorRef.type === "squad")
+          (actorRef.type === "member" || actorRef.type === "agent")
             ? { type: actorRef.type, id: actorRef.id }
             : null;
         return [{
@@ -266,10 +184,12 @@ function BoardViewImpl({
           assigneeType: actor?.type ?? null,
           assigneeId: actor?.id ?? null,
           totalCount: descriptor.count,
-          createData: {
-            assignee_type: actor?.type ?? null,
-            assignee_id: actor?.id ?? null,
-          },
+          createData:
+            actor?.type === "member" || actor?.type === "agent"
+              ? { assignee_type: actor.type, assignee_id: actor.id }
+              : actor
+                ? {}
+                : { assignee_type: null, assignee_id: null },
         }];
       });
     }
@@ -282,13 +202,6 @@ function BoardViewImpl({
       const page = groupBranches.pagination[descriptor.key];
       if (!page) continue;
       let id = descriptor.key;
-      if (descriptor.value.kind === "property") {
-        const value = descriptor.value;
-        id =
-          value.value_state === "value" && typeof value.value === "string"
-            ? propertyGroupId(value.property_id, value.value)
-            : propertyGroupId(value.property_id, null);
-      }
       const pages = grouped.get(id) ?? [];
       pages.push(page);
       grouped.set(id, pages);
@@ -327,15 +240,13 @@ function BoardViewImpl({
         grouping,
         getActorName,
         t(($) => $.filters.no_assignee),
-        groupingProperty,
-        t(($) => $.board.no_value),
         );
       return built.map((group) => ({
         ...group,
         totalCount: groupPagination?.[group.id]?.total ?? group.totalCount,
       }));
     },
-    [hydratedAssigneeGroups, issues, visibleStatuses, grouping, getActorName, groupingProperty, groupPagination, t],
+    [hydratedAssigneeGroups, issues, visibleStatuses, grouping, getActorName, groupPagination, t],
   );
   const groupIds = useMemo(
     () => new Set(groups.map((group) => group.id)),
@@ -519,7 +430,6 @@ function BoardViewImpl({
           },
           beginSettle(),
         );
-        applyPropertyGroupValue(finalGroup, activeId);
         return;
       }
 
@@ -548,9 +458,8 @@ function BoardViewImpl({
         },
         beginSettle(),
       );
-      applyPropertyGroupValue(finalGroup, activeId);
     },
-    [groupedIssues, groups, grouping, groupingOptionIds, onMoveIssue, groupIds, groupMap, sortBy, beginSettle, columnsRef, isDraggingRef, setColumns, applyPropertyGroupValue],
+    [groupedIssues, groups, grouping, groupingOptionIds, onMoveIssue, groupIds, groupMap, sortBy, beginSettle, columnsRef, isDraggingRef, setColumns],
   );
 
   return (

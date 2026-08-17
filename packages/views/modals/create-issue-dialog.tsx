@@ -1,12 +1,14 @@
 "use client";
 
 import { useState } from "react";
-import { cn } from "@multica/ui/lib/utils";
-import { Dialog, DialogContent } from "@multica/ui/components/ui/dialog";
+import { cn } from "@liexiu/ui/lib/utils";
+import { Dialog, DialogContent } from "@liexiu/ui/components/ui/dialog";
 import {
   useCreateModeStore,
   type CreateMode,
-} from "@multica/core/issues/stores/create-mode-store";
+} from "@liexiu/core/issues/stores/create-mode-store";
+import { paths, useWorkspaceSlug } from "@liexiu/core/paths";
+import { useOptionalNavigation } from "../navigation";
 import { AgentCreatePanel } from "./quick-create-issue";
 import { ManualCreatePanel, manualDialogContentClass } from "./create-issue";
 
@@ -40,6 +42,8 @@ export function CreateIssueDialog({
   data?: Record<string, unknown> | null;
 }) {
   const setLastMode = useCreateModeStore((s) => s.setLastMode);
+  const navigation = useOptionalNavigation();
+  const workspaceSlug = useWorkspaceSlug();
   const [mode, setMode] = useState<CreateMode>(initialMode);
   const [panelData, setPanelData] = useState(data ?? null);
   const [isExpanded, setIsExpanded] = useState(false);
@@ -83,6 +87,11 @@ export function CreateIssueDialog({
             data={panelData}
             isExpanded={isExpanded}
             setIsExpanded={setIsExpanded}
+            onMissionCreated={(missionId) => {
+              if (navigation && workspaceSlug) {
+                navigation.push(paths.workspace(workspaceSlug).missionDetail(missionId));
+              }
+            }}
           />
         ) : (
           <ManualCreatePanel

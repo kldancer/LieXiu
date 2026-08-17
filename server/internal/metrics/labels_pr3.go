@@ -21,9 +21,8 @@ var (
 	}
 
 	// knownSignupSources is the fixed bucket set for the signup_source
-	// metric label. The PostHog event still ships the raw cookie value
-	// so analytics keeps the long tail; the Prometheus side gets the
-	// bucketed version so cardinality stays bounded even if a misbehaving
+	// metric label. Only the bucketed value reaches Prometheus so cardinality
+	// stays bounded even if a misbehaving
 	// frontend writes a unique-per-visitor cookie. Empty cookie collapses
 	// to "direct" (no attribution = direct visit), unknown channels to
 	// "other".
@@ -71,60 +70,6 @@ var (
 		"skip_existing":   "skip_existing",
 		"invite_accept":   "invite_accept",
 		"unknown":         "unknown",
-	}
-
-	knownAutopilotCadences = map[string]string{
-		"hourly":  "hourly",
-		"daily":   "daily",
-		"weekly":  "weekly",
-		"monthly": "monthly",
-		"manual":  "manual",
-		"webhook": "webhook",
-		"unknown": "unknown",
-	}
-
-	knownAutopilotTriggers = map[string]string{
-		"schedule": "schedule",
-		"webhook":  "webhook",
-		"manual":   "manual",
-		"unknown":  "unknown",
-	}
-
-	knownAutopilotSkipReasons = map[string]string{
-		"already_running":   "already_running",
-		"recent_run":        "recent_run",
-		"runtime_offline":   "runtime_offline",
-		"throttled":         "throttled",
-		"max_concurrency":   "max_concurrency",
-		"trigger_disabled":  "trigger_disabled",
-		"signature_invalid": "signature_invalid",
-		"unknown":           "unknown",
-		"other":             "other",
-	}
-
-	knownWebhookProviders = map[string]string{
-		"github":  "github",
-		"generic": "generic",
-		"gitlab":  "gitlab",
-		"stripe":  "stripe",
-		"other":   "other",
-	}
-
-	knownWebhookDeliveryStatuses = map[string]string{
-		"queued":     "queued",
-		"dispatched": "dispatched",
-		"failed":     "failed",
-		"rejected":   "rejected",
-		"ignored":    "ignored",
-		"duplicate":  "duplicate",
-		"other":      "other",
-	}
-
-	knownWebhookRateLimitGates = map[string]string{
-		"absolute_ip":       "absolute_ip",
-		"bad_credential_ip": "bad_credential_ip",
-		"worker_trigger":    "worker_trigger",
-		"other":             "other",
 	}
 
 	knownGithubEventKinds = map[string]string{
@@ -197,30 +142,6 @@ var (
 		"log":           "log",
 		"other":         "other",
 	}
-
-	knownFeedbackKinds = map[string]string{
-		"bug":     "bug",
-		"feature": "feature",
-		"general": "general",
-		"praise":  "praise",
-		"other":   "other",
-	}
-
-	// Evidence kinds for multica_chat_output_local_path_total (MUL-4899). A
-	// closed allowlist is what keeps the offending path out of Prometheus: the
-	// caller passes a classification, never a fragment of the reply.
-	knownChatOutputLocalPathKinds = map[string]string{
-		"file_url":     "file_url",
-		"workdir_path": "workdir_path",
-	}
-
-	knownContactSalesSources = map[string]string{
-		"page":        "page",
-		"onboarding":  "onboarding",
-		"agents_page": "agents_page",
-		"unknown":     "unknown",
-		"other":       "other",
-	}
 )
 
 func normalizeFromAllowList(value string, allowList map[string]string, fallback string) string {
@@ -235,10 +156,10 @@ func NormalizePlatform(value string) string {
 	return normalizeFromAllowList(value, knownPlatforms, "unknown")
 }
 
-// NormalizeSignupSource buckets the raw multica_signup_source cookie payload
+// NormalizeSignupSource buckets the raw liexiu_signup_source cookie payload
 // into the fixed signup channel allow-list. The cookie carries free-form
-// JSON (utm_source / utm_medium / referrer) on the PostHog side; here we
-// only need a bounded label, so we look at utm_source / source / referrer
+// JSON (utm_source / utm_medium / referrer); we only need a bounded local
+// label, so we look at utm_source / source / referrer
 // fields when present, otherwise the bare string. Empty -> "direct".
 // Anything not in the allow-list -> "other".
 func NormalizeSignupSource(value string) string {
@@ -323,30 +244,6 @@ func NormalizeOnboardingPath(value string) string {
 	return normalizeFromAllowList(value, knownOnboardingPaths, "unknown")
 }
 
-func NormalizeAutopilotCadence(value string) string {
-	return normalizeFromAllowList(value, knownAutopilotCadences, "unknown")
-}
-
-func NormalizeAutopilotTrigger(value string) string {
-	return normalizeFromAllowList(value, knownAutopilotTriggers, "unknown")
-}
-
-func NormalizeAutopilotSkipReason(value string) string {
-	return normalizeFromAllowList(value, knownAutopilotSkipReasons, "other")
-}
-
-func NormalizeWebhookProvider(value string) string {
-	return normalizeFromAllowList(value, knownWebhookProviders, "other")
-}
-
-func NormalizeWebhookDeliveryStatus(value string) string {
-	return normalizeFromAllowList(value, knownWebhookDeliveryStatuses, "other")
-}
-
-func NormalizeWebhookRateLimitGate(value string) string {
-	return normalizeFromAllowList(value, knownWebhookRateLimitGates, "other")
-}
-
 func NormalizeGithubEventKind(value string) string {
 	return normalizeFromAllowList(value, knownGithubEventKinds, "other")
 }
@@ -404,16 +301,4 @@ func CloudRuntimeStatusForCode(code int) string {
 
 func NormalizeDaemonWSKind(value string) string {
 	return normalizeFromAllowList(value, knownDaemonWSKinds, "other")
-}
-
-func NormalizeFeedbackKind(value string) string {
-	return normalizeFromAllowList(value, knownFeedbackKinds, "other")
-}
-
-func NormalizeContactSalesSource(value string) string {
-	return normalizeFromAllowList(value, knownContactSalesSources, "other")
-}
-
-func NormalizeChatOutputLocalPathKind(value string) string {
-	return normalizeFromAllowList(value, knownChatOutputLocalPathKinds, "other")
 }
