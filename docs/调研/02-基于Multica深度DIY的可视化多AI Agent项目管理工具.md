@@ -1613,3 +1613,14 @@ Langfuse / AgentScope Studio
 > **Task Graph 是逻辑世界，Agent Runtime 是执行世界，Pixel Town 是空间世界；三者通过同一条事件流保持同步。**
 
 这也是最值得你在 Multica 基础上深度 DIY 的部分。
+
+
+参考项目：
+- https://github.com/pixel-agents-hq/pixel-agents
+- [https://github.com/ringhyacinth/Star-Office-UI/tree/master](https://github.com/ringhyacinth/Star-Office-UI/tree/master)
+- [https://github.com/longyangxi/OpenOffice](https://github.com/longyangxi/OpenOffice)
+- [https://github.com/shengyu-meng/ClawLibrary/blob/main/README_cn.md](https://github.com/shengyu-meng/ClawLibrary/blob/main/README_cn.md)
+- [https://github.com/ccperdst-lab/openclaw-monitor?tab=readme-ov-file](https://github.com/ccperdst-lab/openclaw-monitor?tab=readme-ov-file)
+- [https://github.com/TianyiDataScience/openclaw-control-center/blob/main/README.zh-CN.md](https://github.com/TianyiDataScience/openclaw-control-center/blob/main/README.zh-CN.md)
+- [https://github.com/ruiqili2/agent-monitor](https://github.com/ruiqili2/agent-monitor)
+- [https://github.com/itq5/OpenClaw-Admin](https://github.com/itq5/OpenClaw-Admin)

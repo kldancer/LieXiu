@@ -88,8 +88,8 @@ func ValidatePlan(plan Plan, expectedMissionID string, hardLimits PlanLimits) []
 		if strings.TrimSpace(node.Description) == "" {
 			add(path+".description", "missing_description", "node description is required")
 		}
-		if node.Role != RoleExecutor && node.Role != RoleIntegrator {
-			add(path+".role", "invalid_node_role", "node role must be executor or integrator")
+		if !node.Duty.TaskNodeDuty() {
+			add(path+".duty", "invalid_node_duty", "node duty must be executor or integrator")
 		}
 		errs = append(errs, validateNodeBudgetEstimate(node, index, plan.Limits.Budget)...)
 		if len(node.AcceptanceCriteria) == 0 {
@@ -115,7 +115,7 @@ func ValidatePlan(plan Plan, expectedMissionID string, hardLimits PlanLimits) []
 			artifactKinds[kind] = struct{}{}
 			hasFinalDelivery = hasFinalDelivery || kind == ArtifactKindFinalDelivery
 		}
-		if node.Role == RoleIntegrator && !hasFinalDelivery {
+		if node.Duty == DutyIntegrator && !hasFinalDelivery {
 			add(path+".artifact_kinds", "missing_final_delivery", "integrator nodes must produce a final_delivery artifact")
 		}
 		if len(node.DependsOn) == 0 {
@@ -156,7 +156,7 @@ func ValidatePlan(plan Plan, expectedMissionID string, hardLimits PlanLimits) []
 
 	hasIntegratorLeaf := false
 	for index, node := range plan.Nodes {
-		if node.Role != RoleIntegrator {
+		if node.Duty != DutyIntegrator {
 			continue
 		}
 		if len(dependents[node.Key]) == 0 {
@@ -164,7 +164,7 @@ func ValidatePlan(plan Plan, expectedMissionID string, hardLimits PlanLimits) []
 		}
 		hasNonIntegratorDependency := false
 		for _, dependency := range node.DependsOn {
-			if predecessor, ok := nodesByKey[dependency]; ok && predecessor.Role != RoleIntegrator {
+			if predecessor, ok := nodesByKey[dependency]; ok && predecessor.Duty != DutyIntegrator {
 				hasNonIntegratorDependency = true
 				break
 			}

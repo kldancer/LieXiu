@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
@@ -97,6 +98,7 @@ func TestMissionProjectionHTTPRecoversFromActivityCursorGap(t *testing.T) {
 	repository := orchestration.NewRepository(queries, testPool)
 	execution := service.NewTaskExecutionGateway(service.NewTaskService(queries, testPool, nil, events.New()))
 	orchestrator := orchestration.NewService(queries, repository, execution, orchestration.DefaultPlanHardLimits())
+	startBindings := seedMissionRolePolicyBindings(t, ctx, repository, workspaceID, userID, orchestration.DutyExecutor, orchestration.DutyReviewer, orchestration.DutyIntegrator)
 	limits := orchestration.PlanLimits{MaxParallelRuns: 1, MaxTaskAttempts: 2, MaxReworkCycles: 1}
 
 	created, err := orchestrator.CreateMission(ctx, orchestration.CreateMissionCommand{
@@ -112,10 +114,10 @@ func TestMissionProjectionHTTPRecoversFromActivityCursorGap(t *testing.T) {
 		SchemaVersion: orchestration.PlanSchemaVersion, MissionID: missionUUIDText(missionID), PlanKey: "projection-http",
 		Limits: limits,
 		Nodes: []orchestration.PlanNode{{
-			Key: "A", Title: "Projection node", Description: "Read model source", Role: orchestration.RoleExecutor,
+			Key: "A", Title: "Projection node", Description: "Read model source", Duty: orchestration.DutyExecutor,
 			AcceptanceCriteria: []string{"projection is stable"}, ArtifactKinds: []orchestration.ArtifactKind{orchestration.ArtifactKindCommit},
 		}, {
-			Key: "C", Title: "Projection integrator", Description: "Projection delivery", Role: orchestration.RoleIntegrator,
+			Key: "C", Title: "Projection integrator", Description: "Projection delivery", Duty: orchestration.DutyIntegrator,
 			AcceptanceCriteria: []string{"delivery is visible"}, ArtifactKinds: []orchestration.ArtifactKind{orchestration.ArtifactKindFinalDelivery},
 			DependsOn: []string{"A"},
 		}},
@@ -128,6 +130,7 @@ func TestMissionProjectionHTTPRecoversFromActivityCursorGap(t *testing.T) {
 	}
 	if _, err := orchestrator.StartMission(ctx, orchestration.StartMissionCommand{
 		WorkspaceID: workspaceID, MissionID: missionID, CommandID: missionNewUUID(), ActorID: userID, ExpectedRevision: 2,
+		RolePolicyBindings: startBindings,
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -287,10 +290,10 @@ func TestMissionLifecycleHTTPAuthorizesDispatchesAndCancels(t *testing.T) {
 		SchemaVersion: orchestration.PlanSchemaVersion, MissionID: missionUUIDText(missionID), PlanKey: "lifecycle-http",
 		Limits: limits,
 		Nodes: []orchestration.PlanNode{{
-			Key: "execute", Title: "Lifecycle node", Description: "Dispatch a lifecycle run", Role: orchestration.RoleExecutor,
+			Key: "execute", Title: "Lifecycle node", Description: "Dispatch a lifecycle run", Duty: orchestration.DutyExecutor,
 			AcceptanceCriteria: []string{"the run is dispatched"}, ArtifactKinds: []orchestration.ArtifactKind{orchestration.ArtifactKindCommit},
 		}, {
-			Key: "integrate", Title: "Lifecycle integration", Description: "Retain an integrator leaf for the plan contract", Role: orchestration.RoleIntegrator,
+			Key: "integrate", Title: "Lifecycle integration", Description: "Retain an integrator leaf for the plan contract", Duty: orchestration.DutyIntegrator,
 			AcceptanceCriteria: []string{"the lifecycle is observable"}, ArtifactKinds: []orchestration.ArtifactKind{orchestration.ArtifactKindFinalDelivery}, DependsOn: []string{"execute"},
 		}},
 	}
@@ -300,24 +303,26 @@ func TestMissionLifecycleHTTPAuthorizesDispatchesAndCancels(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("SubmitPlan: %#v", err)
 	}
+	startBindings := seedMissionRolePolicyBindings(t, ctx, repository, workspaceID, ownerID, orchestration.DutyExecutor, orchestration.DutyReviewer, orchestration.DutyIntegrator)
+	startBindingsBody := missionRolePolicyBindingsBody(startBindings)
 	missionPath := "/api/missions/" + missionUUIDText(missionID)
 
 	response := authRequest(t, http.MethodPost, missionPath+"/start", map[string]any{
-		"command_id": "not-a-uuid", "expected_revision": 2,
+		"command_id": "not-a-uuid", "expected_revision": 2, "role_policy_bindings": startBindingsBody,
 	})
 	response.Body.Close()
 	if response.StatusCode != http.StatusBadRequest {
 		t.Fatalf("malformed start command status=%d, want 400", response.StatusCode)
 	}
 	response = missionAuthRequest(t, memberToken, http.MethodPost, missionPath+"/start", map[string]any{
-		"command_id": uuid.NewString(), "expected_revision": 2,
+		"command_id": uuid.NewString(), "expected_revision": 2, "role_policy_bindings": startBindingsBody,
 	})
 	response.Body.Close()
 	if response.StatusCode != http.StatusForbidden {
 		t.Fatalf("member start status=%d, want 403", response.StatusCode)
 	}
 	response = authRequest(t, http.MethodPost, missionPath+"/start", map[string]any{
-		"command_id": uuid.NewString(), "expected_revision": 1,
+		"command_id": uuid.NewString(), "expected_revision": 1, "role_policy_bindings": startBindingsBody,
 	})
 	response.Body.Close()
 	if response.StatusCode != http.StatusConflict {
@@ -325,7 +330,7 @@ func TestMissionLifecycleHTTPAuthorizesDispatchesAndCancels(t *testing.T) {
 	}
 
 	startCommandID := uuid.NewString()
-	startBody := map[string]any{"command_id": startCommandID, "expected_revision": 2}
+	startBody := map[string]any{"command_id": startCommandID, "expected_revision": 2, "role_policy_bindings": startBindingsBody}
 	response = authRequest(t, http.MethodPost, missionPath+"/start", startBody)
 	if response.StatusCode != http.StatusAccepted {
 		body := readResponseBody(response)
@@ -401,6 +406,78 @@ func TestMissionLifecycleHTTPAuthorizesDispatchesAndCancels(t *testing.T) {
 	}
 }
 
+func TestRoleProfileHTTPUsesFixedDutyAndImmutableVersion(t *testing.T) {
+	profileKey := "http-reviewer-" + strings.ToLower(uuid.NewString()[:8])
+	commandID := uuid.NewString()
+	t.Cleanup(func() {
+		if _, err := testPool.Exec(context.Background(), `DELETE FROM role_profile WHERE workspace_id=$1 AND profile_key=$2`, testWorkspaceID, profileKey); err != nil {
+			t.Errorf("cleanup RoleProfile: %v", err)
+		}
+	})
+	request := map[string]any{
+		"command_id": commandID, "profile_key": profileKey, "duty": "reviewer",
+		"name": "HTTP security reviewer", "description": "A custom profile on the fixed reviewer duty",
+		"config": map[string]any{
+			"instructions": "Review security-sensitive Go changes", "required_capabilities": []string{"go", "security"},
+			"runtime":         map[string]any{"allowed_runtime_ids": []string{}, "preferred_runtime_ids": []string{}, "providers": []string{}, "models": []string{}},
+			"tools":           map[string]any{"allowed_tools": []string{"rg"}, "allowed_paths": []string{"server/"}},
+			"budget":          map[string]any{"max_rework_cycles": 1, "max_technical_retries": 1},
+			"timeout_seconds": 1800, "max_concurrency": 1,
+		},
+	}
+	path := "/api/workspaces/" + testWorkspaceID + "/role-profiles"
+	response := authRequest(t, http.MethodPost, path, request)
+	if response.StatusCode != http.StatusCreated {
+		body := readResponseBody(response)
+		response.Body.Close()
+		t.Fatalf("create RoleProfile status=%d body=%s", response.StatusCode, body)
+	}
+	var created orchestration.CreateRoleProfileVersionResult
+	readJSON(t, response, &created)
+	if created.Idempotent || created.Profile.Version != 1 || created.Profile.Duty != orchestration.DutyReviewer || created.Profile.ProfileKey != profileKey {
+		t.Fatalf("unexpected RoleProfile response: %#v", created)
+	}
+
+	response = authRequest(t, http.MethodPost, path, request)
+	if response.StatusCode != http.StatusOK {
+		response.Body.Close()
+		t.Fatalf("replay RoleProfile status=%d, want 200", response.StatusCode)
+	}
+	var replayed orchestration.CreateRoleProfileVersionResult
+	readJSON(t, response, &replayed)
+	if !replayed.Idempotent || replayed.Profile.ID != created.Profile.ID {
+		t.Fatalf("RoleProfile replay did not return original version: %#v", replayed)
+	}
+
+	response = authRequest(t, http.MethodGet, path, nil)
+	if response.StatusCode != http.StatusOK {
+		response.Body.Close()
+		t.Fatalf("list RoleProfiles status=%d, want 200", response.StatusCode)
+	}
+	var listed struct {
+		Profiles []orchestration.RoleProfileVersion `json:"profiles"`
+	}
+	readJSON(t, response, &listed)
+	found := false
+	for _, profile := range listed.Profiles {
+		if profile.ProfileKey == profileKey {
+			found = profile.Duty == orchestration.DutyReviewer && profile.Version == 1
+		}
+	}
+	if !found {
+		t.Fatalf("created RoleProfile missing from latest list: %#v", listed.Profiles)
+	}
+
+	invalid := request
+	invalid["command_id"] = uuid.NewString()
+	invalid["duty"] = "security_reviewer"
+	response = authRequest(t, http.MethodPost, path, invalid)
+	response.Body.Close()
+	if response.StatusCode != http.StatusBadRequest {
+		t.Fatalf("custom duty status=%d, want 400", response.StatusCode)
+	}
+}
+
 func missionAuthRequest(t *testing.T, token, method, path string, body any) *http.Response {
 	t.Helper()
 	encoded, err := json.Marshal(body)
@@ -445,6 +522,7 @@ func cleanupMissionHTTPFixture(t *testing.T, missionID, workspaceID pgtype.UUID)
 	ctx := context.Background()
 	statements := []string{
 		`DELETE FROM agent_task_queue WHERE orchestration_run_id IN (SELECT id FROM orchestration_run WHERE mission_id=$1 AND workspace_id=$2)`,
+		`DELETE FROM mission_role_policy_snapshot WHERE mission_id=$1 AND workspace_id=$2`,
 		`DELETE FROM review_verdict WHERE mission_id=$1 AND workspace_id=$2`,
 		`DELETE FROM artifact WHERE mission_id=$1 AND workspace_id=$2`,
 		`DELETE FROM orchestration_run WHERE mission_id=$1 AND workspace_id=$2`,
@@ -460,4 +538,51 @@ func cleanupMissionHTTPFixture(t *testing.T, missionID, workspaceID pgtype.UUID)
 			t.Errorf("cleanup mission HTTP fixture: %v", err)
 		}
 	}
+}
+
+func seedMissionRolePolicyBindings(
+	t *testing.T,
+	ctx context.Context,
+	repository *orchestration.Repository,
+	workspaceID, actorID pgtype.UUID,
+	duties ...orchestration.Duty,
+) []orchestration.RolePolicyBinding {
+	t.Helper()
+	bindings := make([]orchestration.RolePolicyBinding, 0, len(duties))
+	profileKeys := make([]string, 0, len(duties))
+	for _, duty := range duties {
+		key := "http-" + duty.String() + "-" + strings.ToLower(uuid.NewString()[:8])
+		created, err := repository.CreateRoleProfileVersion(ctx, orchestration.CreateRoleProfileVersionParams{
+			WorkspaceID: workspaceID, CommandID: missionNewUUID(), ActorID: actorID,
+			ProfileKey: key, Duty: duty, Name: "HTTP " + duty.String(),
+			Config: orchestration.RoleProfileConfig{
+				RequiredCapabilities: []string{},
+				Runtime:              orchestration.RoleRuntimePreferences{AllowedRuntimeIDs: []string{}, PreferredRuntimeIDs: []string{}, Providers: []string{}, Models: []string{}},
+				Tools:                orchestration.RoleToolPermissions{AllowedTools: []string{}, AllowedPaths: []string{}},
+				Budget:               orchestration.RoleBudgetLimits{MaxReworkCycles: 1, MaxTechnicalRetries: 1},
+				TimeoutSeconds:       900, MaxConcurrency: 1,
+			},
+		})
+		if err != nil {
+			t.Fatalf("seed %s RoleProfile: %v", duty, err)
+		}
+		profileKeys = append(profileKeys, key)
+		bindings = append(bindings, orchestration.RolePolicyBinding{Duty: duty, ProfileKey: key, Version: created.Profile.Version})
+	}
+	t.Cleanup(func() {
+		for _, key := range profileKeys {
+			if _, err := testPool.Exec(context.Background(), `DELETE FROM role_profile WHERE workspace_id=$1 AND profile_key=$2`, workspaceID, key); err != nil {
+				t.Errorf("cleanup RoleProfile %s: %v", key, err)
+			}
+		}
+	})
+	return bindings
+}
+
+func missionRolePolicyBindingsBody(bindings []orchestration.RolePolicyBinding) []map[string]any {
+	result := make([]map[string]any, 0, len(bindings))
+	for _, binding := range bindings {
+		result = append(result, map[string]any{"duty": binding.Duty.String(), "profile_key": binding.ProfileKey, "version": binding.Version})
+	}
+	return result
 }

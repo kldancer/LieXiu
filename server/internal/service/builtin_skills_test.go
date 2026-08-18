@@ -491,6 +491,34 @@ func TestProjectsAndResourcesSkillCoversDurableContext(t *testing.T) {
 	}
 }
 
+func TestCollaboratingSkillFollowsRuntimeToolContract(t *testing.T) {
+	skill, ok := findSkill(t, "liexiu-collaborating")
+	if !ok {
+		return
+	}
+	fm, body, _ := splitFrontmatter(skill.Content)
+	if got := strings.TrimSpace(fm["user-invocable"]); got != "false" {
+		t.Errorf("user-invocable = %q, want false", got)
+	}
+	if got := strings.TrimSpace(fm["allowed-tools"]); !strings.Contains(got, "Bash(liexiu *)") {
+		t.Errorf("allowed-tools = %q, want LieXiu CLI", got)
+	}
+	for _, want := range []string{
+		"liexiu collaborate send", "request_context", "respond_context",
+		"send_handoff", "notify_artifact", "send_review_feedback",
+		"report_blocker", "request_decision", "--dedupe-key",
+		"task-scoped credential", "asynchronous",
+		"references/collaboration-source-map.md",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("collaborating skill missing %q", want)
+		}
+	}
+	if !skillHasFile(skill, "references/collaboration-source-map.md") {
+		t.Error("collaborating skill missing source map")
+	}
+}
+
 func findSkill(t *testing.T, name string) (AgentSkillData, bool) {
 	t.Helper()
 	for _, s := range loadBuiltinSkills() {

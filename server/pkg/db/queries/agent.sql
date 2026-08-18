@@ -230,6 +230,11 @@ SELECT
     COALESCE(sqlc.narg('force_fresh_session')::boolean, FALSE),
     sqlc.narg(handoff_note),
     CASE
+        WHEN sqlc.narg('task_context')::jsonb IS NOT NULL
+             AND COALESCE(sqlc.narg('head_sha')::text, '') <> ''
+        THEN sqlc.narg('task_context')::jsonb || jsonb_build_object('head_sha', sqlc.narg('head_sha')::text)
+        WHEN sqlc.narg('task_context')::jsonb IS NOT NULL
+        THEN sqlc.narg('task_context')::jsonb
         WHEN COALESCE(sqlc.narg('head_sha')::text, '') <> ''
         THEN jsonb_build_object('head_sha', sqlc.narg('head_sha')::text)
         ELSE NULL

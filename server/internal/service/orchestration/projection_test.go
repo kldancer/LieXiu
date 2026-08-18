@@ -20,7 +20,7 @@ func TestBuildMissionProjectionUsesBusinessStateAndNewestArtifact(t *testing.T) 
 		},
 		missionIssue: db.Issue{ID: missionID, Title: "Projection"},
 		nodes: []db.TaskNode{{
-			IssueID: nodeID, NodeKey: "A", Role: string(RoleExecutor), Status: string(TaskStatusReview),
+			IssueID: nodeID, NodeKey: "A", Role: DutyExecutor.String(), Status: string(TaskStatusReview),
 			AcceptanceCriteria: []byte(`["accepted"]`), ArtifactKinds: []byte(`["commit","diff"]`), Revision: 2,
 		}},
 		issues: map[string]db.Issue{uuidText(nodeID): {ID: nodeID, Title: "Node A"}},
@@ -50,6 +50,55 @@ func TestBuildMissionProjectionUsesBusinessStateAndNewestArtifact(t *testing.T) 
 	}
 }
 
+func TestBuildPlanningProjectionDoesNotDependOnRecentActivityWindow(t *testing.T) {
+	missionID := newTestUUID()
+	artifactID := newTestUUID()
+	facts := projectionFacts{
+		artifacts: []db.Artifact{{
+			ID: artifactID, MissionID: missionID, Kind: string(ArtifactKindPlanProposal),
+			Version: 1, Uri: "planner://proposal", Metadata: []byte(`{"summary":"safe"}`),
+		}},
+		activities: []db.OrchestrationActivity{{
+			Type: "run.started", MissionID: missionID, SubjectID: newTestUUID(), Payload: []byte(`{}`),
+		}},
+		planningActivities: []db.OrchestrationActivity{{
+			Type: activityPlanProposalRejected, MissionID: missionID, SubjectID: artifactID,
+			Payload: []byte(`{"reason":"revise scope"}`),
+		}},
+		tasks: map[string]db.AgentTaskQueue{},
+	}
+
+	projection := buildPlanningProjection(facts)
+	if len(projection.Proposals) != 1 {
+		t.Fatalf("proposals=%d, want 1", len(projection.Proposals))
+	}
+	if proposal := projection.Proposals[0]; proposal.Decision != "rejected" || proposal.DecisionReason != "revise scope" {
+		t.Fatalf("proposal decision followed recent activity window: %#v", proposal)
+	}
+}
+
+func TestAcceptedPlanSourceRecoversLegacyActivityPayloads(t *testing.T) {
+	tests := []struct {
+		name             string
+		raw              string
+		sourceArtifactID string
+		planKey          string
+		want             PlanSource
+	}{
+		{name: "explicit fixed template", raw: "fixed_template", want: PlanSourceFixedTemplate},
+		{name: "legacy proposal", sourceArtifactID: "proposal-1", want: PlanSourceProposal},
+		{name: "legacy quick create", sourceArtifactID: "00000000-0000-0000-0000-000000000000", planKey: quickCreatePlanKey, want: PlanSourceFixedTemplate},
+		{name: "legacy manual", planKey: "owner-plan", want: PlanSourceManual},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := acceptedPlanSource(test.raw, test.sourceArtifactID, test.planKey); got != test.want {
+				t.Fatalf("source=%q, want %q", got, test.want)
+			}
+		})
+	}
+}
+
 func TestDeriveCurrentPhase(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -59,10 +108,10 @@ func TestDeriveCurrentPhase(t *testing.T) {
 	}{
 		{name: "draft plans", status: MissionStatusDraft, want: "planning"},
 		{name: "ready plans", status: MissionStatusReady, want: "planning"},
-		{name: "ordinary work executes", status: MissionStatusRunning, nodes: []db.TaskNode{{Role: string(RoleExecutor), Status: string(TaskStatusRunning)}}, want: "executing"},
-		{name: "review wins over parallel work", status: MissionStatusRunning, nodes: []db.TaskNode{{Role: string(RoleExecutor), Status: string(TaskStatusRunning)}, {Role: string(RoleExecutor), Status: string(TaskStatusReview)}}, want: "reviewing"},
-		{name: "integrator work integrates", status: MissionStatusRunning, nodes: []db.TaskNode{{Role: string(RoleIntegrator), Status: string(TaskStatusRunning)}}, want: "integrating"},
-		{name: "integrator review is reviewing", status: MissionStatusRunning, nodes: []db.TaskNode{{Role: string(RoleIntegrator), Status: string(TaskStatusReview)}}, want: "reviewing"},
+		{name: "ordinary work executes", status: MissionStatusRunning, nodes: []db.TaskNode{{Role: DutyExecutor.String(), Status: string(TaskStatusRunning)}}, want: "executing"},
+		{name: "review wins over parallel work", status: MissionStatusRunning, nodes: []db.TaskNode{{Role: DutyExecutor.String(), Status: string(TaskStatusRunning)}, {Role: DutyExecutor.String(), Status: string(TaskStatusReview)}}, want: "reviewing"},
+		{name: "integrator work integrates", status: MissionStatusRunning, nodes: []db.TaskNode{{Role: DutyIntegrator.String(), Status: string(TaskStatusRunning)}}, want: "integrating"},
+		{name: "integrator review is reviewing", status: MissionStatusRunning, nodes: []db.TaskNode{{Role: DutyIntegrator.String(), Status: string(TaskStatusReview)}}, want: "reviewing"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

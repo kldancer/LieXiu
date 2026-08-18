@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/kailonyang/liexiu/server/internal/agentaccess"
 	"github.com/kailonyang/liexiu/server/internal/util"
 	db "github.com/kailonyang/liexiu/server/pkg/db/generated"
 )
@@ -46,21 +47,22 @@ import (
 // agent/system principals, but member/team targets fail closed without a
 // matching human.
 func (h *Handler) canInvokeAgent(ctx context.Context, agent db.Agent, actorType, actorID, originatorUserID, workspaceID string) bool {
-	effectiveUser := actorID
-	if actorType != "member" {
-		// agent / system: never trust the immediate principal, only the
-		// resolved human originator at the top of the chain.
-		effectiveUser = originatorUserID
+	principal := agentaccess.Principal{
+		ActorType:        actorType,
+		ActorID:          actorID,
+		OriginatorUserID: originatorUserID,
 	}
-
-	// The agent owner may always invoke their own agent.
-	if effectiveUser != "" && uuidToString(agent.OwnerID) == effectiveUser {
+	// Keep the owner fast path before querying targets: ownership has always
+	// been sufficient, even when the target query is unavailable.
+	if agentaccess.CanInvoke(principal, agentaccess.GrantFacts{
+		OwnerID:        uuidToString(agent.OwnerID),
+		PermissionMode: agent.PermissionMode,
+	}, nil) {
 		return true
 	}
-
+	// Preserve the original deny-before-query behavior for private and
+	// unknown permission modes.
 	if agent.PermissionMode != "public_to" {
-		// private (or any unknown mode) is deny-by-default: no admin bypass,
-		// no A2A bypass. Only the owner branch above passes.
 		return false
 	}
 
@@ -69,42 +71,24 @@ func (h *Handler) canInvokeAgent(ctx context.Context, agent db.Agent, actorType,
 		return false
 	}
 
-	// Agents and system triggers are workspace-internal principals: a
-	// workspace target admits them even when no human originator resolved.
-	// This is a DELIBERATE, product-approved exception (MUL-3963): webhook /
-	// system / workspace-wide automation must be able to trigger a
-	// `public_to workspace` agent even though there is no human at the top of
-	// the chain. It is scoped tightly — it ONLY relaxes the *workspace* target.
-	// member/team targets still require a resolved human originator to match,
-	// so an unattributed agent/system trigger FAILS CLOSED against a
-	// member-/team-scoped private-ish allow-list and can never smuggle itself
-	// onto someone's specific-people grant.
-	workspaceBroad := actorType == "agent" || actorType == "system"
 	isWorkspaceMember := false
-	if effectiveUser != "" {
+	if effectiveUser := principal.EffectiveUserID(); effectiveUser != "" {
 		if _, err := h.getWorkspaceMember(ctx, effectiveUser, workspaceID); err == nil {
 			isWorkspaceMember = true
 		}
 	}
-
-	for _, t := range targets {
-		switch t.TargetType {
-		case "workspace":
-			if isWorkspaceMember || workspaceBroad {
-				return true
-			}
-		case "member":
-			// Requires a resolved human. agent/system triggers with no
-			// originator (effectiveUser == "") never match here — fail closed.
-			if effectiveUser != "" && uuidToString(t.TargetID) == effectiveUser {
-				return true
-			}
-		case "team":
-			// Reserved: team membership does not exist yet in V1, so team
-			// targets never admit anyone (also fail-closed for system/agent).
-		}
+	pureTargets := make([]agentaccess.Target, 0, len(targets))
+	for _, target := range targets {
+		pureTargets = append(pureTargets, agentaccess.Target{
+			Type: target.TargetType,
+			ID:   uuidToString(target.TargetID),
+		})
 	}
-	return false
+	return agentaccess.CanInvoke(principal, agentaccess.GrantFacts{
+		OwnerID:           uuidToString(agent.OwnerID),
+		PermissionMode:    agent.PermissionMode,
+		IsWorkspaceMember: isWorkspaceMember,
+	}, pureTargets)
 }
 
 // canAccessPrivateAgent gates the VIEW surfaces (list/detail navigation, chat

@@ -27,19 +27,21 @@ var (
 )
 
 type StartMissionParams struct {
-	WorkspaceID      pgtype.UUID
-	MissionID        pgtype.UUID
-	CommandID        pgtype.UUID
-	CorrelationID    pgtype.UUID
-	ActorID          pgtype.UUID
-	ExpectedRevision int64
+	WorkspaceID        pgtype.UUID
+	MissionID          pgtype.UUID
+	CommandID          pgtype.UUID
+	CorrelationID      pgtype.UUID
+	ActorID            pgtype.UUID
+	ExpectedRevision   int64
+	RolePolicyBindings []RolePolicyBinding
 }
 
 type StartMissionResult struct {
-	Mission    db.Mission
-	TaskNodes  []db.TaskNode
-	Activities []db.OrchestrationActivity
-	Idempotent bool
+	Mission             db.Mission
+	TaskNodes           []db.TaskNode
+	Activities          []db.OrchestrationActivity
+	RolePolicySnapshots []RolePolicySnapshot
+	Idempotent          bool
 }
 
 type CancelMissionParams struct {
@@ -81,6 +83,9 @@ func (r *Repository) StartMission(ctx context.Context, params StartMissionParams
 		WorkspaceID: params.WorkspaceID, DedupeKey: dedupeKey,
 	})
 	if err == nil {
+		if matchErr := ensureFrozenRolePolicyBindingsMatch(ctx, r.queries, params.WorkspaceID, params.MissionID, params.RolePolicyBindings); matchErr != nil {
+			return StartMissionResult{}, matchErr
+		}
 		if rollbackErr := tx.Rollback(ctx); rollbackErr != nil && !errors.Is(rollbackErr, pgx.ErrTxClosed) {
 			return StartMissionResult{}, fmt.Errorf("start mission: rollback idempotent transaction: %w", rollbackErr)
 		}
@@ -101,6 +106,9 @@ func (r *Repository) StartMission(ctx context.Context, params StartMissionParams
 			WorkspaceID: params.WorkspaceID, DedupeKey: dedupeKey,
 		})
 		if replayErr == nil {
+			if matchErr := ensureFrozenRolePolicyBindingsMatch(ctx, qtx, params.WorkspaceID, params.MissionID, params.RolePolicyBindings); matchErr != nil {
+				return StartMissionResult{}, matchErr
+			}
 			if rollbackErr := tx.Rollback(ctx); rollbackErr != nil && !errors.Is(rollbackErr, pgx.ErrTxClosed) {
 				return StartMissionResult{}, fmt.Errorf("start mission: rollback concurrent replay: %w", rollbackErr)
 			}
@@ -141,6 +149,10 @@ func (r *Repository) StartMission(ctx context.Context, params StartMissionParams
 	if len(readyKeys) == 0 {
 		return StartMissionResult{}, ErrMissionHasNoReadyTasks
 	}
+	snapshots, err := freezeRolePolicyBindings(ctx, qtx, params.WorkspaceID, params.MissionID, params.ActorID, params.RolePolicyBindings)
+	if err != nil {
+		return StartMissionResult{}, err
+	}
 
 	mission, err = qtx.StartMissionRecord(ctx, db.StartMissionRecordParams{
 		IssueID: params.MissionID, WorkspaceID: params.WorkspaceID,
@@ -159,12 +171,22 @@ func (r *Repository) StartMission(ctx context.Context, params StartMissionParams
 	if err != nil {
 		return StartMissionResult{}, fmt.Errorf("start mission: %w", err)
 	}
+	snapshotHashes := make(map[string]string, len(snapshots))
+	for _, snapshot := range snapshots {
+		snapshotHashes[snapshot.Duty.String()] = snapshot.ContentHash
+	}
+	startPayload, err := json.Marshal(struct {
+		RolePolicySnapshotHashes map[string]string `json:"role_policy_snapshot_hashes"`
+	}{RolePolicySnapshotHashes: snapshotHashes})
+	if err != nil {
+		return StartMissionResult{}, fmt.Errorf("start mission: encode policy snapshot hashes: %w", err)
+	}
 	activity, err = qtx.CreateOrchestrationActivity(ctx, db.CreateOrchestrationActivityParams{
 		WorkspaceID: params.WorkspaceID, MissionID: params.MissionID,
 		Type: activityMissionStarted, ActorType: "user", ActorID: params.ActorID,
 		SubjectType: activitySubjectMission, SubjectID: params.MissionID,
 		CausationID: params.CommandID, CorrelationID: correlationID,
-		PayloadVersion: 1, Payload: []byte(`{}`), DedupeKey: dedupeKey, Sequence: sequence,
+		PayloadVersion: 1, Payload: startPayload, DedupeKey: dedupeKey, Sequence: sequence,
 	})
 	if err != nil {
 		if isActivityDedupeViolation(err) {
@@ -219,7 +241,7 @@ func (r *Repository) StartMission(ctx context.Context, params StartMissionParams
 	if err := tx.Commit(ctx); err != nil {
 		return StartMissionResult{}, fmt.Errorf("start mission: commit: %w", err)
 	}
-	return StartMissionResult{Mission: mission, TaskNodes: taskNodes, Activities: activities}, nil
+	return StartMissionResult{Mission: mission, TaskNodes: taskNodes, Activities: activities, RolePolicySnapshots: snapshots}, nil
 }
 
 func (r *Repository) CancelMission(ctx context.Context, params CancelMissionParams) (CancelMissionResult, error) {
@@ -448,7 +470,15 @@ func (r *Repository) loadStartMissionResult(ctx context.Context, workspaceID, mi
 	if err != nil {
 		return StartMissionResult{}, fmt.Errorf("load start activities command result: %w", err)
 	}
-	return StartMissionResult{Mission: mission, TaskNodes: taskNodes, Activities: activities, Idempotent: idempotent}, nil
+	snapshotRows, err := r.queries.ListMissionRolePolicySnapshots(ctx, db.ListMissionRolePolicySnapshotsParams{WorkspaceID: workspaceID, MissionID: missionID})
+	if err != nil {
+		return StartMissionResult{}, fmt.Errorf("load start role policies command result: %w", err)
+	}
+	snapshots, err := mapRolePolicySnapshots(snapshotRows)
+	if err != nil {
+		return StartMissionResult{}, err
+	}
+	return StartMissionResult{Mission: mission, TaskNodes: taskNodes, Activities: activities, RolePolicySnapshots: snapshots, Idempotent: idempotent}, nil
 }
 
 func (r *Repository) loadCancelMissionByDedupeKey(ctx context.Context, workspaceID, missionID pgtype.UUID, dedupeKey string) (CancelMissionResult, error) {

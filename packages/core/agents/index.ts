@@ -3,6 +3,7 @@ export * from "./draft";
 export * from "./stored-draft";
 export * from "./manual-draft-store";
 export * from "./derive-presence";
+export * from "./derive-diagnostics";
 export * from "./failure-reason";
 export * from "./effective-access";
 export * from "./queries";

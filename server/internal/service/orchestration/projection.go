@@ -15,10 +15,13 @@ const (
 )
 
 type MissionProjection struct {
-	Mission    MissionProjectionSummary `json:"mission"`
-	Nodes      []TaskNodeProjection     `json:"nodes"`
-	Team       []TeamMemberProjection   `json:"team"`
-	Activities ActivityWindow           `json:"activities"`
+	Mission             MissionProjectionSummary `json:"mission"`
+	Planning            PlanningProjection       `json:"planning"`
+	RolePolicySnapshots []RolePolicySnapshot     `json:"role_policy_snapshots"`
+	HumanGates          []HumanGateProjection    `json:"human_gates"`
+	Nodes               []TaskNodeProjection     `json:"nodes"`
+	Team                []TeamMemberProjection   `json:"team"`
+	Activities          ActivityWindow           `json:"activities"`
 }
 
 type MissionProjectionSummary struct {
@@ -62,7 +65,7 @@ type TaskNodeProjection struct {
 	Key                string                   `json:"key"`
 	Title              string                   `json:"title"`
 	Description        string                   `json:"description"`
-	Role               Role                     `json:"role"`
+	Duty               Duty                     `json:"duty"`
 	Status             TaskStatus               `json:"status"`
 	DependencyIDs      []string                 `json:"dependency_ids"`
 	AcceptanceCriteria json.RawMessage          `json:"acceptance_criteria"`
@@ -79,8 +82,8 @@ type TaskNodeProjection struct {
 
 type AssignmentProjection struct {
 	ID           string           `json:"id"`
-	TaskNodeID   string           `json:"task_node_id"`
-	Role         Role             `json:"role"`
+	TaskNodeID   string           `json:"task_node_id,omitempty"`
+	Duty         Duty             `json:"duty"`
 	AgentID      string           `json:"agent_id"`
 	RuntimeID    string           `json:"runtime_id"`
 	Status       AssignmentStatus `json:"status"`
@@ -92,7 +95,7 @@ type AssignmentProjection struct {
 
 type RunProjection struct {
 	ID                 string          `json:"id"`
-	TaskNodeID         string          `json:"task_node_id"`
+	TaskNodeID         string          `json:"task_node_id,omitempty"`
 	AssignmentID       string          `json:"assignment_id"`
 	AgentTaskID        string          `json:"agent_task_id,omitempty"`
 	Purpose            string          `json:"purpose"`
@@ -111,7 +114,7 @@ type RunProjection struct {
 
 type ArtifactProjection struct {
 	ID          string          `json:"id"`
-	TaskNodeID  string          `json:"task_node_id"`
+	TaskNodeID  string          `json:"task_node_id,omitempty"`
 	RunID       string          `json:"run_id"`
 	Kind        ArtifactKind    `json:"kind"`
 	Version     int32           `json:"version"`
@@ -133,11 +136,48 @@ type ReviewVerdictProjection struct {
 	CreatedAt        time.Time       `json:"created_at"`
 }
 
+type HumanGateProjection struct {
+	ID               string          `json:"id"`
+	TaskNodeID       string          `json:"task_node_id"`
+	ArtifactID       string          `json:"artifact_id"`
+	SourceRunID      string          `json:"source_run_id"`
+	Kind             HumanGateKind   `json:"kind"`
+	Status           string          `json:"status"`
+	Reason           string          `json:"reason"`
+	Context          json.RawMessage `json:"context"`
+	Revision         int64           `json:"revision"`
+	CreatedAt        time.Time       `json:"created_at"`
+	ResolvedBy       string          `json:"resolved_by,omitempty"`
+	Resolution       string          `json:"resolution,omitempty"`
+	ResolutionReason string          `json:"resolution_reason,omitempty"`
+	ResolvedAt       *time.Time      `json:"resolved_at,omitempty"`
+}
+
+type PlanningProjection struct {
+	Assignments []AssignmentProjection   `json:"assignments"`
+	Runs        []RunProjection          `json:"runs"`
+	Proposals   []PlanProposalProjection `json:"proposals"`
+	Source      PlanSource               `json:"source,omitempty"`
+}
+
+type PlanProposalProjection struct {
+	ID             string          `json:"id"`
+	RunID          string          `json:"run_id"`
+	Version        int32           `json:"version"`
+	URI            string          `json:"uri"`
+	ContentHash    string          `json:"content_hash"`
+	Summary        string          `json:"summary"`
+	Proposal       json.RawMessage `json:"proposal"`
+	Decision       string          `json:"decision"`
+	DecisionReason string          `json:"decision_reason,omitempty"`
+	CreatedAt      time.Time       `json:"created_at"`
+}
+
 type TeamMemberProjection struct {
 	AgentID        string          `json:"agent_id"`
 	AgentName      string          `json:"agent_name"`
 	AvatarURL      string          `json:"avatar_url,omitempty"`
-	Role           Role            `json:"role"`
+	Duty           Duty            `json:"duty"`
 	RuntimeID      string          `json:"runtime_id"`
 	RuntimeName    string          `json:"runtime_name"`
 	RuntimeStatus  string          `json:"runtime_status"`
@@ -232,20 +272,23 @@ type RunLineageProjection struct {
 }
 
 type projectionFacts struct {
-	mission      db.Mission
-	budgetUsage  db.GetMissionBudgetUsageRow
-	missionIssue db.Issue
-	nodes        []db.TaskNode
-	issues       map[string]db.Issue
-	dependencies []db.IssueDependency
-	assignments  []db.OrchestrationAssignment
-	runs         []db.OrchestrationRun
-	artifacts    []db.Artifact
-	verdicts     []db.ReviewVerdict
-	activities   []db.OrchestrationActivity
-	agents       map[string]db.Agent
-	runtimes     map[string]db.AgentRuntime
-	tasks        map[string]db.AgentTaskQueue
+	mission             db.Mission
+	budgetUsage         db.GetMissionBudgetUsageRow
+	missionIssue        db.Issue
+	nodes               []db.TaskNode
+	issues              map[string]db.Issue
+	dependencies        []db.IssueDependency
+	assignments         []db.OrchestrationAssignment
+	runs                []db.OrchestrationRun
+	artifacts           []db.Artifact
+	verdicts            []db.ReviewVerdict
+	humanGates          []db.OrchestrationHumanGate
+	activities          []db.OrchestrationActivity
+	planningActivities  []db.OrchestrationActivity
+	rolePolicySnapshots []RolePolicySnapshot
+	agents              map[string]db.Agent
+	runtimes            map[string]db.AgentRuntime
+	tasks               map[string]db.AgentTaskQueue
 }
 
 func buildMissionProjection(facts projectionFacts) MissionProjection {
@@ -288,7 +331,7 @@ func buildMissionProjection(facts projectionFacts) MissionProjection {
 		}
 		projection := TaskNodeProjection{
 			ID: id, Key: node.NodeKey, Title: issue.Title, Description: textOrEmpty(issue.Description),
-			Role: Role(node.Role), Status: TaskStatus(node.Status), DependencyIDs: nonNilStrings(dependenciesByNode[id]),
+			Duty: Duty(node.Role), Status: TaskStatus(node.Status), DependencyIDs: nonNilStrings(dependenciesByNode[id]),
 			AcceptanceCriteria: validJSON(node.AcceptanceCriteria, `[]`), ArtifactKinds: validJSON(node.ArtifactKinds, `[]`),
 			BlockReason: textOrEmpty(node.BlockReason), ReworkCount: node.ReworkCount, Revision: node.Revision,
 			BudgetEstimate: budgetEstimateForNode(node),
@@ -335,10 +378,118 @@ func buildMissionProjection(facts projectionFacts) MissionProjection {
 			Revision: facts.mission.Revision, LastSequence: lastSequence,
 			CreatedAt: facts.mission.CreatedAt.Time, UpdatedAt: facts.mission.UpdatedAt.Time,
 		},
-		Nodes:      nodes,
-		Team:       buildTeamProjection(facts),
-		Activities: ActivityWindow{Items: activities, FirstSequence: firstSequence, LastSequence: lastSequence, HasPrevious: firstSequence > 1},
+		Planning:            buildPlanningProjection(facts),
+		RolePolicySnapshots: facts.rolePolicySnapshots,
+		HumanGates:          buildHumanGateProjection(facts.humanGates),
+		Nodes:               nodes,
+		Team:                buildTeamProjection(facts),
+		Activities:          ActivityWindow{Items: activities, FirstSequence: firstSequence, LastSequence: lastSequence, HasPrevious: firstSequence > 1},
 	}
+}
+
+func buildHumanGateProjection(items []db.OrchestrationHumanGate) []HumanGateProjection {
+	result := make([]HumanGateProjection, 0, len(items))
+	for _, item := range items {
+		result = append(result, HumanGateProjection{
+			ID: uuidText(item.ID), TaskNodeID: uuidText(item.TaskNodeID), ArtifactID: uuidText(item.ArtifactID),
+			SourceRunID: uuidText(item.SourceRunID), Kind: HumanGateKind(item.Kind), Status: item.Status,
+			Reason: item.Reason, Context: validJSON(item.Context, `{}`), Revision: item.Revision,
+			CreatedAt: item.CreatedAt.Time, ResolvedBy: uuidText(item.ResolvedBy), Resolution: textOrEmpty(item.Resolution),
+			ResolutionReason: textOrEmpty(item.ResolutionReason), ResolvedAt: timePointer(item.ResolvedAt),
+		})
+	}
+	return result
+}
+
+func buildPlanningProjection(facts projectionFacts) PlanningProjection {
+	projection := PlanningProjection{
+		Assignments: []AssignmentProjection{}, Runs: []RunProjection{}, Proposals: []PlanProposalProjection{},
+	}
+	for _, assignment := range facts.assignments {
+		if !assignment.TaskNodeID.Valid {
+			projection.Assignments = append(projection.Assignments, assignmentProjection(assignment))
+		}
+	}
+	for _, run := range facts.runs {
+		if !run.TaskNodeID.Valid && run.Purpose == "plan" {
+			projection.Runs = append(projection.Runs, runProjection(run, facts.tasks))
+		}
+	}
+	decisions := map[string]string{}
+	reasons := map[string]string{}
+	for _, activity := range facts.planningActivities {
+		switch activity.Type {
+		case activityPlanProposalEdited:
+			var payload struct {
+				BaseArtifactID string `json:"base_artifact_id"`
+			}
+			if json.Unmarshal(activity.Payload, &payload) == nil && payload.BaseArtifactID != "" {
+				decisions[payload.BaseArtifactID] = "superseded"
+			}
+		case activityPlanProposalRejected:
+			id := uuidText(activity.SubjectID)
+			decisions[id] = "rejected"
+			var payload struct {
+				Reason string `json:"reason"`
+			}
+			if json.Unmarshal(activity.Payload, &payload) == nil {
+				reasons[id] = payload.Reason
+			}
+		case activityMissionPlanAccepted:
+			var payload struct {
+				SourceArtifactID string `json:"source_artifact_id"`
+				PlanKey          string `json:"plan_key"`
+				PlanSource       string `json:"plan_source"`
+			}
+			if json.Unmarshal(activity.Payload, &payload) == nil {
+				if hasPlanProposalSourceArtifact(payload.SourceArtifactID) {
+					decisions[payload.SourceArtifactID] = "approved"
+				}
+				projection.Source = acceptedPlanSource(payload.PlanSource, payload.SourceArtifactID, payload.PlanKey)
+			}
+		}
+	}
+	for _, artifact := range facts.artifacts {
+		if artifact.TaskNodeID.Valid || artifact.Kind != string(ArtifactKindPlanProposal) {
+			continue
+		}
+		id := uuidText(artifact.ID)
+		decision := decisions[id]
+		if decision == "" {
+			decision = "pending"
+		}
+		projection.Proposals = append(projection.Proposals, PlanProposalProjection{
+			ID: id, RunID: uuidText(artifact.RunID), Version: artifact.Version, URI: artifact.Uri,
+			ContentHash: textOrEmpty(artifact.ContentHash), Summary: artifact.Summary,
+			Proposal: validJSON(artifact.Metadata, `{}`), Decision: decision,
+			DecisionReason: reasons[id], CreatedAt: artifact.CreatedAt.Time,
+		})
+	}
+	sort.Slice(projection.Proposals, func(i, j int) bool {
+		return projection.Proposals[i].Version < projection.Proposals[j].Version
+	})
+	return projection
+}
+
+func acceptedPlanSource(raw, sourceArtifactID, planKey string) PlanSource {
+	source := PlanSource(raw)
+	switch source {
+	case PlanSourceManual, PlanSourceProposal, PlanSourceFixedTemplate:
+		return source
+	}
+	// Backward-compatible recovery for activities written before plan_source was
+	// added. Both inputs are immutable facts in the accepted activity payload.
+	if hasPlanProposalSourceArtifact(sourceArtifactID) {
+		return PlanSourceProposal
+	}
+	if planKey == quickCreatePlanKey {
+		return PlanSourceFixedTemplate
+	}
+	return PlanSourceManual
+}
+
+func hasPlanProposalSourceArtifact(sourceArtifactID string) bool {
+	return sourceArtifactID != "" && sourceArtifactID != "00000000-0000-0000-0000-000000000000"
 }
 
 func buildBudgetProjection(mission db.Mission, policy *BudgetPolicy, usage db.GetMissionBudgetUsageRow) BudgetProjection {
@@ -390,7 +541,7 @@ func deriveCurrentPhase(status MissionStatus, nodes []db.TaskNode) string {
 		}
 	}
 	for _, node := range nodes {
-		if Role(node.Role) == RoleIntegrator && TaskStatus(node.Status) != TaskStatusPending && TaskStatus(node.Status) != TaskStatusReady {
+		if Duty(node.Role) == DutyIntegrator && TaskStatus(node.Status) != TaskStatusPending && TaskStatus(node.Status) != TaskStatusReady {
 			return "integrating"
 		}
 	}
@@ -398,13 +549,13 @@ func deriveCurrentPhase(status MissionStatus, nodes []db.TaskNode) string {
 }
 
 func selectActiveAssignment(node db.TaskNode, assignments []db.OrchestrationAssignment) (db.OrchestrationAssignment, bool) {
-	wantedRole := Role(node.Role)
+	wantedDuty := Duty(node.Role)
 	if TaskStatus(node.Status) == TaskStatusReview {
-		wantedRole = RoleReviewer
+		wantedDuty = DutyReviewer
 	}
 	for index := len(assignments) - 1; index >= 0; index-- {
 		item := assignments[index]
-		if AssignmentStatus(item.Status) == AssignmentStatusActive && Role(item.Role) == wantedRole {
+		if AssignmentStatus(item.Status) == AssignmentStatusActive && Duty(item.Role) == wantedDuty {
 			return item, true
 		}
 	}
@@ -423,7 +574,7 @@ func buildTeamProjection(facts projectionFacts) []TeamMemberProjection {
 			agent := facts.agents[agentID]
 			runtime := facts.runtimes[runtimeID]
 			team = append(team, TeamMemberProjection{
-				AgentID: agentID, AgentName: agent.Name, AvatarURL: textOrEmpty(agent.AvatarUrl), Role: Role(assignment.Role),
+				AgentID: agentID, AgentName: agent.Name, AvatarURL: textOrEmpty(agent.AvatarUrl), Duty: Duty(assignment.Role),
 				RuntimeID: runtimeID, RuntimeName: runtime.Name, RuntimeStatus: runtime.Status,
 				Provider: runtime.Provider, Model: textOrEmpty(agent.Model), Capabilities: runtimeCapabilities(runtime.Metadata),
 				CurrentNodeIDs: []string{},
@@ -431,7 +582,7 @@ func buildTeamProjection(facts projectionFacts) []TeamMemberProjection {
 			index = len(team) - 1
 			indexes[key] = index
 		}
-		if AssignmentStatus(assignment.Status) == AssignmentStatusActive {
+		if AssignmentStatus(assignment.Status) == AssignmentStatusActive && assignment.TaskNodeID.Valid {
 			team[index].CurrentNodeIDs = appendUnique(team[index].CurrentNodeIDs, uuidText(assignment.TaskNodeID))
 		}
 	}
@@ -440,7 +591,7 @@ func buildTeamProjection(facts projectionFacts) []TeamMemberProjection {
 
 func assignmentProjection(item db.OrchestrationAssignment) AssignmentProjection {
 	return AssignmentProjection{
-		ID: uuidText(item.ID), TaskNodeID: uuidText(item.TaskNodeID), Role: Role(item.Role),
+		ID: uuidText(item.ID), TaskNodeID: uuidText(item.TaskNodeID), Duty: Duty(item.Role),
 		AgentID: uuidText(item.AgentID), RuntimeID: uuidText(item.RuntimeID), Status: AssignmentStatus(item.Status),
 		Sequence: item.Sequence, SupersedesID: uuidText(item.SupersedesID), CreatedAt: item.CreatedAt.Time,
 		EndedAt: timePointer(item.EndedAt),

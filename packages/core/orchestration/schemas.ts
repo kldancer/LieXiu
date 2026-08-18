@@ -12,9 +12,34 @@ import type {
   RunProjection,
   TaskNodeProjection,
   TeamMemberProjection,
+  RoleProfile,
+  HumanGateProjection,
+  ResolveHumanGateResponse,
 } from "./types";
 
+const roleProfileWireSchema = z.object({
+  id: z.string().default(""), workspace_id: z.string().default(""), profile_key: z.string(),
+  version: z.number(), duty: z.enum(["planner", "executor", "reviewer", "integrator"]), name: z.string().default(""), description: z.string().default(""),
+  config: z.unknown().default({}), created_at: z.string().default(""),
+}).loose();
+
+export const RoleProfilesResponseSchema = z.object({
+  profiles: z.array(roleProfileWireSchema).default([]),
+}).loose().transform((value): RoleProfile[] => value.profiles.map((profile) => ({
+  id: profile.id, workspaceId: profile.workspace_id, profileKey: profile.profile_key, version: profile.version,
+  duty: profile.duty as RoleProfile["duty"], name: profile.name, description: profile.description,
+  config: profile.config, createdAt: profile.created_at,
+})));
+
 const timestamp = z.string().default("");
+
+const rolePolicySnapshotWireSchema = z.object({
+  id: z.string(), workspace_id: z.string(), mission_id: z.string(), schema_version: z.number(),
+  duty: z.enum(["planner", "executor", "reviewer", "integrator"]), role_profile_id: z.string(),
+  role_profile_key: z.string(), role_profile_version: z.number(), profile_name: z.string(),
+  profile_description: z.string().default(""), config: z.unknown().default({}), agent_id: z.string().optional(),
+  content_hash: z.string(), frozen_by: z.string(), created_at: timestamp.optional(), frozen_at: timestamp,
+}).loose();
 
 const planLimitsWireSchema = z.object({
   max_parallel_runs: z.number().default(1),
@@ -44,8 +69,8 @@ const budgetEstimateWireSchema = z.object({
 
 const assignmentWireSchema = z.object({
   id: z.string(),
-  task_node_id: z.string(),
-  role: z.string().default("executor"),
+  task_node_id: z.string().optional().nullable(),
+  duty: z.string().default("executor"),
   agent_id: z.string(),
   runtime_id: z.string(),
   status: z.string().default("revoked"),
@@ -57,7 +82,7 @@ const assignmentWireSchema = z.object({
 
 const runWireSchema = z.object({
   id: z.string(),
-  task_node_id: z.string(),
+  task_node_id: z.string().optional().nullable(),
   assignment_id: z.string(),
   agent_task_id: z.string().optional(),
   purpose: z.string().default("execute"),
@@ -76,7 +101,7 @@ const runWireSchema = z.object({
 
 const artifactWireSchema = z.object({
   id: z.string(),
-  task_node_id: z.string(),
+  task_node_id: z.string().optional().nullable(),
   run_id: z.string(),
   kind: z.string().default("file"),
   version: z.number().default(1),
@@ -103,7 +128,7 @@ const nodeWireSchema = z.object({
   key: z.string().default(""),
   title: z.string().default(""),
   description: z.string().default(""),
-  role: z.string().default("executor"),
+  duty: z.string().default("executor"),
   status: z.string().default("pending"),
   dependency_ids: z.array(z.string()).default([]),
   acceptance_criteria: z.array(z.string()).default([]),
@@ -122,7 +147,7 @@ const teamMemberWireSchema = z.object({
   agent_id: z.string(),
   agent_name: z.string().default(""),
   avatar_url: z.string().optional(),
-  role: z.string().default("executor"),
+  duty: z.string().default("executor"),
   runtime_id: z.string(),
   runtime_name: z.string().default(""),
   runtime_status: z.string().default("offline"),
@@ -130,6 +155,14 @@ const teamMemberWireSchema = z.object({
   model: z.string().optional(),
   capabilities: z.unknown().default([]),
   current_node_ids: z.array(z.string()).default([]),
+}).loose();
+
+const humanGateWireSchema = z.object({
+  id: z.string(), task_node_id: z.string(), artifact_id: z.string(),
+  source_run_id: z.string(),
+  kind: z.enum(["reviewer_unavailable", "rework_limit_exceeded"]),
+  status: z.string().default("pending"), reason: z.string().default(""),
+  context: z.unknown().default({}), revision: z.number().default(0), created_at: timestamp,
 }).loose();
 
 const activityWireSchema = z.object({
@@ -149,11 +182,21 @@ const activityWireSchema = z.object({
   occurred_at: timestamp,
 }).loose();
 
+const proposalWireSchema = z.object({
+  id: z.string(), run_id: z.string(), version: z.number().default(1), uri: z.string().default(""), content_hash: z.string().optional(),
+  summary: z.string().default(""), proposal: z.unknown().default({}), decision: z.enum(["pending", "superseded", "rejected", "approved"]).default("pending"),
+  decision_reason: z.string().optional(), created_at: timestamp,
+}).loose();
+function proposalFromWire(value: z.infer<typeof proposalWireSchema>) {
+  return { id: value.id, runId: value.run_id, version: value.version, uri: value.uri, contentHash: value.content_hash, summary: value.summary,
+    proposal: value.proposal, decision: value.decision, decisionReason: value.decision_reason, createdAt: value.created_at };
+}
+
 function assignmentFromWire(value: z.infer<typeof assignmentWireSchema>): AssignmentProjection {
   return {
     id: value.id,
-    taskNodeId: value.task_node_id,
-    role: value.role as AssignmentProjection["role"],
+    taskNodeId: value.task_node_id ?? undefined,
+    duty: value.duty as AssignmentProjection["duty"],
     agentId: value.agent_id,
     runtimeId: value.runtime_id,
     status: value.status as AssignmentProjection["status"],
@@ -167,7 +210,7 @@ function assignmentFromWire(value: z.infer<typeof assignmentWireSchema>): Assign
 function runFromWire(value: z.infer<typeof runWireSchema>): RunProjection {
   return {
     id: value.id,
-    taskNodeId: value.task_node_id,
+    taskNodeId: value.task_node_id ?? undefined,
     assignmentId: value.assignment_id,
     agentTaskId: value.agent_task_id,
     purpose: value.purpose,
@@ -188,7 +231,7 @@ function runFromWire(value: z.infer<typeof runWireSchema>): RunProjection {
 function artifactFromWire(value: z.infer<typeof artifactWireSchema>): ArtifactProjection {
   return {
     id: value.id,
-    taskNodeId: value.task_node_id,
+    taskNodeId: value.task_node_id ?? undefined,
     runId: value.run_id,
     kind: value.kind,
     version: value.version,
@@ -218,7 +261,7 @@ function teamMemberFromWire(value: z.infer<typeof teamMemberWireSchema>): TeamMe
     agentId: value.agent_id,
     agentName: value.agent_name,
     avatarUrl: value.avatar_url,
-    role: value.role as TeamMemberProjection["role"],
+    duty: value.duty as TeamMemberProjection["duty"],
     runtimeId: value.runtime_id,
     runtimeName: value.runtime_name,
     runtimeStatus: value.runtime_status,
@@ -235,7 +278,7 @@ function nodeFromWire(value: z.infer<typeof nodeWireSchema>): TaskNodeProjection
     key: value.key,
     title: value.title,
     description: value.description,
-    role: value.role as TaskNodeProjection["role"],
+    duty: value.duty as TaskNodeProjection["duty"],
     status: value.status as TaskNodeProjection["status"],
     dependencyIds: value.dependency_ids,
     acceptanceCriteria: value.acceptance_criteria,
@@ -295,6 +338,12 @@ export const MissionProjectionSchema = z.object({
     last_sequence: z.number().default(0),
     has_previous: z.boolean().default(false),
   }).loose(),
+  planning: z.object({
+    assignments: z.array(assignmentWireSchema).default([]), runs: z.array(runWireSchema).default([]), proposals: z.array(proposalWireSchema).default([]),
+    source: z.enum(["manual", "proposal", "fixed_template"]).optional(),
+  }).loose().default({ assignments: [], runs: [], proposals: [] }),
+  role_policy_snapshots: z.array(rolePolicySnapshotWireSchema).default([]),
+  human_gates: z.array(humanGateWireSchema).default([]),
 }).loose().transform((value): MissionProjection => ({
   mission: {
     id: value.mission.id,
@@ -335,6 +384,20 @@ export const MissionProjectionSchema = z.object({
     lastSequence: value.activities.last_sequence,
     hasPrevious: value.activities.has_previous,
   },
+  planning: { assignments: value.planning.assignments.map(assignmentFromWire), runs: value.planning.runs.map(runFromWire), proposals: value.planning.proposals.map(proposalFromWire), source: value.planning.source },
+  rolePolicySnapshots: value.role_policy_snapshots.map((snapshot) => ({
+    id: snapshot.id, workspaceId: snapshot.workspace_id, missionId: snapshot.mission_id,
+    schemaVersion: snapshot.schema_version, duty: snapshot.duty, roleProfileId: snapshot.role_profile_id,
+    roleProfileKey: snapshot.role_profile_key, roleProfileVersion: snapshot.role_profile_version,
+    profileName: snapshot.profile_name, profileDescription: snapshot.profile_description,
+    config: snapshot.config, agentId: snapshot.agent_id, contentHash: snapshot.content_hash,
+    frozenBy: snapshot.frozen_by, frozenAt: snapshot.frozen_at,
+  })),
+  humanGates: value.human_gates.map((gate): HumanGateProjection => ({
+    id: gate.id, taskNodeId: gate.task_node_id, artifactId: gate.artifact_id,
+    sourceRunId: gate.source_run_id, kind: gate.kind, status: gate.status,
+    reason: gate.reason, context: gate.context, revision: gate.revision, createdAt: gate.created_at,
+  })),
 }));
 
 export const ActivityPageSchema = z.object({
@@ -463,6 +526,20 @@ export const RetryMissionTaskResponseSchema = z.object({
   replayed: value.replayed,
 }));
 
+export const PlanCommandResponseSchema = z.object({
+  mission_id: z.string().min(1), status: z.string(), revision: z.number(), artifact_id: z.string().optional(), run_id: z.string().optional(), replayed: z.boolean().default(false),
+}).loose().transform((value) => ({ missionId: value.mission_id, status: value.status, revision: value.revision, artifactId: value.artifact_id, runId: value.run_id, replayed: value.replayed }));
+
+export const ResolveHumanGateResponseSchema = z.object({
+  mission_id: z.string().min(1), task_node_id: z.string().min(1), gate_id: z.string().min(1),
+  status: z.string(), revision: z.number(), task_revision: z.number(), gate_revision: z.number(),
+  created_run_ids: z.array(z.string()).default([]), replayed: z.boolean().default(false),
+}).loose().transform((value): ResolveHumanGateResponse => ({
+  missionId: value.mission_id, taskNodeId: value.task_node_id, gateId: value.gate_id,
+  status: value.status, revision: value.revision, taskRevision: value.task_revision,
+  gateRevision: value.gate_revision, createdRunIds: value.created_run_ids, replayed: value.replayed,
+}));
+
 export const EMPTY_MISSION_PROJECTION: MissionProjection = {
   mission: {
     id: "", title: "", description: "", status: "failed", currentPhase: "planning",
@@ -474,7 +551,7 @@ export const EMPTY_MISSION_PROJECTION: MissionProjection = {
     },
     revision: 0, lastSequence: 0, createdAt: "", updatedAt: "",
   },
-  nodes: [], team: [], activities: { items: [], firstSequence: 0, lastSequence: 0, hasPrevious: false },
+  nodes: [], team: [], activities: { items: [], firstSequence: 0, lastSequence: 0, hasPrevious: false }, planning: { assignments: [], runs: [], proposals: [] }, rolePolicySnapshots: [], humanGates: [],
 };
 
 export const EMPTY_ACTIVITY_PAGE: ActivityPage = {
@@ -484,7 +561,7 @@ export const EMPTY_ACTIVITY_PAGE: ActivityPage = {
 export const EMPTY_RUN_DETAIL: RunDetailProjection = {
   missionId: "",
   node: {
-    id: "", key: "", title: "", description: "", role: "executor", status: "pending",
+    id: "", key: "", title: "", description: "", duty: "executor", status: "pending",
     dependencyIds: [], acceptanceCriteria: [], artifactKinds: [], reworkCount: 0, revision: 0,
   },
   run: {
@@ -492,7 +569,7 @@ export const EMPTY_RUN_DETAIL: RunDetailProjection = {
     input: {}, dispatchDeadlineAt: "", timeoutSeconds: 0, createdAt: "",
   },
   assignment: {
-    id: "", taskNodeId: "", role: "executor", agentId: "", runtimeId: "", status: "revoked",
+    id: "", taskNodeId: "", duty: "executor", agentId: "", runtimeId: "", status: "revoked",
     sequence: 1, createdAt: "",
   },
   messages: [], usage: [], artifacts: [], reviews: [], lineage: { assignments: [], runs: [] },

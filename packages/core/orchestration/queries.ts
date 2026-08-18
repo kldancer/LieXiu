@@ -5,6 +5,11 @@ import type {
   ApproveMissionBudgetRequest,
   MissionLifecycleRequest,
   RetryMissionTaskRequest,
+  RequestPlanRequest,
+  StartMissionRequest,
+  EditPlanProposalRequest,
+  RejectPlanProposalRequest,
+  ResolveHumanGateRequest,
 } from "./types";
 
 /**
@@ -72,7 +77,19 @@ export function approveMissionBudgetMutationOptions(missionId: string) {
 
 export function startMissionMutationOptions(missionId: string) {
   return mutationOptions({
-    mutationFn: (request: MissionLifecycleRequest) => api.startMission(missionId, request),
+    mutationFn: (request: StartMissionRequest) => api.startMission(missionId, request),
+  });
+}
+
+export const roleProfileKeys = {
+  all: (wsId: string) => ["role-profiles", wsId] as const,
+};
+
+export function roleProfilesOptions(wsId: string) {
+  return queryOptions({
+    queryKey: roleProfileKeys.all(wsId),
+    queryFn: () => api.listRoleProfiles(wsId),
+    enabled: wsId.length > 0,
   });
 }
 
@@ -85,5 +102,30 @@ export function cancelMissionMutationOptions(missionId: string) {
 export function retryMissionTaskMutationOptions(missionId: string) {
   return mutationOptions({
     mutationFn: (request: RetryMissionTaskRequest) => api.retryMissionTask(missionId, request),
+  });
+}
+
+export function resolveHumanGateMutationOptions(missionId: string, gateId: string) {
+  return mutationOptions({
+    mutationFn: (request: ResolveHumanGateRequest) => api.resolveHumanGate(missionId, gateId, request),
+  });
+}
+
+export function requestPlanMutationOptions(missionId: string) {
+  return mutationOptions({ mutationFn: (request: RequestPlanRequest) => api.requestPlan(missionId, request) });
+}
+
+export function editPlanProposalMutationOptions(missionId: string, artifactId: string) {
+  return mutationOptions({ mutationFn: (request: EditPlanProposalRequest) => api.editPlanProposal(missionId, artifactId, request) });
+}
+
+export function rejectPlanProposalMutationOptions(missionId: string, artifactId: string) {
+  return mutationOptions({ mutationFn: (request: RejectPlanProposalRequest) => api.rejectPlanProposal(missionId, artifactId, request) });
+}
+
+export function approvePlanProposalMutationOptions(missionId: string, artifactId: string) {
+  return mutationOptions({
+    mutationFn: (request: { commandId: string; expectedRevision: number }) =>
+      api.approvePlanProposal(missionId, artifactId, request),
   });
 }

@@ -3,12 +3,14 @@ package handler
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
 	"strings"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/kailonyang/liexiu/server/internal/service"
 	db "github.com/kailonyang/liexiu/server/pkg/db/generated"
@@ -458,6 +460,22 @@ func (h *Handler) buildClaimedTaskResponse(r *http.Request, task *db.AgentTaskQu
 		}
 	}
 
+	if task.OrchestrationRunID.Valid {
+		context, err := h.orchestrationRunClaimContext(r, *task, runtimeWorkspaceID)
+		if err != nil {
+			slog.Error("task claim: orchestration context validation failed", "task_id", uuidToString(task.ID), "run_id", uuidToString(task.OrchestrationRunID), "error", err)
+			if _, cerr := h.TaskService.CancelTask(r.Context(), task.ID); cerr != nil {
+				slog.Error("task claim: cancel after orchestration context failure failed", "task_id", uuidToString(task.ID), "error", cerr)
+			}
+			return resp, deliveredCommentIDs, agentSkillCount, builtinSkillCount, &claimBuildFailure{
+				outcome: "error_orchestration_context",
+				status:  http.StatusConflict,
+				message: "orchestration task claim rejected: " + err.Error(),
+			}
+		}
+		resp.OrchestrationRun = context
+	}
+
 	// Surface a bounded snapshot of the same agent's other in-flight issue
 	// tasks. Queued tasks cannot coordinate yet and are intentionally omitted.
 	// This is advisory context, not a queue gate: cross-issue parallelism and
@@ -570,6 +588,133 @@ func (h *Handler) buildClaimedTaskResponse(r *http.Request, task *db.AgentTaskQu
 	}
 
 	return resp, deliveredCommentIDs, agentSkillCount, builtinSkillCount, nil
+}
+
+func (h *Handler) orchestrationRunClaimContext(r *http.Request, task db.AgentTaskQueue, workspaceID string) (*protocol.OrchestrationRunContextV1, error) {
+	supportsContext := requestHasClientCapability(r, protocol.DaemonCapabilityOrchestrationContextV1)
+	run, err := h.Queries.GetOrchestrationRunInWorkspace(r.Context(), db.GetOrchestrationRunInWorkspaceParams{
+		RunID: task.OrchestrationRunID, WorkspaceID: parseUUID(workspaceID),
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, errors.New("orchestration run is not in the runtime workspace")
+		}
+		return nil, fmt.Errorf("load orchestration run: %w", err)
+	}
+	var node *db.TaskNode
+	if run.TaskNodeID.Valid {
+		loaded, nodeErr := h.Queries.GetTaskNodeInMission(r.Context(), db.GetTaskNodeInMissionParams{
+			TaskNodeID: run.TaskNodeID, WorkspaceID: run.WorkspaceID, MissionID: run.MissionID,
+		})
+		if nodeErr != nil {
+			if errors.Is(nodeErr, pgx.ErrNoRows) {
+				return nil, errors.New("orchestration task node is not in the run workspace and mission")
+			}
+			return nil, fmt.Errorf("load orchestration task node: %w", nodeErr)
+		}
+		node = &loaded
+	}
+	claimContext, err := assembleOrchestrationRunClaimContext(task, run, node, parseUUID(workspaceID), supportsContext)
+	if err != nil {
+		return nil, err
+	}
+	duty, err := orchestrationDutyForPurpose(run.Purpose)
+	if err != nil {
+		return nil, err
+	}
+	snapshot, err := h.Queries.GetMissionRolePolicySnapshot(r.Context(), db.GetMissionRolePolicySnapshotParams{
+		WorkspaceID: run.WorkspaceID, MissionID: run.MissionID, Duty: duty,
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, errors.New("orchestration run has no frozen role policy snapshot")
+		}
+		return nil, fmt.Errorf("load frozen role policy snapshot: %w", err)
+	}
+	instructions, err := frozenRoleInstructions(snapshot.Config)
+	if err != nil {
+		return nil, err
+	}
+	claimContext.RoleInstructions = instructions
+	return claimContext, nil
+}
+
+func orchestrationDutyForPurpose(purpose string) (string, error) {
+	switch purpose {
+	case "plan":
+		return "planner", nil
+	case "execute":
+		return "executor", nil
+	case "review":
+		return "reviewer", nil
+	case "integrate":
+		return "integrator", nil
+	default:
+		return "", fmt.Errorf("unsupported orchestration purpose %q", purpose)
+	}
+}
+
+func frozenRoleInstructions(config []byte) (string, error) {
+	var frozen struct {
+		Instructions string `json:"instructions"`
+	}
+	if len(bytes.TrimSpace(config)) == 0 || json.Unmarshal(config, &frozen) != nil {
+		return "", errors.New("frozen role policy snapshot has invalid config")
+	}
+	return strings.TrimSpace(frozen.Instructions), nil
+}
+
+func assembleOrchestrationRunClaimContext(task db.AgentTaskQueue, run db.OrchestrationRun, node *db.TaskNode, workspaceID pgtype.UUID, supportsContext bool) (*protocol.OrchestrationRunContextV1, error) {
+	if !supportsContext {
+		return nil, errors.New("daemon capability orchestration-context-v1 is required")
+	}
+	if !workspaceID.Valid || run.WorkspaceID != workspaceID || task.OrchestrationRunID != run.ID {
+		return nil, errors.New("orchestration run is not mapped to the runtime workspace")
+	}
+	if len(bytes.TrimSpace(run.Input)) == 0 || len(bytes.TrimSpace(task.Context)) == 0 || !json.Valid(run.Input) || !json.Valid(task.Context) || !bytes.Equal(bytes.TrimSpace(run.Input), bytes.TrimSpace(task.Context)) {
+		return nil, errors.New("run input does not match frozen task context")
+	}
+
+	result := protocol.OrchestrationResultContractV1{SchemaVersion: 1}
+	switch run.Purpose {
+	case "plan":
+		if run.TaskNodeID.Valid || task.IssueID != run.MissionID || node != nil {
+			return nil, errors.New("plan run mapping is inconsistent")
+		}
+		result.Kind = protocol.OrchestrationResultKindPlanProposal
+	case "execute", "integrate":
+		if !run.TaskNodeID.Valid || node == nil {
+			return nil, errors.New("execution run has no task node")
+		}
+		result.Kind = protocol.OrchestrationResultKindArtifact
+	case "review":
+		if !run.TaskNodeID.Valid || node == nil {
+			return nil, errors.New("review run has no task node")
+		}
+		result.Kind = protocol.OrchestrationResultKindReviewVerdict
+	default:
+		return nil, fmt.Errorf("unsupported orchestration purpose %q", run.Purpose)
+	}
+
+	if node != nil {
+		if node.IssueID != task.IssueID || node.WorkspaceID != run.WorkspaceID || node.MissionID != run.MissionID || node.IssueID != run.TaskNodeID {
+			return nil, errors.New("orchestration task node mapping is inconsistent")
+		}
+		if result.Kind == protocol.OrchestrationResultKindArtifact {
+			var kinds []string
+			if len(bytes.TrimSpace(node.ArtifactKinds)) == 0 || json.Unmarshal(node.ArtifactKinds, &kinds) != nil || len(kinds) == 0 {
+				return nil, errors.New("orchestration task node has invalid artifact kinds")
+			}
+			result.AllowedArtifactKinds = kinds
+		}
+	}
+	return &protocol.OrchestrationRunContextV1{
+		SchemaVersion:  1,
+		RunID:          uuidToString(run.ID),
+		Purpose:        run.Purpose,
+		Input:          json.RawMessage(bytes.TrimSpace(run.Input)),
+		ResultContract: result,
+	}, nil
 }
 
 // worktreeClaimBlockReason returns a user-facing reason when this runtime must

@@ -70,6 +70,10 @@ func (r *Repository) loadProjectionFacts(ctx context.Context, workspaceID, missi
 	if err != nil {
 		return projectionFacts{}, fmt.Errorf("load mission projection: load review verdicts: %w", err)
 	}
+	facts.humanGates, err = queries.ListPendingHumanGatesByMission(ctx, db.ListPendingHumanGatesByMissionParams{WorkspaceID: workspaceID, MissionID: missionID})
+	if err != nil {
+		return projectionFacts{}, fmt.Errorf("load mission projection: load human gates: %w", err)
+	}
 	if activityLimit > 0 {
 		facts.activities, err = queries.ListRecentOrchestrationActivities(ctx, db.ListRecentOrchestrationActivitiesParams{
 			WorkspaceID: workspaceID, MissionID: missionID, PageSize: activityLimit,
@@ -77,6 +81,20 @@ func (r *Repository) loadProjectionFacts(ctx context.Context, workspaceID, missi
 		if err != nil {
 			return projectionFacts{}, fmt.Errorf("load mission projection: load activities: %w", err)
 		}
+	}
+	facts.planningActivities, err = queries.ListPlanProposalDecisionActivities(ctx, db.ListPlanProposalDecisionActivitiesParams{
+		WorkspaceID: workspaceID, MissionID: missionID,
+	})
+	if err != nil {
+		return projectionFacts{}, fmt.Errorf("load mission projection: load plan proposal decisions: %w", err)
+	}
+	rolePolicyRows, err := queries.ListMissionRolePolicySnapshots(ctx, db.ListMissionRolePolicySnapshotsParams{WorkspaceID: workspaceID, MissionID: missionID})
+	if err != nil {
+		return projectionFacts{}, fmt.Errorf("load mission projection: load role policy snapshots: %w", err)
+	}
+	facts.rolePolicySnapshots, err = mapRolePolicySnapshots(rolePolicyRows)
+	if err != nil {
+		return projectionFacts{}, fmt.Errorf("load mission projection: map role policy snapshots: %w", err)
 	}
 
 	for _, assignment := range facts.assignments {

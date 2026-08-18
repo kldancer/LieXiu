@@ -30,6 +30,22 @@ export interface PixelActorView {
   action: PixelActorAction;
 }
 
+export interface MailboxActivityView {
+	id: string;
+	sequence: number;
+	messageId: string;
+	messageType: string;
+	status: "pending" | "consumed" | "expired" | "cancelled";
+	recipientType: "member" | "agent";
+	recipientId: string;
+	actorType: string;
+	actorId?: string;
+	taskNodeId?: string;
+	runId?: string;
+	expiresAt: string;
+	hops: number;
+}
+
 export const BOARD_LANES: BoardLane[] = ["queued", "active", "review", "done", "attention"];
 export const WORLD_ZONES: WorldZone[] = ["lobby", "workshop", "reviewLab", "delivery", "blocked"];
 
@@ -165,8 +181,8 @@ export function buildPixelActors(
   }
   return [...team]
     .sort((left, right) =>
-      `${left.role}\u0000${left.agentName}\u0000${left.agentId}`.localeCompare(
-        `${right.role}\u0000${right.agentName}\u0000${right.agentId}`,
+      `${left.duty}\u0000${left.agentName}\u0000${left.agentId}`.localeCompare(
+        `${right.duty}\u0000${right.agentName}\u0000${right.agentId}`,
       ),
     )
     .map((agent) => {
@@ -201,6 +217,65 @@ export function pixelActionForActivity(type: string | undefined): PixelActorActi
   if (/started|assigned|dispatch/.test(normalized)) return "move";
   if (/message|artifact|usage|progress|working/.test(normalized)) return "work";
   return "none";
+}
+
+/**
+ * Builds the only mailbox shape the UI may render. The mailbox payload itself
+ * never enters Activity; malformed or duplicated activity events are ignored
+ * without changing the canonical MissionProjection.
+ */
+export function buildMailboxActivityViews(activities: ActivityProjection[]): MailboxActivityView[] {
+	const bySequence = new Map<number, MailboxActivityView>();
+	const ordered = [...activities].sort((left, right) =>
+		left.sequence - right.sequence || left.id.localeCompare(right.id),
+	);
+	for (const activity of ordered) {
+		if (activity.subjectType !== "mailbox_message" || !/^mailbox\.message_(sent|consumed|expired|cancelled)$/.test(activity.type)) continue;
+		if (!isRecord(activity.payload)) continue;
+		const messageId = stringField(activity.payload, "message_id");
+		const messageType = stringField(activity.payload, "message_type");
+		const recipientType = stringField(activity.payload, "recipient_type");
+		const recipientId = stringField(activity.payload, "recipient_id");
+		const status = stringField(activity.payload, "to_status");
+		const expiresAt = stringField(activity.payload, "expires_at");
+		const hops = activity.payload.hops;
+		if (
+			messageId !== activity.subjectId || !messageType || !recipientId ||
+			(recipientType !== "member" && recipientType !== "agent") ||
+			!isMailboxStatus(status) || !expiresAt || Number.isNaN(Date.parse(expiresAt)) ||
+			!Number.isInteger(hops) || (hops as number) < 0 || (hops as number) > 8
+		) continue;
+		if (!bySequence.has(activity.sequence)) {
+			bySequence.set(activity.sequence, {
+				id: activity.id,
+				sequence: activity.sequence,
+				messageId,
+				messageType,
+				status,
+				recipientType,
+				recipientId,
+				actorType: activity.actorType,
+				actorId: activity.actorId,
+				taskNodeId: activity.taskNodeId,
+				runId: activity.runId,
+				expiresAt,
+				hops: hops as number,
+			});
+		}
+	}
+	return [...bySequence.values()];
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+	return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function stringField(value: Record<string, unknown>, key: string) {
+	return typeof value[key] === "string" ? value[key] : "";
+}
+
+function isMailboxStatus(value: string): value is MailboxActivityView["status"] {
+	return value === "pending" || value === "consumed" || value === "expired" || value === "cancelled";
 }
 
 function compareNodes(left: TaskNodeProjection, right: TaskNodeProjection) {

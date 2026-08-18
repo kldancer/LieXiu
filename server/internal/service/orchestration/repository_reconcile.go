@@ -83,11 +83,16 @@ func (r *Repository) ReconcileRun(ctx context.Context, params ReconcileRunParams
 	if err != nil {
 		return ReconcileRunResult{}, fmt.Errorf("reconcile run: lock run: %w", err)
 	}
-	node, err := qtx.LockTaskNodeForReconcile(ctx, db.LockTaskNodeForReconcileParams{
-		TaskNodeID: run.TaskNodeID, WorkspaceID: params.WorkspaceID, MissionID: run.MissionID,
-	})
-	if err != nil {
-		return ReconcileRunResult{}, fmt.Errorf("reconcile run: lock task node: %w", err)
+	var node db.TaskNode
+	if run.TaskNodeID.Valid {
+		node, err = qtx.LockTaskNodeForReconcile(ctx, db.LockTaskNodeForReconcileParams{
+			TaskNodeID: run.TaskNodeID, WorkspaceID: params.WorkspaceID, MissionID: run.MissionID,
+		})
+		if err != nil {
+			return ReconcileRunResult{}, fmt.Errorf("reconcile run: lock task node: %w", err)
+		}
+	} else if run.Purpose != "plan" {
+		return ReconcileRunResult{}, fmt.Errorf("reconcile run: task_node_id is required for purpose %q", run.Purpose)
 	}
 	task, err := qtx.LockAgentTaskByOrchestrationRun(ctx, db.LockAgentTaskByOrchestrationRunParams{
 		RunID: params.RunID, WorkspaceID: params.WorkspaceID,
@@ -103,7 +108,68 @@ func (r *Repository) ReconcileRun(ctx context.Context, params ReconcileRunParams
 	if err != nil {
 		return ReconcileRunResult{}, fmt.Errorf("reconcile run: normalize observation: %w", err)
 	}
+	var planningProposal *validatedPlanningProposal
+	var workReceipt *executionArtifactReceipt
+	var reviewReceipt *executionReviewReceipt
+	if taskPtr != nil && taskPtr.Status == "completed" && observation.status == RunStatusSucceeded && run.Purpose != "plan" {
+		output, outputErr := taskOutput(taskPtr.Result)
+		if outputErr != nil {
+			observation.status = RunStatusFailed
+			observation.failureKind = textValue(FailureKindProtocolError)
+			observation.failureMessage = textValue(normalizeFailureMessage(outputErr.Error(), "completed task output is invalid"))
+			observation.finishedAt = firstTimestamp(taskPtr.CompletedAt, timestamptz(params.ObservedAt.UTC()))
+			observation.taskStatusValid = false
+		} else if run.Purpose == "review" {
+			receipt, receiptErr := decodeExecutionReviewReceipt(output)
+			if receiptErr != nil {
+				observation.status = RunStatusFailed
+				observation.failureKind = textValue(FailureKindProtocolError)
+				observation.failureMessage = textValue(normalizeFailureMessage(receiptErr.Error(), "review receipt is invalid"))
+				observation.finishedAt = firstTimestamp(taskPtr.CompletedAt, timestamptz(params.ObservedAt.UTC()))
+				observation.taskStatusValid = false
+			} else {
+				reviewReceipt = &receipt
+			}
+		} else {
+			receipt, receiptErr := decodeExecutionArtifactReceipt(output)
+			if receiptErr != nil {
+				observation.status = RunStatusFailed
+				observation.failureKind = textValue(FailureKindProtocolError)
+				observation.failureMessage = textValue(normalizeFailureMessage(receiptErr.Error(), "artifact receipt is invalid"))
+				observation.finishedAt = firstTimestamp(taskPtr.CompletedAt, timestamptz(params.ObservedAt.UTC()))
+				observation.taskStatusValid = false
+			} else if allowed, allowedErr := artifactKindAllowedByNode(node, receipt.Artifact.Kind); allowedErr != nil || !allowed {
+				if allowedErr != nil {
+					receiptErr = allowedErr
+				} else {
+					receiptErr = fmt.Errorf("artifact receipt kind %q is not allowed by the task", receipt.Artifact.Kind)
+				}
+				observation.status = RunStatusFailed
+				observation.failureKind = textValue(FailureKindProtocolError)
+				observation.failureMessage = textValue(normalizeFailureMessage(receiptErr.Error(), "artifact receipt kind is not allowed"))
+				observation.finishedAt = firstTimestamp(taskPtr.CompletedAt, timestamptz(params.ObservedAt.UTC()))
+				observation.taskStatusValid = false
+			} else {
+				workReceipt = &receipt
+			}
+		}
+	}
+	if run.Purpose == "plan" && !run.TaskNodeID.Valid && taskPtr != nil && taskPtr.Status == "completed" {
+		validated, validationErrs := validatePlanningTaskProposal(mission, run, *taskPtr)
+		if len(validationErrs) > 0 {
+			observation.status = RunStatusFailed
+			observation.failureKind = textValue("invalid_plan_proposal")
+			observation.failureMessage = planningProposalFailure(validationErrs)
+			observation.finishedAt = firstTimestamp(taskPtr.CompletedAt, timestamptz(params.ObservedAt.UTC()))
+		} else {
+			planningProposal = &validated
+		}
+	}
 	result := ReconcileRunResult{Run: run, TaskNode: node}
+	if taskPtr == nil && run.Purpose == "plan" && !run.TaskNodeID.Valid && RunStatus(run.Status) == RunStatusQueued && observation.status == RunStatusQueued {
+		result.EnqueueExecution = true
+		result.EnqueueActorID = mission.CreatedBy
+	}
 	if taskPtr != nil && observation.cancelExecution {
 		result.CancelExecution = true
 		result.CancelAgentTaskID = taskPtr.ID
@@ -113,6 +179,16 @@ func (r *Repository) ReconcileRun(ctx context.Context, params ReconcileRunParams
 	runChanged := observation.status != RunStatus(run.Status)
 	taskChanged := observation.taskStatusValid && observation.taskStatus != TaskStatus(node.Status)
 	if !runChanged && !taskChanged {
+		// A terminal replay is intentionally read-only, but still returns the
+		// durable output created by the first reconciliation.
+		if RunStatus(run.Status) == RunStatusSucceeded && run.Purpose != "plan" && taskPtr != nil && taskPtr.Status == "completed" {
+			if artifact, artifactErr := r.loadReconciledArtifact(ctx, params.WorkspaceID, run.MissionID, run.ID); artifactErr == nil {
+				result.Artifact = &artifact
+			}
+			if verdict, verdictErr := r.queries.GetReviewVerdictByRun(ctx, run.ID); verdictErr == nil {
+				result.ReviewVerdict = &verdict
+			}
+		}
 		return result, nil
 	}
 	if runChanged {
@@ -166,12 +242,83 @@ func (r *Repository) ReconcileRun(ctx context.Context, params ReconcileRunParams
 	if err != nil {
 		return ReconcileRunResult{}, err
 	}
+	if planningProposal != nil && runChanged && RunStatus(run.Status) == RunStatusSucceeded {
+		artifact, activity, artifactErr := r.createPlanningProposalArtifact(ctx, qtx, mission, run, *taskPtr, *planningProposal)
+		if artifactErr != nil {
+			return ReconcileRunResult{}, artifactErr
+		}
+		result.PlanProposalArtifact = &artifact
+		activities = append(activities, activity)
+	}
+	if runChanged && RunStatus(run.Status) == RunStatusSucceeded && taskPtr != nil {
+		commandID := taskPtr.ID
+		if workReceipt != nil {
+			artifact, outputActivities, artifactErr := r.recordReconciledArtifactInTx(ctx, qtx, mission, run, node, *taskPtr, commandID, run.ID, *workReceipt)
+			if artifactErr != nil {
+				return ReconcileRunResult{}, artifactErr
+			}
+			result.Artifact = &artifact
+			activities = append(activities, outputActivities...)
+		}
+		if reviewReceipt != nil {
+			verdictResult, verdictErr := r.recordReconciledReviewInTx(ctx, qtx, mission, run, node, *taskPtr, commandID, run.ID, taskPtr.AgentID, pgtype.UUID{}, *reviewReceipt)
+			if verdictErr != nil {
+				return ReconcileRunResult{}, verdictErr
+			}
+			result.ReviewVerdict = &verdictResult.Verdict
+			node = verdictResult.TaskNode
+			result.TaskNode = node
+			activities = append(activities, verdictResult.Activities...)
+		}
+	}
 	if err := tx.Commit(ctx); err != nil {
 		return ReconcileRunResult{}, fmt.Errorf("reconcile run: commit: %w", err)
 	}
 	result.Changed = true
 	result.Activities = activities
 	return result, nil
+}
+
+func (r *Repository) createPlanningProposalArtifact(
+	ctx context.Context,
+	qtx *db.Queries,
+	mission db.Mission,
+	run db.OrchestrationRun,
+	task db.AgentTaskQueue,
+	validated validatedPlanningProposal,
+) (db.Artifact, db.OrchestrationActivity, error) {
+	version, err := qtx.NextPlanProposalVersion(ctx, db.NextPlanProposalVersionParams{WorkspaceID: mission.WorkspaceID, MissionID: mission.IssueID})
+	if err != nil {
+		return db.Artifact{}, db.OrchestrationActivity{}, fmt.Errorf("reconcile run: next plan proposal version: %w", err)
+	}
+	hash := planProposalContentHash(validated.Canonical)
+	artifact, err := qtx.CreateArtifactRecord(ctx, db.CreateArtifactRecordParams{
+		WorkspaceID: mission.WorkspaceID, MissionID: mission.IssueID, RunID: run.ID,
+		Kind: string(ArtifactKindPlanProposal), Version: version,
+		Uri:         "agent-task://" + uuidText(task.ID) + "/plan-proposal",
+		ContentHash: textValue(hash), Summary: validated.Proposal.ProposalKey, Metadata: validated.Canonical,
+	})
+	if err != nil {
+		return db.Artifact{}, db.OrchestrationActivity{}, fmt.Errorf("reconcile run: create plan proposal artifact: %w", err)
+	}
+	payload, err := json.Marshal(map[string]any{"artifact_id": uuidText(artifact.ID), "run_id": uuidText(run.ID), "kind": artifact.Kind, "version": artifact.Version})
+	if err != nil {
+		return db.Artifact{}, db.OrchestrationActivity{}, fmt.Errorf("reconcile run: encode plan proposal activity: %w", err)
+	}
+	sequence, err := allocateActivitySequence(ctx, qtx, mission.WorkspaceID, mission.IssueID)
+	if err != nil {
+		return db.Artifact{}, db.OrchestrationActivity{}, fmt.Errorf("reconcile run: allocate plan proposal activity sequence: %w", err)
+	}
+	activity, err := qtx.CreateOrchestrationActivity(ctx, db.CreateOrchestrationActivityParams{
+		WorkspaceID: mission.WorkspaceID, MissionID: mission.IssueID, RunID: run.ID,
+		Type: activityArtifactCreated, ActorType: "agent", ActorID: task.AgentID,
+		SubjectType: "artifact", SubjectID: artifact.ID, CausationID: task.ID, CorrelationID: run.ID,
+		PayloadVersion: 1, Payload: payload, DedupeKey: "planning-artifact:" + uuidText(run.ID), Sequence: sequence,
+	})
+	if err != nil {
+		return db.Artifact{}, db.OrchestrationActivity{}, fmt.Errorf("reconcile run: create plan proposal activity: %w", err)
+	}
+	return artifact, activity, nil
 }
 
 func (r *Repository) createReconcileActivities(

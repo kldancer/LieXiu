@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"strings"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -70,6 +69,10 @@ func (r *Repository) RecordArtifact(ctx context.Context, command RecordArtifactC
 	if err != nil {
 		return RecordArtifactResult{}, err
 	}
+	task, err := qtx.LockAgentTaskByOrchestrationRun(ctx, db.LockAgentTaskByOrchestrationRunParams{RunID: command.RunID, WorkspaceID: command.WorkspaceID})
+	if err != nil {
+		return RecordArtifactResult{}, err
+	}
 	if run.TaskNodeID != node.IssueID || run.Status != string(RunStatusSucceeded) || run.Purpose == "review" || TaskStatus(node.Status) != TaskStatusReview {
 		return RecordArtifactResult{}, fmt.Errorf("record artifact: run is not the current successful work run")
 	}
@@ -101,31 +104,26 @@ func (r *Repository) RecordArtifact(ctx context.Context, command RecordArtifactC
 	if !allowedKind {
 		return RecordArtifactResult{}, fmt.Errorf("record artifact: kind %q is not allowed by the task", command.Kind)
 	}
-	version, err := qtx.NextArtifactVersion(ctx, db.NextArtifactVersionParams{WorkspaceID: command.WorkspaceID, TaskNodeID: node.IssueID, Kind: string(command.Kind)})
-	if err != nil {
-		return RecordArtifactResult{}, err
+	metadata := map[string]any{}
+	if len(command.Metadata) > 0 {
+		if err := json.Unmarshal(command.Metadata, &metadata); err != nil {
+			return RecordArtifactResult{}, err
+		}
 	}
-	metadata := command.Metadata
-	if len(metadata) == 0 {
-		metadata = json.RawMessage(`{}`)
-	}
-	artifact, err := qtx.CreateArtifactRecord(ctx, db.CreateArtifactRecordParams{WorkspaceID: command.WorkspaceID, MissionID: command.MissionID, TaskNodeID: node.IssueID, RunID: run.ID, Kind: string(command.Kind), Version: version, Uri: strings.TrimSpace(command.URI), ContentHash: textValue(strings.TrimSpace(command.ContentHash)), Summary: strings.TrimSpace(command.Summary), Metadata: metadata})
-	if err != nil {
-		return RecordArtifactResult{}, fmt.Errorf("record artifact: create: %w", err)
-	}
-	payload, _ := json.Marshal(map[string]any{"artifact_id": uuidText(artifact.ID), "run_id": uuidText(run.ID), "kind": artifact.Kind, "version": artifact.Version})
-	sequence, err := allocateActivitySequence(ctx, qtx, mission.WorkspaceID, mission.IssueID)
-	if err != nil {
-		return RecordArtifactResult{}, err
-	}
-	activity, err := qtx.CreateOrchestrationActivity(ctx, db.CreateOrchestrationActivityParams{WorkspaceID: mission.WorkspaceID, MissionID: mission.IssueID, TaskNodeID: node.IssueID, RunID: run.ID, Type: activityArtifactCreated, ActorType: "agent", ActorID: command.ActorID, SubjectType: "artifact", SubjectID: artifact.ID, CausationID: command.CommandID, CorrelationID: correlationID, PayloadVersion: 1, Payload: payload, DedupeKey: dedupeKey, Sequence: sequence})
+	artifact, activities, err := r.recordReconciledArtifactInTx(ctx, qtx, mission, run, node, task, command.CommandID, correlationID, executionArtifactReceipt{SchemaVersion: 1, Artifact: struct {
+		Kind        ArtifactKind   `json:"kind"`
+		URI         string         `json:"uri"`
+		ContentHash string         `json:"content_hash"`
+		Summary     string         `json:"summary"`
+		Metadata    map[string]any `json:"metadata"`
+	}{Kind: command.Kind, URI: command.URI, ContentHash: command.ContentHash, Summary: command.Summary, Metadata: metadata}})
 	if err != nil {
 		return RecordArtifactResult{}, err
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return RecordArtifactResult{}, err
 	}
-	return RecordArtifactResult{Artifact: artifact, Activity: activity}, nil
+	return RecordArtifactResult{Artifact: artifact, Activity: activities[0]}, nil
 }
 
 func (r *Repository) loadArtifactReplay(ctx context.Context, command RecordArtifactCommand, activity db.OrchestrationActivity) (RecordArtifactResult, error) {
@@ -204,7 +202,7 @@ func (r *Repository) RecordReviewVerdict(ctx context.Context, command RecordRevi
 	if err != nil {
 		return RecordReviewVerdictResult{}, err
 	}
-	if run.Purpose != "review" || run.Status != string(RunStatusSucceeded) || run.TaskNodeID != node.IssueID || TaskStatus(node.Status) != TaskStatusReview || artifact.TaskNodeID != node.IssueID || assignment.Role != string(RoleReviewer) || assignment.AgentID != command.ActorID {
+	if run.Purpose != "review" || run.Status != string(RunStatusSucceeded) || run.TaskNodeID != node.IssueID || TaskStatus(node.Status) != TaskStatusReview || artifact.TaskNodeID != node.IssueID || assignment.Role != DutyReviewer.String() || assignment.AgentID != command.ActorID {
 		return RecordReviewVerdictResult{}, fmt.Errorf("record review verdict: review scope or actor is invalid")
 	}
 	var frozen struct {
@@ -213,99 +211,23 @@ func (r *Repository) RecordReviewVerdict(ctx context.Context, command RecordRevi
 	if err := json.Unmarshal(run.Input, &frozen); err != nil || frozen.ArtifactID != uuidText(artifact.ID) {
 		return RecordReviewVerdictResult{}, fmt.Errorf("record review verdict: artifact does not match the review run")
 	}
-	if _, err := qtx.GetReviewVerdictByRun(ctx, run.ID); err == nil {
-		return RecordReviewVerdictResult{}, ErrReviewAlreadyRecorded
-	} else if !errors.Is(err, pgx.ErrNoRows) {
-		return RecordReviewVerdictResult{}, err
-	}
-	evidence := command.Evidence
-	if len(evidence) == 0 {
-		evidence = json.RawMessage(`{}`)
-	}
-	requestedChanges := command.RequestedChanges
-	if requestedChanges == nil {
-		requestedChanges = []string{}
-	}
-	requested, _ := json.Marshal(requestedChanges)
-	verdict, err := qtx.CreateReviewVerdictRecord(ctx, db.CreateReviewVerdictRecordParams{WorkspaceID: command.WorkspaceID, MissionID: command.MissionID, TaskNodeID: node.IssueID, ReviewRunID: run.ID, ArtifactID: artifact.ID, Decision: string(command.Decision), Evidence: evidence, RequestedChanges: requested})
-	if err != nil {
-		return RecordReviewVerdictResult{}, err
-	}
-	limits, err := decodePlanLimits(mission.Limits)
-	if err != nil {
-		return RecordReviewVerdictResult{}, err
-	}
-	target := TaskStatusCompleted
-	taskActivity := activityTaskCompleted
-	reviewActivity := activityReviewApproved
-	if command.Decision == ReviewDecisionChangesRequested {
-		reviewActivity = activityReviewChangesRequested
-		if int(node.ReworkCount) < limits.MaxReworkCycles {
-			target, taskActivity = TaskStatusRework, activityTaskReworkRequested
-		} else {
-			target, taskActivity = TaskStatusFailed, activityTaskFailed
-		}
-	}
-	if command.Decision == ReviewDecisionRejected {
-		target, taskActivity, reviewActivity = TaskStatusFailed, activityTaskFailed, activityReviewRejected
-	}
-	var updated db.TaskNode
-	if target == TaskStatusRework {
-		updated, err = qtx.TransitionTaskNodeForRework(ctx, db.TransitionTaskNodeForReworkParams{TargetStatus: target.String(), TaskNodeID: node.IssueID, WorkspaceID: command.WorkspaceID, MissionID: command.MissionID, ExpectedReworkCount: node.ReworkCount})
-	} else {
-		updated, err = qtx.TransitionTaskNodeState(ctx, db.TransitionTaskNodeStateParams{TargetStatus: target.String(), TaskNodeID: node.IssueID, WorkspaceID: command.WorkspaceID, MissionID: command.MissionID, ExpectedStatus: node.Status})
-	}
-	if err != nil {
-		return RecordReviewVerdictResult{}, err
-	}
-	issueStatus := "done"
-	if target == TaskStatusRework {
-		issueStatus = "todo"
-	}
-	if target == TaskStatusFailed {
-		issueStatus = "blocked"
-	}
-	if _, err := qtx.UpdateIssueStatus(ctx, db.UpdateIssueStatusParams{ID: node.IssueID, WorkspaceID: command.WorkspaceID, Status: issueStatus}); err != nil {
-		return RecordReviewVerdictResult{}, err
-	}
-	assignments, err := qtx.ListOrchestrationAssignmentsByMission(ctx, db.ListOrchestrationAssignmentsByMissionParams{WorkspaceID: command.WorkspaceID, MissionID: command.MissionID})
-	if err != nil {
-		return RecordReviewVerdictResult{}, err
-	}
-	for _, current := range assignments {
-		if current.TaskNodeID != node.IssueID || current.Status != string(AssignmentStatusActive) {
-			continue
-		}
-		endStatus := AssignmentStatusFulfilled
-		if current.Role != string(RoleReviewer) && target != TaskStatusCompleted {
-			endStatus = AssignmentStatusSuperseded
-		}
-		if _, err := qtx.EndOrchestrationAssignment(ctx, db.EndOrchestrationAssignmentParams{TargetStatus: string(endStatus), AssignmentID: current.ID, WorkspaceID: command.WorkspaceID, MissionID: command.MissionID}); err != nil {
+	receipt := executionReviewReceipt{SchemaVersion: 1, Decision: command.Decision, Evidence: map[string]any{}, RequestedChanges: command.RequestedChanges}
+	if len(command.Evidence) > 0 {
+		if err := json.Unmarshal(command.Evidence, &receipt.Evidence); err != nil {
 			return RecordReviewVerdictResult{}, err
 		}
 	}
-	payload, _ := json.Marshal(map[string]any{"verdict_id": uuidText(verdict.ID), "artifact_id": uuidText(artifact.ID), "decision": verdict.Decision})
-	activities := make([]db.OrchestrationActivity, 0, 2)
-	for index, spec := range []struct {
-		typ, subject string
-		id           pgtype.UUID
-		key          string
-	}{{reviewActivity, "review", verdict.ID, dedupeKey}, {taskActivity, "task_node", node.IssueID, dedupeKey + ":task"}} {
-		sequence, seqErr := allocateActivitySequence(ctx, qtx, mission.WorkspaceID, mission.IssueID)
-		if seqErr != nil {
-			return RecordReviewVerdictResult{}, seqErr
-		}
-		activity, createErr := qtx.CreateOrchestrationActivity(ctx, db.CreateOrchestrationActivityParams{WorkspaceID: mission.WorkspaceID, MissionID: mission.IssueID, TaskNodeID: node.IssueID, RunID: run.ID, Type: spec.typ, ActorType: "agent", ActorID: command.ActorID, SubjectType: spec.subject, SubjectID: spec.id, CausationID: command.CommandID, CorrelationID: correlationID, PayloadVersion: 1, Payload: payload, DedupeKey: spec.key, Sequence: sequence})
-		if createErr != nil {
-			return RecordReviewVerdictResult{}, createErr
-		}
-		activities = append(activities, activity)
-		_ = index
+	if receipt.RequestedChanges == nil {
+		receipt.RequestedChanges = []string{}
+	}
+	shared, err := r.recordReconciledReviewInTx(ctx, qtx, mission, run, node, db.AgentTaskQueue{AgentID: command.ActorID}, command.CommandID, correlationID, command.ActorID, command.ArtifactID, receipt)
+	if err != nil {
+		return RecordReviewVerdictResult{}, err
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return RecordReviewVerdictResult{}, err
 	}
-	return RecordReviewVerdictResult{Verdict: verdict, TaskNode: updated, Activities: activities}, nil
+	return RecordReviewVerdictResult{Verdict: shared.Verdict, TaskNode: shared.TaskNode, Activities: shared.Activities}, nil
 }
 
 func (r *Repository) loadReviewReplay(ctx context.Context, command RecordReviewVerdictCommand, activity db.OrchestrationActivity) (RecordReviewVerdictResult, error) {

@@ -67,6 +67,7 @@ func (s *Service) QuickCreateMission(ctx context.Context, command QuickCreateMis
 		ActorID:          command.ActorID,
 		ExpectedRevision: created.Mission.Revision,
 		Plan:             quickCreateMissionPlan(created.Mission.IssueID, persistedPrompt),
+		Source:           PlanSourceFixedTemplate,
 	})
 	if err != nil {
 		return QuickCreateMissionResult{}, err
@@ -92,7 +93,7 @@ func quickCreateMissionPlan(missionID pgtype.UUID, prompt string) Plan {
 				Key:         "execute",
 				Title:       "Execute requested outcome",
 				Description: prompt,
-				Role:        RoleExecutor,
+				Duty:        DutyExecutor,
 				AcceptanceCriteria: []string{
 					"Complete the requested outcome and provide verifiable evidence.",
 				},
@@ -103,7 +104,7 @@ func quickCreateMissionPlan(missionID pgtype.UUID, prompt string) Plan {
 				Key:         "integrate",
 				Title:       "Integrate and deliver",
 				Description: "Review the execution evidence, resolve delivery gaps, and prepare the final result.",
-				Role:        RoleIntegrator,
+				Duty:        DutyIntegrator,
 				AcceptanceCriteria: []string{
 					"The final delivery traces the requested outcome to its evidence and remaining risks.",
 				},

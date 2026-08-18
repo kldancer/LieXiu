@@ -44,6 +44,16 @@ WHERE issue_id = sqlc.arg('issue_id')
   AND revision = sqlc.arg('expected_revision')
 RETURNING *;
 
+-- name: BeginMissionPlanning :one
+UPDATE mission
+SET revision = revision + 1,
+    updated_at = now()
+WHERE issue_id = sqlc.arg('issue_id')
+  AND workspace_id = sqlc.arg('workspace_id')
+  AND status = 'draft'
+  AND revision = sqlc.arg('expected_revision')
+RETURNING *;
+
 -- name: CancelMissionRecord :one
 UPDATE mission
 SET status = 'cancelled',
@@ -106,18 +116,24 @@ WITH per_run AS (
     GROUP BY run.id, run.status, node.budget_estimate_tokens, node.budget_estimate_cost_usd_ticks
 )
 SELECT
-    COALESCE(SUM(actual_tokens), 0)::bigint AS consumed_tokens,
+    COALESCE(SUM(CASE
+        WHEN status NOT IN ('queued', 'dispatched', 'running') AND usage_rows = 0
+            THEN budget_estimate_tokens
+        ELSE actual_tokens
+    END), 0)::bigint AS consumed_tokens,
     COALESCE(SUM(CASE
         WHEN status IN ('queued', 'dispatched', 'running')
             THEN GREATEST(budget_estimate_tokens - actual_tokens, 0)
-        WHEN usage_rows = 0 THEN budget_estimate_tokens
         ELSE 0
     END), 0)::bigint AS reserved_tokens,
-    COALESCE(SUM(actual_cost_usd_ticks), 0)::bigint AS consumed_cost_usd_ticks,
+    COALESCE(SUM(CASE
+        WHEN status NOT IN ('queued', 'dispatched', 'running') AND authoritative_cost_rows = 0
+            THEN budget_estimate_cost_usd_ticks
+        ELSE actual_cost_usd_ticks
+    END), 0)::bigint AS consumed_cost_usd_ticks,
     COALESCE(SUM(CASE
         WHEN status IN ('queued', 'dispatched', 'running')
             THEN GREATEST(budget_estimate_cost_usd_ticks - actual_cost_usd_ticks, 0)
-        WHEN authoritative_cost_rows = 0 THEN budget_estimate_cost_usd_ticks
         ELSE 0
     END), 0)::bigint AS reserved_cost_usd_ticks
 FROM per_run;
@@ -200,20 +216,25 @@ SELECT
     run.id AS run_id,
     run.mission_id,
     run.task_node_id,
+    COALESCE(run.task_node_id, run.mission_id)::uuid AS issue_id,
     run.assignment_id,
     run.purpose,
+    run.input AS run_input,
     run.attempt,
     run.status AS run_status,
     assignment.agent_id,
     assignment.runtime_id,
-    node.priority AS task_priority
+    COALESCE(node.priority, 0)::integer AS task_priority
 FROM orchestration_run run
 JOIN orchestration_assignment assignment
   ON assignment.id = run.assignment_id
  AND assignment.workspace_id = run.workspace_id
  AND assignment.mission_id = run.mission_id
- AND assignment.task_node_id = run.task_node_id
-JOIN task_node node
+ AND assignment.task_node_id IS NOT DISTINCT FROM run.task_node_id
+JOIN mission
+  ON mission.issue_id = run.mission_id
+ AND mission.workspace_id = run.workspace_id
+LEFT JOIN task_node node
   ON node.issue_id = run.task_node_id
  AND node.workspace_id = run.workspace_id
  AND node.mission_id = run.mission_id
@@ -222,6 +243,8 @@ WHERE run.id = sqlc.arg('run_id')
   AND run.status = 'queued'
   AND assignment.status = 'active'
   AND (
+    (run.purpose = 'plan' AND run.task_node_id IS NULL AND mission.status = 'draft')
+    OR
     (run.purpose = 'review' AND node.status = 'review')
     OR
     (run.purpose IN ('execute', 'integrate') AND node.status = 'assigned')
@@ -312,6 +335,33 @@ WHERE issue_id = sqlc.arg('task_node_id')
   AND revision = sqlc.arg('expected_revision')
 RETURNING *;
 
+-- name: RestoreTaskNodeForReviewerGate :one
+UPDATE task_node
+SET status = 'review',
+    block_reason = NULL,
+    revision = revision + 1,
+    updated_at = now()
+WHERE issue_id = sqlc.arg('task_node_id')
+  AND workspace_id = sqlc.arg('workspace_id')
+  AND mission_id = sqlc.arg('mission_id')
+  AND status = 'blocked'
+  AND revision = sqlc.arg('expected_revision')
+RETURNING *;
+
+-- name: RestoreTaskNodeForReworkGate :one
+UPDATE task_node
+SET status = 'rework',
+    block_reason = NULL,
+    rework_count = rework_count + 1,
+    revision = revision + 1,
+    updated_at = now()
+WHERE issue_id = sqlc.arg('task_node_id')
+  AND workspace_id = sqlc.arg('workspace_id')
+  AND mission_id = sqlc.arg('mission_id')
+  AND status = 'blocked'
+  AND revision = sqlc.arg('expected_revision')
+RETURNING *;
+
 -- name: LockAgentTaskByOrchestrationRun :one
 SELECT task.*
 FROM agent_task_queue task
@@ -380,32 +430,199 @@ WHERE workspace_id = sqlc.arg('workspace_id')
   AND mission_id = sqlc.arg('mission_id')
 ORDER BY created_at, id;
 
--- name: SelectOrchestrationAgentCandidate :one
-SELECT agent.id AS agent_id, agent.runtime_id
+-- name: ListPendingHumanGatesByMission :many
+SELECT * FROM orchestration_human_gate
+WHERE workspace_id = sqlc.arg('workspace_id')
+  AND mission_id = sqlc.arg('mission_id')
+  AND status = 'pending'
+ORDER BY created_at, id;
+
+-- name: GetPendingHumanGateForTask :one
+SELECT * FROM orchestration_human_gate
+WHERE workspace_id = sqlc.arg('workspace_id')
+  AND mission_id = sqlc.arg('mission_id')
+  AND task_node_id = sqlc.arg('task_node_id')
+  AND status = 'pending';
+
+-- name: LockPendingHumanGate :one
+SELECT * FROM orchestration_human_gate
+WHERE id = sqlc.arg('gate_id')
+  AND workspace_id = sqlc.arg('workspace_id')
+  AND mission_id = sqlc.arg('mission_id')
+  AND status = 'pending'
+FOR UPDATE;
+
+-- name: GetHumanGateInWorkspace :one
+SELECT * FROM orchestration_human_gate
+WHERE id = sqlc.arg('gate_id')
+  AND workspace_id = sqlc.arg('workspace_id')
+  AND mission_id = sqlc.arg('mission_id');
+
+-- name: CreatePendingHumanGate :one
+INSERT INTO orchestration_human_gate (
+    workspace_id, mission_id, task_node_id, artifact_id, source_run_id,
+    kind, reason, context
+) VALUES (
+    sqlc.arg('workspace_id'), sqlc.arg('mission_id'), sqlc.arg('task_node_id'),
+    sqlc.arg('artifact_id'), sqlc.arg('source_run_id'), sqlc.arg('kind'),
+    sqlc.arg('reason'), sqlc.arg('context')
+)
+RETURNING *;
+
+-- name: ResolvePendingHumanGate :one
+UPDATE orchestration_human_gate
+SET status = 'resolved',
+    resolved_by = sqlc.arg('resolved_by'),
+    resolution = sqlc.arg('resolution'),
+    resolution_reason = sqlc.narg('resolution_reason'),
+    resolved_at = now(),
+    revision = revision + 1
+WHERE id = sqlc.arg('gate_id')
+  AND workspace_id = sqlc.arg('workspace_id')
+  AND mission_id = sqlc.arg('mission_id')
+  AND status = 'pending'
+  AND revision = sqlc.arg('expected_revision')
+RETURNING *;
+
+-- name: ListOrchestrationAgentRoutingFacts :many
+-- Read-only routing inventory.  Keep archived and unbound agents in the
+-- result so the selector can explain those outcomes instead of treating them
+-- as missing data.  Runtime columns are nullable because the agent/runtime
+-- relationship is intentionally a LEFT JOIN in this diagnostic query.
+SELECT
+    agent.id AS agent_id,
+    agent.runtime_id,
+    agent.created_at AS agent_created_at,
+    agent.archived_at,
+    agent.owner_id AS agent_owner_id,
+    agent.permission_mode,
+    agent.model,
+    agent.max_concurrent_tasks,
+    runtime.status AS runtime_status,
+    runtime.provider AS runtime_provider,
+    runtime.metadata AS runtime_metadata,
+    runtime.owner_id AS runtime_owner_id,
+    runtime.visibility AS runtime_visibility,
+    (
+        (SELECT count(*)
+         FROM orchestration_run active_run
+         JOIN orchestration_assignment active_assignment
+           ON active_assignment.id = active_run.assignment_id
+          AND active_assignment.workspace_id = sqlc.arg('workspace_id')
+          AND active_assignment.mission_id = active_run.mission_id
+         WHERE active_run.workspace_id = sqlc.arg('workspace_id')
+           AND active_assignment.agent_id = agent.id
+           AND active_run.status IN ('queued', 'dispatched', 'running'))
+        +
+        (SELECT count(*)
+         FROM agent_task_queue active_task
+         JOIN issue task_issue
+           ON task_issue.id = active_task.issue_id
+          AND task_issue.workspace_id = sqlc.arg('workspace_id')
+         WHERE active_task.agent_id = agent.id
+           AND active_task.orchestration_run_id IS NULL
+           AND active_task.status IN ('queued', 'deferred', 'dispatched', 'waiting_local_directory', 'running'))
+    )::bigint AS current_load,
+    EXISTS (
+        SELECT 1
+        FROM agent_invocation_target workspace_target
+        WHERE workspace_target.agent_id = agent.id
+          AND workspace_target.target_type = 'workspace'
+          AND workspace_target.target_id = sqlc.arg('workspace_id')::uuid
+    ) AS has_workspace_invocation_target,
+    EXISTS (
+        SELECT 1
+        FROM agent_invocation_target member_target
+        WHERE member_target.agent_id = agent.id
+          AND member_target.target_type = 'member'
+          AND member_target.target_id = sqlc.arg('effective_user_id')::uuid
+    ) AS has_member_invocation_target,
+    agent.workspace_id
+FROM agent
+LEFT JOIN agent_runtime runtime
+  ON runtime.id = agent.runtime_id
+ AND runtime.workspace_id = agent.workspace_id
+WHERE agent.workspace_id = sqlc.arg('workspace_id');
+
+-- name: LockOrchestrationAgentRoutingFacts :one
+-- Lock and re-read one currently bindable pair.  The selector must perform
+-- its capacity decision from this post-lock load, not from the unlocked list.
+SELECT
+    agent.id AS agent_id,
+    agent.runtime_id,
+    agent.created_at AS agent_created_at,
+    agent.archived_at,
+    agent.owner_id AS agent_owner_id,
+    agent.permission_mode,
+    agent.model,
+    agent.max_concurrent_tasks,
+    runtime.status AS runtime_status,
+    runtime.provider AS runtime_provider,
+    runtime.metadata AS runtime_metadata,
+    runtime.owner_id AS runtime_owner_id,
+    runtime.visibility AS runtime_visibility,
+    (
+        (SELECT count(*)
+         FROM orchestration_run active_run
+         JOIN orchestration_assignment active_assignment
+           ON active_assignment.id = active_run.assignment_id
+          AND active_assignment.workspace_id = sqlc.arg('workspace_id')
+          AND active_assignment.mission_id = active_run.mission_id
+         WHERE active_run.workspace_id = sqlc.arg('workspace_id')
+           AND active_assignment.agent_id = agent.id
+           AND active_run.status IN ('queued', 'dispatched', 'running'))
+        +
+        (SELECT count(*)
+         FROM agent_task_queue active_task
+         JOIN issue task_issue
+           ON task_issue.id = active_task.issue_id
+          AND task_issue.workspace_id = sqlc.arg('workspace_id')
+         WHERE active_task.agent_id = agent.id
+           AND active_task.orchestration_run_id IS NULL
+           AND active_task.status IN ('queued', 'deferred', 'dispatched', 'waiting_local_directory', 'running'))
+    )::bigint AS current_load,
+    EXISTS (
+        SELECT 1
+        FROM agent_invocation_target workspace_target
+        WHERE workspace_target.agent_id = agent.id
+          AND workspace_target.target_type = 'workspace'
+          AND workspace_target.target_id = sqlc.arg('workspace_id')::uuid
+    ) AS has_workspace_invocation_target,
+    EXISTS (
+        SELECT 1
+        FROM agent_invocation_target member_target
+        WHERE member_target.agent_id = agent.id
+          AND member_target.target_type = 'member'
+          AND member_target.target_id = sqlc.arg('effective_user_id')::uuid
+    ) AS has_member_invocation_target,
+    agent.workspace_id
 FROM agent
 JOIN agent_runtime runtime
   ON runtime.id = agent.runtime_id
  AND runtime.workspace_id = agent.workspace_id
 WHERE agent.workspace_id = sqlc.arg('workspace_id')
+  AND agent.id = sqlc.arg('agent_id')
   AND agent.archived_at IS NULL
   AND agent.runtime_id IS NOT NULL
   AND runtime.status = 'online'
-  AND (
-    (SELECT count(*) FROM orchestration_run active_run
-     JOIN orchestration_assignment active_assignment ON active_assignment.id = active_run.assignment_id
-     WHERE active_assignment.agent_id = agent.id
-       AND active_run.status IN ('queued', 'dispatched', 'running'))
-    +
-    (SELECT count(*) FROM agent_task_queue active_task
-     WHERE active_task.agent_id = agent.id
-       AND active_task.orchestration_run_id IS NULL
-       AND active_task.status IN ('queued', 'deferred', 'dispatched', 'waiting_local_directory', 'running'))
-  ) < agent.max_concurrent_tasks
-ORDER BY (agent.id = sqlc.arg('avoid_agent_id')::uuid) ASC,
-         agent.created_at ASC,
-         agent.id ASC
-LIMIT 1
-FOR UPDATE OF agent;
+FOR UPDATE OF agent, runtime;
+
+-- name: GetActivePlanningAssignment :one
+SELECT * FROM orchestration_assignment
+WHERE workspace_id = sqlc.arg('workspace_id')
+  AND mission_id = sqlc.arg('mission_id')
+  AND task_node_id IS NULL
+  AND role = 'planner'
+  AND status = 'active'
+LIMIT 1;
+
+-- name: NextPlanningAssignmentSequence :one
+SELECT COALESCE(max(sequence), 0)::integer + 1
+FROM orchestration_assignment
+WHERE workspace_id = sqlc.arg('workspace_id')
+  AND mission_id = sqlc.arg('mission_id')
+  AND task_node_id IS NULL
+  AND role = 'planner';
 
 -- name: CreateOrchestrationAssignment :one
 INSERT INTO orchestration_assignment (
@@ -507,6 +724,14 @@ WHERE workspace_id = sqlc.arg('workspace_id')
   AND task_node_id = sqlc.arg('task_node_id')
   AND kind = sqlc.arg('kind');
 
+-- name: NextPlanProposalVersion :one
+SELECT COALESCE(max(version), 0)::int + 1
+FROM artifact
+WHERE workspace_id = sqlc.arg('workspace_id')
+  AND mission_id = sqlc.arg('mission_id')
+  AND task_node_id IS NULL
+  AND kind = 'plan_proposal';
+
 -- name: CreateArtifactRecord :one
 INSERT INTO artifact (
     workspace_id, mission_id, task_node_id, run_id, kind, version,
@@ -583,6 +808,13 @@ FROM (
 ) recent
 ORDER BY sequence ASC;
 
+-- name: ListPlanProposalDecisionActivities :many
+SELECT * FROM orchestration_activity
+WHERE workspace_id = sqlc.arg('workspace_id')
+  AND mission_id = sqlc.arg('mission_id')
+  AND type IN ('plan_proposal.edited', 'plan_proposal.rejected', 'mission.plan_accepted')
+ORDER BY sequence ASC;
+
 -- name: ListOrchestrationIssueDependencies :many
 SELECT dependency.*
 FROM issue_dependency dependency
@@ -591,3 +823,111 @@ WHERE node.workspace_id = sqlc.arg('workspace_id')
   AND node.mission_id = sqlc.arg('mission_id')
   AND dependency.type = 'blocked_by'
 ORDER BY dependency.issue_id, dependency.depends_on_issue_id;
+
+-- name: LockMailboxCommand :exec
+SELECT pg_advisory_xact_lock(
+    hashtextextended(
+        sqlc.arg('workspace_id')::uuid::text || ':mailbox-command:' || sqlc.arg('command_id')::uuid::text,
+        0
+    )
+);
+
+-- name: CreateMailboxMessage :one
+INSERT INTO orchestration_mailbox_message (
+    id, workspace_id, mission_id, task_node_id, run_id, artifact_id,
+    reply_to_message_id, schema_version, type, sender_type, sender_id,
+    recipient_type, recipient_id, status, dedupe_key, hops,
+    payload_version, payload, command_id, created_by, created_at,
+    expires_at, status_changed_at
+) VALUES (
+    sqlc.arg('message_id'), sqlc.arg('workspace_id'), sqlc.arg('mission_id'), sqlc.narg('task_node_id'),
+    sqlc.narg('run_id'), sqlc.narg('artifact_id'), sqlc.narg('reply_to_message_id'),
+    sqlc.arg('schema_version'), sqlc.arg('type'), sqlc.arg('sender_type'),
+    sqlc.narg('sender_id'), sqlc.arg('recipient_type'), sqlc.arg('recipient_id'),
+    'pending', sqlc.arg('dedupe_key'), sqlc.arg('hops'),
+    sqlc.arg('payload_version'), sqlc.arg('payload'), sqlc.arg('command_id'),
+    sqlc.arg('created_by'), sqlc.arg('created_at'), sqlc.arg('expires_at'),
+    sqlc.arg('created_at')
+)
+RETURNING *;
+
+-- name: GetMailboxMessageByCommand :one
+SELECT * FROM orchestration_mailbox_message
+WHERE workspace_id = sqlc.arg('workspace_id')
+  AND command_id = sqlc.arg('command_id');
+
+-- name: GetMailboxMessageByDedupe :one
+SELECT * FROM orchestration_mailbox_message
+WHERE workspace_id = sqlc.arg('workspace_id')
+  AND mission_id = sqlc.arg('mission_id')
+  AND sender_type = sqlc.arg('sender_type')
+  AND sender_id IS NOT DISTINCT FROM sqlc.narg('sender_id')::uuid
+  AND dedupe_key = sqlc.arg('dedupe_key');
+
+-- name: GetMailboxMessageInMission :one
+SELECT * FROM orchestration_mailbox_message
+WHERE id = sqlc.arg('message_id')
+  AND workspace_id = sqlc.arg('workspace_id')
+  AND mission_id = sqlc.arg('mission_id');
+
+-- name: LockMailboxMessageInMission :one
+SELECT * FROM orchestration_mailbox_message
+WHERE id = sqlc.arg('message_id')
+  AND workspace_id = sqlc.arg('workspace_id')
+  AND mission_id = sqlc.arg('mission_id')
+FOR UPDATE;
+
+-- name: TransitionMailboxMessageStatus :one
+UPDATE orchestration_mailbox_message
+SET status = sqlc.arg('target_status'),
+    revision = revision + 1,
+    status_changed_at = sqlc.arg('observed_at')
+WHERE id = sqlc.arg('message_id')
+  AND workspace_id = sqlc.arg('workspace_id')
+  AND mission_id = sqlc.arg('mission_id')
+  AND status = 'pending'
+  AND revision = sqlc.arg('expected_revision')
+RETURNING *;
+
+-- name: GetMailboxRunPrincipal :one
+SELECT
+    run.id,
+    run.mission_id,
+    run.task_node_id,
+    run.assignment_id,
+    assignment.agent_id
+FROM orchestration_run run
+JOIN orchestration_assignment assignment
+  ON assignment.id = run.assignment_id
+ AND assignment.workspace_id = run.workspace_id
+ AND assignment.mission_id = run.mission_id
+ AND assignment.task_node_id IS NOT DISTINCT FROM run.task_node_id
+WHERE run.id = sqlc.arg('run_id')
+  AND run.workspace_id = sqlc.arg('workspace_id')
+  AND run.mission_id = sqlc.arg('mission_id');
+
+-- name: ListPendingMailboxMessagesForRun :many
+SELECT *
+FROM orchestration_mailbox_message
+WHERE workspace_id = sqlc.arg('workspace_id')
+  AND mission_id = sqlc.arg('mission_id')
+  AND recipient_type = 'agent'
+  AND recipient_id = sqlc.arg('recipient_agent_id')
+  AND status = 'pending'
+  AND created_at <= sqlc.arg('observed_at')
+  AND expires_at > sqlc.arg('observed_at')
+  AND (
+      task_node_id IS NULL
+      OR task_node_id = sqlc.narg('task_node_id')::uuid
+  )
+ORDER BY created_at ASC, id ASC
+LIMIT sqlc.arg('page_size')
+FOR UPDATE;
+
+-- name: ListExpiredMailboxMessages :many
+SELECT *
+FROM orchestration_mailbox_message
+WHERE status = 'pending'
+  AND expires_at <= sqlc.arg('observed_at')
+ORDER BY expires_at ASC, id ASC
+LIMIT sqlc.arg('page_size');

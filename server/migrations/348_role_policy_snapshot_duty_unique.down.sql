@@ -1,0 +1,1 @@
+DROP INDEX CONCURRENTLY IF EXISTS idx_mission_role_policy_snapshot_workspace_mission_duty;

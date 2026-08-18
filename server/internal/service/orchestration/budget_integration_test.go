@@ -68,6 +68,45 @@ func TestRepositoryAdvanceBudgetAdmissionSerializesReservations(t *testing.T) {
 	}
 }
 
+func TestMissionBudgetUsageConsumesEstimateForTerminalRunWithoutUsage(t *testing.T) {
+	fixture := newBudgetIntegrationFixture(t)
+	ctx := context.Background()
+	maxTokens := int64(100)
+	missionID := fixture.createStartedMission(t, &BudgetPolicy{
+		MaxTokens: &maxTokens,
+		Gate:      BudgetGateFailClosed,
+	}, []BudgetEstimate{{Tokens: 7, CostUSDTicks: 11}})
+
+	advanced, err := fixture.repository.AdvanceMission(ctx, budgetAdvanceParams(fixture.workspaceID, missionID))
+	if err != nil {
+		t.Fatalf("AdvanceMission: %v", err)
+	}
+	if len(advanced.CreatedRuns) != 1 {
+		t.Fatalf("AdvanceMission created %d runs, want one", len(advanced.CreatedRuns))
+	}
+
+	usage, err := fixture.queries.GetMissionBudgetUsage(ctx, db.GetMissionBudgetUsageParams{WorkspaceID: fixture.workspaceID, MissionID: missionID})
+	if err != nil {
+		t.Fatalf("load active budget usage: %v", err)
+	}
+	if usage.ConsumedTokens != 0 || usage.ReservedTokens != 7 || usage.ConsumedCostUsdTicks != 0 || usage.ReservedCostUsdTicks != 11 {
+		t.Fatalf("active budget usage = consumed %d/%d reserved %d/%d, want consumed 0/0 reserved 7/11",
+			usage.ConsumedTokens, usage.ConsumedCostUsdTicks, usage.ReservedTokens, usage.ReservedCostUsdTicks)
+	}
+
+	if _, err := fixture.pool.Exec(ctx, `UPDATE orchestration_run SET status='succeeded', finished_at=now() WHERE id=$1`, advanced.CreatedRuns[0].ID); err != nil {
+		t.Fatalf("mark run terminal: %v", err)
+	}
+	usage, err = fixture.queries.GetMissionBudgetUsage(ctx, db.GetMissionBudgetUsageParams{WorkspaceID: fixture.workspaceID, MissionID: missionID})
+	if err != nil {
+		t.Fatalf("load terminal budget usage: %v", err)
+	}
+	if usage.ConsumedTokens != 7 || usage.ReservedTokens != 0 || usage.ConsumedCostUsdTicks != 11 || usage.ReservedCostUsdTicks != 0 {
+		t.Fatalf("terminal budget usage = consumed %d/%d reserved %d/%d, want consumed 7/11 reserved 0/0",
+			usage.ConsumedTokens, usage.ConsumedCostUsdTicks, usage.ReservedTokens, usage.ReservedCostUsdTicks)
+	}
+}
+
 func TestApproveMissionBudgetRestoresDispatchAndIsIdempotent(t *testing.T) {
 	fixture := newBudgetIntegrationFixture(t)
 	ctx := context.Background()
@@ -182,12 +221,13 @@ func TestFailClosedBudgetCannotBeApproved(t *testing.T) {
 }
 
 type budgetIntegrationFixture struct {
-	pool        *pgxpool.Pool
-	queries     *db.Queries
-	repository  *Repository
-	service     *Service
-	ownerID     pgtype.UUID
-	workspaceID pgtype.UUID
+	pool          *pgxpool.Pool
+	queries       *db.Queries
+	repository    *Repository
+	service       *Service
+	ownerID       pgtype.UUID
+	workspaceID   pgtype.UUID
+	startBindings []RolePolicyBinding
 }
 
 type budgetExecutionGateway struct{}
@@ -257,9 +297,12 @@ func newBudgetIntegrationFixture(t *testing.T) *budgetIntegrationFixture {
 	fixture.queries = db.New(pool)
 	fixture.repository = NewRepository(fixture.queries, pool)
 	fixture.service = NewService(fixture.queries, fixture.repository, &budgetExecutionGateway{}, DefaultPlanHardLimits())
+	fixture.startBindings = seedRolePolicyBindings(t, ctx, fixture.repository, fixture.workspaceID, fixture.ownerID, DutyExecutor, DutyReviewer, DutyIntegrator)
 	t.Cleanup(func() {
 		cleanupCtx := context.Background()
 		for _, statement := range []string{
+			`DELETE FROM mission_role_policy_snapshot WHERE workspace_id = $1`,
+			`DELETE FROM role_profile WHERE workspace_id = $1`,
 			`DELETE FROM review_verdict WHERE workspace_id = $1`,
 			`DELETE FROM artifact WHERE workspace_id = $1`,
 			`DELETE FROM orchestration_run WHERE workspace_id = $1`,
@@ -303,6 +346,7 @@ func (f *budgetIntegrationFixture) createStartedMission(t *testing.T, policy *Bu
 	started, err := f.service.StartMission(ctx, StartMissionCommand{
 		WorkspaceID: f.workspaceID, MissionID: missionID, CommandID: budgetTestUUID(),
 		ActorID: f.ownerID, ExpectedRevision: planned.Mission.Revision,
+		RolePolicyBindings: f.startBindings,
 	})
 	if err != nil {
 		t.Fatalf("StartMission: %v", err)
@@ -320,14 +364,14 @@ func budgetIntegrationPlan(missionID pgtype.UUID, limits PlanLimits, roots []Bud
 		key := string(rune('A' + index))
 		nodes = append(nodes, PlanNode{
 			Key: key, Title: "Budget root " + key, Description: "Exercise budget admission",
-			Role: RoleExecutor, AcceptanceCriteria: []string{"run is admitted within budget"},
+			Duty: DutyExecutor, AcceptanceCriteria: []string{"run is admitted within budget"},
 			ArtifactKinds: []ArtifactKind{ArtifactKindCommit}, BudgetEstimate: estimate,
 		})
 		dependencies = append(dependencies, key)
 	}
 	nodes = append(nodes, PlanNode{
 		Key: "integrate", Title: "Budget integration", Description: "Complete the budget test plan",
-		Role: RoleIntegrator, AcceptanceCriteria: []string{"final delivery exists"},
+		Duty: DutyIntegrator, AcceptanceCriteria: []string{"final delivery exists"},
 		ArtifactKinds: []ArtifactKind{ArtifactKindFinalDelivery}, DependsOn: dependencies,
 		BudgetEstimate: BudgetEstimate{Tokens: 1},
 	})

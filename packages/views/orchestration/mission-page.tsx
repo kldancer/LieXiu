@@ -25,8 +25,13 @@ import {
   cancelMissionMutationOptions,
   missionActivitiesOptions,
   missionProjectionOptions,
+  roleProfilesOptions,
   missionRunDetailOptions,
   retryMissionTaskMutationOptions,
+  requestPlanMutationOptions,
+  editPlanProposalMutationOptions,
+  rejectPlanProposalMutationOptions,
+  approvePlanProposalMutationOptions,
   shouldRefreshMissionSnapshot,
   startMissionMutationOptions,
   type ApproveMissionBudgetRequest,
@@ -34,8 +39,15 @@ import {
   type MissionProjection,
   type RunDetailProjection,
   type TaskNodeProjection,
+  type RoleProfile,
+  type RolePolicyBinding,
+  type HumanGateProjection,
 } from "@liexiu/core/orchestration";
+import { agentTaskSnapshotOptions, buildAgentRuntimeDiagnostics, type AgentRuntimeDiagnostic } from "@liexiu/core/agents";
+import { agentListOptions } from "@liexiu/core/workspace";
+import { runtimeListOptions } from "@liexiu/core/runtimes";
 import { generateUUID } from "@liexiu/core/utils";
+import { api } from "@liexiu/core/api";
 import { Badge } from "@liexiu/ui/components/ui/badge";
 import { Button } from "@liexiu/ui/components/ui/button";
 import {
@@ -59,8 +71,10 @@ import {
   WORLD_ZONES,
   boardLaneForStatus,
   buildDagLayout,
+  buildMailboxActivityViews,
   buildPixelActors,
   type BoardLane,
+  type MailboxActivityView,
   type PixelActorState,
   type WorldZone,
 } from "./view-model";
@@ -73,6 +87,17 @@ export function MissionPage({ missionId }: { missionId: string }) {
   );
   const refetchProjection = projectionQuery.refetch;
   const projection = projectionQuery.data;
+  const roleProfilesQuery = useQuery(roleProfilesOptions(workspaceId));
+  const roleProfiles = roleProfilesQuery.data ?? [];
+  const agentsQuery = useQuery(agentListOptions(workspaceId));
+  const runtimesQuery = useQuery(runtimeListOptions(workspaceId));
+  const agentTasksQuery = useQuery(agentTaskSnapshotOptions(workspaceId));
+  const diagnostics = useMemo(() => buildAgentRuntimeDiagnostics({
+    agents: agentsQuery.data ?? [],
+    runtimes: runtimesQuery.data ?? [],
+    snapshot: agentTasksQuery.data ?? [],
+    now: Date.now(),
+  }), [agentTasksQuery.data, agentsQuery.data, runtimesQuery.data]);
   const missionActive = projection
     ? !["completed", "failed", "cancelled"].includes(projection.mission.status)
     : false;
@@ -117,6 +142,16 @@ export function MissionPage({ missionId }: { missionId: string }) {
   const startMission = useMutation(startMissionMutationOptions(missionId));
   const cancelMission = useMutation(cancelMissionMutationOptions(missionId));
   const retryTask = useMutation(retryMissionTaskMutationOptions(missionId));
+  const pendingProposal = projection?.planning.proposals.find((item) => item.decision === "pending");
+  const requestPlan = useMutation(requestPlanMutationOptions(missionId));
+  const editProposal = useMutation(editPlanProposalMutationOptions(missionId, pendingProposal?.id ?? ""));
+  const rejectProposal = useMutation(rejectPlanProposalMutationOptions(missionId, pendingProposal?.id ?? ""));
+  const approveProposal = useMutation(approvePlanProposalMutationOptions(missionId, pendingProposal?.id ?? ""));
+  const resolveGate = useMutation({ mutationFn: async ({ gate, reason }: { gate: HumanGateProjection; reason?: string }) => {
+    const node = projectionQuery.data?.nodes.find((item) => item.id === gate.taskNodeId);
+    if (!node) throw new Error("Human Gate task is unavailable");
+    return api.resolveHumanGate(missionId, gate.id, { commandId: generateUUID(), expectedRevision: projectionQuery.data!.mission.revision, expectedTaskRevision: node.revision, expectedGateRevision: gate.revision, resolution: "retry", reason });
+  } });
 
   if (projectionQuery.isLoading) {
     return <MissionPageSkeleton label={t(($) => $.page.loading)} />;
@@ -157,10 +192,18 @@ export function MissionPage({ missionId }: { missionId: string }) {
       }}
       budgetApproving={budgetApproval.isPending}
       budgetApprovalError={budgetApproval.error instanceof Error ? budgetApproval.error.message : undefined}
-      onStart={async () => {
+      onResolveHumanGate={async (gate, reason) => {
+        await resolveGate.mutateAsync({ gate, reason });
+        await projectionQuery.refetch();
+      }}
+      humanGatePending={resolveGate.isPending}
+      humanGateError={resolveGate.error instanceof Error ? resolveGate.error.message : undefined}
+      roleProfiles={roleProfiles}
+      onStart={async (bindings) => {
         await startMission.mutateAsync({
           commandId: generateUUID(),
           expectedRevision: projectionQuery.data.mission.revision,
+          rolePolicyBindings: bindings,
         });
         await projectionQuery.refetch();
       }}
@@ -186,9 +229,57 @@ export function MissionPage({ missionId }: { missionId: string }) {
       lifecycleError={
         [startMission.error, cancelMission.error, retryTask.error].find((value) => value instanceof Error)?.message
       }
+      onRequestPlan={async (objective, deliveryCriteria, binding) => {
+        await requestPlan.mutateAsync({
+          commandId: generateUUID(),
+          expectedRevision: projectionQuery.data.mission.revision,
+          objective,
+          contextRefs: [],
+          deliveryCriteria,
+          rolePolicyBinding: binding,
+        });
+        await projectionQuery.refetch();
+      }}
+      onEditProposal={async (value) => {
+        if (!pendingProposal) return;
+        await editProposal.mutateAsync({
+          commandId: generateUUID(),
+          expectedRevision: projectionQuery.data.mission.revision,
+          proposal: value,
+        });
+        await projectionQuery.refetch();
+      }}
+      onRejectProposal={async (reason) => {
+        if (!pendingProposal) return;
+        await rejectProposal.mutateAsync({
+          commandId: generateUUID(),
+          expectedRevision: projectionQuery.data.mission.revision,
+          reason,
+        });
+        await projectionQuery.refetch();
+      }}
+      onApproveProposal={async () => {
+        if (!pendingProposal) return;
+        await approveProposal.mutateAsync({
+          commandId: generateUUID(),
+          expectedRevision: projectionQuery.data.mission.revision,
+        });
+        await projectionQuery.refetch();
+      }}
+      proposalPending={requestPlan.isPending || editProposal.isPending || rejectProposal.isPending || approveProposal.isPending}
+      proposalError={
+        [requestPlan.error, editProposal.error, rejectProposal.error, approveProposal.error]
+          .find((value) => value instanceof Error)?.message
+      }
       detail={detailQuery.data}
       detailLoading={detailQuery.isLoading && selectedRunId.length > 0}
       detailError={detailQuery.isError}
+      diagnostics={{
+        items: diagnostics,
+        loading: agentsQuery.isLoading || runtimesQuery.isLoading || agentTasksQuery.isLoading,
+        error: agentsQuery.isError || runtimesQuery.isError || agentTasksQuery.isError,
+        onRefresh: () => void Promise.all([agentsQuery.refetch(), runtimesQuery.refetch(), agentTasksQuery.refetch()]),
+      }}
     />
   );
 }
@@ -202,14 +293,32 @@ export interface MissionWorkspaceProps {
   onApproveBudget?: (request: ApproveMissionBudgetRequest) => Promise<void>;
   budgetApproving?: boolean;
   budgetApprovalError?: string;
+  onResolveHumanGate?: (gate: HumanGateProjection, reason?: string) => Promise<void>;
+  humanGatePending?: boolean;
+  humanGateError?: string;
   detail?: RunDetailProjection;
   detailLoading?: boolean;
   detailError?: boolean;
-  onStart?: () => Promise<void>;
+  roleProfiles?: RoleProfile[];
+  onStart?: (bindings: RolePolicyBinding[]) => Promise<void>;
   onCancel?: () => Promise<void>;
   onRetryTask?: (node: TaskNodeProjection) => Promise<void>;
   lifecyclePending?: boolean;
   lifecycleError?: string;
+  onRequestPlan?: (objective: string, deliveryCriteria: string[], binding: RolePolicyBinding) => Promise<void>;
+  onEditProposal?: (proposal: unknown) => Promise<void>;
+  onRejectProposal?: (reason: string) => Promise<void>;
+  onApproveProposal?: () => Promise<void>;
+  proposalPending?: boolean;
+  proposalError?: string;
+  diagnostics?: AgentDiagnosticsProps;
+}
+
+export interface AgentDiagnosticsProps {
+  items: AgentRuntimeDiagnostic[];
+  loading: boolean;
+  error: boolean;
+  onRefresh?: () => void;
 }
 
 /**
@@ -229,14 +338,68 @@ export function MissionWorkspace({
   onApproveBudget,
   budgetApproving = false,
   budgetApprovalError,
+  onResolveHumanGate,
+  humanGatePending = false,
+  humanGateError,
   onStart,
   onCancel,
   onRetryTask,
   lifecyclePending = false,
   lifecycleError,
+  onRequestPlan,
+  onEditProposal,
+  onRejectProposal,
+  onApproveProposal,
+  proposalPending = false,
+  proposalError,
+  roleProfiles = [],
+  diagnostics,
 }: MissionWorkspaceProps) {
   const { t } = useT("orchestration");
   const { mission } = projection;
+  const proposals = projection.planning.proposals;
+  const planningInProgress = projection.planning.assignments.some((item) => item.status === "active");
+  const [selectedProfiles, setSelectedProfiles] = useState<Record<string, string>>({});
+  const effectiveRoleProfiles = useMemo(() => {
+    const profiles = [...roleProfiles];
+    for (const snapshot of projection.rolePolicySnapshots) {
+      if (!profiles.some((profile) => profile.profileKey === snapshot.roleProfileKey && profile.version === snapshot.roleProfileVersion)) {
+        profiles.push({
+          id: snapshot.roleProfileId, workspaceId: snapshot.workspaceId, profileKey: snapshot.roleProfileKey,
+          version: snapshot.roleProfileVersion, duty: snapshot.duty, name: snapshot.profileName,
+          description: snapshot.profileDescription, config: snapshot.config, createdAt: snapshot.frozenAt,
+        });
+      }
+    }
+    return profiles;
+  }, [projection.rolePolicySnapshots, roleProfiles]);
+  useEffect(() => {
+    if (projection.rolePolicySnapshots.length === 0) return;
+    setSelectedProfiles((current) => {
+      const next = { ...current };
+      for (const snapshot of projection.rolePolicySnapshots) {
+        next[snapshot.duty] = `${snapshot.roleProfileKey}:${snapshot.roleProfileVersion}`;
+      }
+      return next;
+    });
+  }, [projection.rolePolicySnapshots]);
+  const profileFor = (duty: RolePolicyBinding["duty"]) => effectiveRoleProfiles.find((profile) => profile.duty === duty && `${profile.profileKey}:${profile.version}` === selectedProfiles[duty]);
+  const plannerProfile = profileFor("planner");
+  const executionProfiles = (["executor", "reviewer", "integrator"] as const).map(profileFor);
+  const bindingsReady = executionProfiles.every(Boolean);
+  const updateProfile = (duty: RolePolicyBinding["duty"], value: string) => setSelectedProfiles((current) => ({ ...current, [duty]: value }));
+  const profileSelect = (duty: RolePolicyBinding["duty"]) => {
+    const matches = effectiveRoleProfiles.filter((profile) => profile.duty === duty);
+    const frozen = projection.rolePolicySnapshots.some((snapshot) => snapshot.duty === duty);
+    return <div className="space-y-1.5" key={duty}>
+      <FieldLabel htmlFor={`mission-role-profile-${duty}`}>{t(($) => $.planning.duty_profile, { duty })}</FieldLabel>
+      <select id={`mission-role-profile-${duty}`} className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm" value={selectedProfiles[duty] ?? ""} onChange={(event) => updateProfile(duty, event.target.value)} disabled={frozen}>
+        <option value="">{t(($) => $.planning.select_profile)}</option>
+        {matches.map((profile) => <option key={`${profile.profileKey}:${profile.version}`} value={`${profile.profileKey}:${profile.version}`}>{t(($) => $.planning.profile_option, { name: profile.name, key: profile.profileKey, version: profile.version })}</option>)}
+      </select>
+      {matches.length === 0 ? <p className="text-caption text-destructive">{t(($) => $.planning.no_matching_profile, { duty })}</p> : null}
+    </div>;
+  };
 
   return (
     <main className="flex min-h-0 flex-1 flex-col bg-background">
@@ -263,7 +426,7 @@ export function MissionWorkspace({
           </div>
           <div className="flex flex-wrap items-center gap-2">
             {mission.status === "ready" && onStart ? (
-              <Button size="sm" onClick={() => void onStart()} disabled={lifecyclePending}>
+              <Button size="sm" onClick={() => void onStart(executionProfiles.map((profile, index) => ({ duty: ["executor", "reviewer", "integrator"][index] as RolePolicyBinding["duty"], profileKey: profile!.profileKey, version: profile!.version })))} disabled={lifecyclePending || !bindingsReady}>
                 <Play className="size-4" />
                 {t(($) => $.page.start)}
               </Button>
@@ -308,7 +471,32 @@ export function MissionWorkspace({
           approving={budgetApproving}
           error={budgetApprovalError}
         />
+        <HumanGatePanel gates={projection.humanGates} nodes={projection.nodes} onResolve={onResolveHumanGate} pending={humanGatePending} error={humanGateError} />
+        {mission.status === "ready" ? (
+          <Card className="mt-4 border-primary/30 bg-primary/[0.03]">
+            <CardHeader className="pb-3"><CardTitle className="text-body">{t(($) => $.planning.title)}</CardTitle><CardDescription>{t(($) => $.planning.hint)}</CardDescription></CardHeader>
+            <CardContent className="grid gap-3 pt-0 md:grid-cols-3">{(["executor", "reviewer", "integrator"] as const).map(profileSelect)}</CardContent>
+          </Card>
+        ) : null}
+        <PlanningGate
+          proposals={proposals}
+          source={projection.planning.source}
+          planningInProgress={planningInProgress}
+          canRequest={mission.status === "draft"}
+          onRequest={onRequestPlan}
+          onEdit={onEditProposal}
+          onReject={onRejectProposal}
+          onApprove={onApproveProposal}
+          pending={proposalPending}
+          error={proposalError}
+          roleProfileFields={profileSelect("planner")}
+          plannerProfile={plannerProfile}
+        />
       </header>
+
+      <div className="shrink-0 px-4 pt-4 md:px-6">
+        <AgentRuntimeDiagnosticsPanel diagnostics={diagnostics} />
+      </div>
 
       <div className="grid min-h-0 flex-1 gap-4 overflow-auto p-4 md:p-6 xl:grid-cols-[minmax(18rem,0.9fr)_minmax(26rem,1.35fr)_minmax(20rem,1fr)] xl:overflow-hidden">
         <MissionBoard
@@ -316,7 +504,7 @@ export function MissionWorkspace({
           selectedRunId={selectedRunId}
           onSelectRun={onSelectRun}
         />
-        <AgentWorld projection={projection} />
+        <AgentWorld projection={projection} onSelectRun={onSelectRun} />
         <RunDetailPanel
           selectedRunId={selectedRunId}
           projection={projection}
@@ -330,6 +518,314 @@ export function MissionWorkspace({
       </div>
     </main>
   );
+}
+
+function AgentRuntimeDiagnosticsPanel({ diagnostics }: { diagnostics?: AgentDiagnosticsProps }) {
+  const { t } = useT("orchestration");
+  if (!diagnostics) return null;
+  return (
+    <Card data-testid="agent-runtime-diagnostics">
+      <CardHeader className="border-b pb-3">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <CardTitle className="flex items-center gap-2 text-body"><Bot className="size-4" />{t(($) => $.diagnostics.title)}</CardTitle>
+            <CardDescription>{t(($) => $.diagnostics.hint)}</CardDescription>
+          </div>
+          {diagnostics.onRefresh ? <Button variant="outline" size="sm" onClick={diagnostics.onRefresh} disabled={diagnostics.loading}><RefreshCw className="size-4" />{t(($) => $.diagnostics.refresh)}</Button> : null}
+        </div>
+      </CardHeader>
+      <CardContent className="pt-4">
+        {diagnostics.loading ? <p className="text-caption text-muted-foreground" role="status">{t(($) => $.diagnostics.loading)}</p> : null}
+        {!diagnostics.loading && diagnostics.error ? <p className="text-caption text-destructive" role="alert">{t(($) => $.diagnostics.error)}</p> : null}
+        {!diagnostics.loading && !diagnostics.error && diagnostics.items.length === 0 ? <p className="text-caption text-muted-foreground">{t(($) => $.diagnostics.empty)}</p> : null}
+        {!diagnostics.loading && !diagnostics.error && diagnostics.items.length > 0 ? (
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+            {diagnostics.items.map((item) => <AgentRuntimeDiagnosticCard key={item.agent.id} item={item} />)}
+          </div>
+        ) : null}
+      </CardContent>
+    </Card>
+  );
+}
+
+function AgentRuntimeDiagnosticCard({ item }: { item: AgentRuntimeDiagnostic }) {
+  const { t } = useT("orchestration");
+  const capabilityText = item.capabilities?.length ? item.capabilities.join(", ") : t(($) => $.diagnostics.unknown);
+  return (
+    <article className="rounded-lg border bg-background p-3 text-caption" data-agent-diagnostic-id={item.agent.id}>
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0"><h3 className="truncate font-medium">{item.agent.name}</h3><p className="truncate text-muted-foreground">{item.runtime?.name ?? t(($) => $.diagnostics.unbound)}</p></div>
+        <Badge variant={item.available ? "default" : "outline"}>{item.available ? t(($) => $.diagnostics.available) : t(($) => $.diagnostics.unavailable)}</Badge>
+      </div>
+      <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-1 text-muted-foreground">
+        <dt>{t(($) => $.diagnostics.binding)}</dt><dd className="text-right text-foreground">{item.runtimeBound ? t(($) => $.diagnostics.bound) : t(($) => $.diagnostics.unbound)}</dd>
+        <dt>{t(($) => $.diagnostics.runtime)}</dt><dd className="text-right text-foreground">{item.runtimeOnline ? t(($) => $.diagnostics.online) : t(($) => $.diagnostics.offline)}</dd>
+        <dt>{t(($) => $.diagnostics.heartbeat)}</dt><dd className="truncate text-right text-foreground">{item.runtime?.last_seen_at ?? "—"}</dd>
+        <dt>{t(($) => $.diagnostics.capacity)}</dt><dd className="text-right font-mono text-foreground">{item.used} / {item.limit}</dd>
+        <dt>{t(($) => $.diagnostics.capabilities)}</dt><dd className="truncate text-right text-foreground" title={capabilityText}>{capabilityText}</dd>
+        <dt>{t(($) => $.diagnostics.permission)}</dt><dd className="text-right text-foreground">{item.permissionMode}</dd>
+        <dt>{t(($) => $.diagnostics.visibility)}</dt><dd className="text-right text-foreground">{item.runtimeVisibility}</dd>
+      </dl>
+    </article>
+  );
+}
+
+function PlanningGate({
+  proposals,
+  source,
+  planningInProgress,
+  canRequest,
+  onRequest,
+  onEdit,
+  onReject,
+  onApprove,
+  pending,
+  error,
+  roleProfileFields,
+  plannerProfile,
+}: {
+  proposals: MissionProjection["planning"]["proposals"];
+  source: MissionProjection["planning"]["source"];
+  planningInProgress: boolean;
+  canRequest: boolean;
+  onRequest?: (objective: string, deliveryCriteria: string[], binding: RolePolicyBinding) => Promise<void>;
+  onEdit?: (value: unknown) => Promise<void>;
+  onReject?: (reason: string) => Promise<void>;
+  onApprove?: () => Promise<void>;
+  pending: boolean;
+  error?: string;
+  roleProfileFields?: React.ReactNode;
+  plannerProfile?: RoleProfile;
+}) {
+  const { t } = useT("orchestration");
+  const pendingProposal = proposals.find((item) => item.decision === "pending");
+  const defaultProposalID = pendingProposal?.id ?? proposals.at(-1)?.id ?? "";
+  const [selectedID, setSelectedID] = useState(defaultProposalID);
+  const [compareID, setCompareID] = useState("");
+  const [text, setText] = useState("");
+  const [reason, setReason] = useState("");
+  const [objective, setObjective] = useState("");
+  const [criteria, setCriteria] = useState("");
+  const [localError, setLocalError] = useState("");
+
+  const selected = proposals.find((item) => item.id === selectedID) ?? proposals.at(-1);
+  const compared = proposals.find((item) => item.id === compareID);
+  const editable = selected?.decision === "pending" && selected.id === pendingProposal?.id;
+
+  useEffect(() => {
+    if (defaultProposalID && !proposals.some((item) => item.id === selectedID)) {
+      setSelectedID(defaultProposalID);
+    }
+  }, [defaultProposalID, proposals, selectedID]);
+
+  useEffect(() => {
+    if (pendingProposal?.id) setSelectedID(pendingProposal.id);
+  }, [pendingProposal?.id]);
+
+  useEffect(() => {
+    if (compareID && (compareID === selectedID || !proposals.some((item) => item.id === compareID))) {
+      setCompareID("");
+    }
+  }, [compareID, proposals, selectedID]);
+
+  useEffect(() => {
+    setText(selected ? JSON.stringify(selected.proposal, null, 2) : "");
+    setLocalError("");
+  }, [selected]);
+
+  if (!canRequest && proposals.length === 0 && !planningInProgress && !source) return null;
+
+  const edit = async () => {
+    try {
+      const value: unknown = JSON.parse(text);
+      setLocalError("");
+      await onEdit?.(value);
+    } catch (cause) {
+      if (cause instanceof SyntaxError) setLocalError(t(($) => $.planning.invalid_json));
+    }
+  };
+
+  const request = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const deliveryCriteria = criteria.split("\n").map((item) => item.trim()).filter(Boolean);
+    if (!objective.trim() || deliveryCriteria.length === 0 || !plannerProfile) return;
+    await onRequest?.(objective.trim(), deliveryCriteria, { duty: "planner", profileKey: plannerProfile.profileKey, version: plannerProfile.version });
+  };
+
+  return (
+    <Card className="mt-4 border-primary/30 bg-primary/[0.03]">
+      <CardHeader className="pb-3">
+        <CardTitle className="flex items-center gap-2 text-body">
+          <ClipboardList className="size-4" />
+          {t(($) => $.planning.title)}
+          {selected ? <Badge variant="outline">{selected.decision}</Badge> : null}
+        </CardTitle>
+        <CardDescription>{t(($) => $.planning.hint)}</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3 pt-0">
+        {source ? (
+          <div className="flex flex-wrap items-center gap-2 rounded-md border bg-background px-3 py-2 text-caption">
+            <span className="text-muted-foreground">{t(($) => $.planning.source)}</span>
+            <Badge variant={source === "fixed_template" ? "secondary" : "outline"}>
+              {t(($) => $.planning.sources[source])}
+            </Badge>
+            {source === "fixed_template" ? <span className="text-muted-foreground">{t(($) => $.planning.fixed_template_notice)}</span> : null}
+          </div>
+        ) : null}
+        {planningInProgress && !pendingProposal ? (
+          <div className="flex items-center gap-2 rounded-md border bg-background px-3 py-2 text-caption text-muted-foreground">
+            <LoaderCircle className="size-4 animate-spin" />
+            {t(($) => $.planning.in_progress)}
+          </div>
+        ) : null}
+
+        {canRequest && !planningInProgress && !pendingProposal ? (
+          <form className="grid gap-3" onSubmit={(event) => void request(event)}>
+            <div className="space-y-1.5">
+              <FieldLabel htmlFor="mission-plan-objective">{t(($) => $.planning.objective)}</FieldLabel>
+              <Textarea
+                id="mission-plan-objective"
+                value={objective}
+                onChange={(event) => setObjective(event.target.value)}
+                placeholder={t(($) => $.planning.objective_placeholder)}
+                disabled={pending}
+                rows={2}
+                required
+              />
+            </div>
+            <div className="space-y-1.5">
+              <FieldLabel htmlFor="mission-plan-criteria">{t(($) => $.planning.criteria)}</FieldLabel>
+              <Textarea
+                id="mission-plan-criteria"
+                value={criteria}
+                onChange={(event) => setCriteria(event.target.value)}
+                placeholder={t(($) => $.planning.criteria_placeholder)}
+                disabled={pending}
+                rows={3}
+                required
+              />
+            </div>
+            {roleProfileFields}
+            <Button className="w-fit" size="sm" type="submit" disabled={pending || !objective.trim() || !criteria.trim() || !plannerProfile}>
+              {pending ? t(($) => $.planning.requesting) : t(($) => $.planning.request)}
+            </Button>
+          </form>
+        ) : null}
+
+        {selected ? (
+          <div className="space-y-3 border-t pt-3">
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="space-y-1.5">
+                <FieldLabel htmlFor="mission-plan-version">{t(($) => $.planning.version)}</FieldLabel>
+                <select
+                  id="mission-plan-version"
+                  className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                  value={selected.id}
+                  onChange={(event) => setSelectedID(event.target.value)}
+                  disabled={pending}
+                >
+                  {proposals.map((item) => (
+                    <option key={item.id} value={item.id}>
+                      {t(($) => $.planning.version_option, { version: item.version, decision: item.decision })}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="space-y-1.5">
+                <FieldLabel htmlFor="mission-plan-compare">{t(($) => $.planning.compare)}</FieldLabel>
+                <select
+                  id="mission-plan-compare"
+                  className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                  value={compareID}
+                  onChange={(event) => setCompareID(event.target.value)}
+                  disabled={pending || proposals.length < 2}
+                >
+                  <option value="">{t(($) => $.planning.no_compare)}</option>
+                  {proposals.filter((item) => item.id !== selected.id).map((item) => (
+                    <option key={item.id} value={item.id}>
+                      {t(($) => $.planning.version_option, { version: item.version, decision: item.decision })}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            <p className="text-caption text-muted-foreground">
+              {t(($) => $.planning.proposal_meta, { version: selected.version, identity: selected.contentHash ?? selected.id })}
+            </p>
+            <div className={cn("grid gap-3", compared && "lg:grid-cols-2")}>
+              <Textarea
+                aria-label={t(($) => $.planning.proposal)}
+                value={text}
+                onChange={(event) => setText(event.target.value)}
+                disabled={pending || !editable}
+                rows={10}
+              />
+              {compared ? (
+                <Textarea
+                  aria-label={t(($) => $.planning.compared_proposal)}
+                  value={JSON.stringify(compared.proposal, null, 2)}
+                  readOnly
+                  rows={10}
+                />
+              ) : null}
+            </div>
+            {selected.decisionReason ? (
+              <p className="text-caption text-muted-foreground">{selected.decisionReason}</p>
+            ) : null}
+            {editable ? (
+              <>
+                <Textarea
+                  aria-label={t(($) => $.planning.rejection_reason)}
+                  placeholder={t(($) => $.planning.rejection_placeholder)}
+                  value={reason}
+                  onChange={(event) => setReason(event.target.value)}
+                  disabled={pending}
+                  rows={2}
+                />
+                <div className="flex flex-wrap gap-2">
+                  <Button size="sm" onClick={() => void edit()} disabled={pending}>{t(($) => $.planning.save)}</Button>
+                  <Button size="sm" variant="outline" onClick={() => void onApprove?.()} disabled={pending}>{t(($) => $.planning.approve)}</Button>
+                  <Button size="sm" variant="destructive" onClick={() => void onReject?.(reason.trim())} disabled={pending || !reason.trim()}>{t(($) => $.planning.reject)}</Button>
+                </div>
+              </>
+            ) : null}
+          </div>
+        ) : null}
+
+        {localError || error ? (
+          <p role="alert" className="text-caption text-destructive">{localError || error}</p>
+        ) : null}
+      </CardContent>
+    </Card>
+  );
+}
+
+function HumanGatePanel({
+  gates, nodes, onResolve, pending, error,
+}: {
+  gates: HumanGateProjection[];
+  nodes: TaskNodeProjection[];
+  onResolve?: (gate: HumanGateProjection, reason?: string) => Promise<void>;
+  pending: boolean;
+  error?: string;
+}) {
+  const { t } = useT("orchestration");
+  const pendingGates = gates.filter((gate) => gate.status === "pending");
+  if (pendingGates.length === 0) return null;
+  return <Card className="mt-4 border-destructive/30 bg-destructive/[0.03]">
+    <CardHeader className="pb-3"><CardTitle className="flex items-center gap-2 text-body"><ShieldCheck className="size-4" />{t(($) => $.human_gate.title)}</CardTitle><CardDescription>{t(($) => $.human_gate.hint)}</CardDescription></CardHeader>
+    <CardContent className="space-y-3 pt-0">
+      {pendingGates.map((gate) => {
+        const node = nodes.find((item) => item.id === gate.taskNodeId);
+        return <div key={gate.id} className="rounded-lg border bg-background/70 p-3">
+          <div className="flex flex-wrap items-center justify-between gap-2"><div><p className="font-medium">{node?.key ?? gate.taskNodeId} · {node?.title ?? t(($) => $.human_gate.unknown_task)}</p><p className="text-caption text-muted-foreground">{t(($) => $.human_gate.kind[gate.kind])}</p></div><Badge variant="destructive">{t(($) => $.human_gate.pending)}</Badge></div>
+          {gate.reason ? <p className="mt-2 text-caption text-muted-foreground">{gate.reason}</p> : null}
+          <Button className="mt-3" size="sm" variant="outline" disabled={pending || !onResolve || !node} onClick={() => void onResolve?.(gate, t(($) => $.human_gate.retry_reason))}><RotateCcw className="size-4" />{pending ? t(($) => $.human_gate.resolving) : t(($) => $.human_gate.retry)}</Button>
+        </div>;
+      })}
+      {error ? <p className="text-caption text-destructive" role="alert">{error}</p> : null}
+    </CardContent>
+  </Card>;
 }
 
 function MissionBudgetPanel({
@@ -459,6 +955,10 @@ function MissionBoard({
     return lanes;
   }, [projection.nodes]);
   const dag = useMemo(() => buildDagLayout(projection.nodes), [projection.nodes]);
+  const mailboxActivities = useMemo(
+    () => buildMailboxActivityViews(projection.activities.items),
+    [projection.activities.items],
+  );
 
   return (
     <Card className="min-h-[34rem] xl:min-h-0">
@@ -472,6 +972,10 @@ function MissionBoard({
       <CardContent className="min-h-0 flex-1 overflow-auto">
         <div className="space-y-4">
           <MissionDag columns={dag} />
+          <MailboxActivityList
+            items={mailboxActivities.slice(-5).reverse()}
+            onSelectRun={onSelectRun}
+          />
           {BOARD_LANES.map((lane) => {
             const nodes = grouped.get(lane) ?? [];
             return (
@@ -513,7 +1017,7 @@ function MissionBoard({
                                 {node.title}
                               </p>
                               <p className="mt-1 line-clamp-2 text-caption text-muted-foreground">
-                                {node.description || node.role}
+                                {node.description || node.duty}
                               </p>
                             </div>
                             <Badge variant={node.status === "failed" ? "destructive" : "outline"}>
@@ -521,7 +1025,7 @@ function MissionBoard({
                             </Badge>
                           </div>
                           <div className="mt-2 flex flex-wrap items-center gap-2 text-caption text-muted-foreground">
-                            <span>{node.role}</span>
+                            <span>{node.duty}</span>
                             <span>·</span>
                             <span>{t(($) => $.board.dependencies, { count: node.dependencyIds.length })}</span>
                             <span>·</span>
@@ -580,7 +1084,7 @@ function MissionDag({ columns }: { columns: ReturnType<typeof buildDagLayout> })
   );
 }
 
-function AgentWorld({ projection }: { projection: MissionProjection }) {
+function AgentWorld({ projection, onSelectRun }: { projection: MissionProjection; onSelectRun: (runId: string) => void }) {
   const { t } = useT("orchestration");
   const zoneLabels: Record<WorldZone, string> = {
     lobby: t(($) => $.world.lobby),
@@ -615,6 +1119,18 @@ function AgentWorld({ projection }: { projection: MissionProjection }) {
     }
     return zones;
   }, [actors]);
+  const mailboxActivities = useMemo(
+    () => buildMailboxActivityViews(projection.activities.items),
+    [projection.activities.items],
+  );
+  const latestMailboxByAgent = useMemo(() => {
+    const result = new Map<string, MailboxActivityView>();
+    for (const activity of mailboxActivities) {
+      if (activity.actorType === "agent" && activity.actorId) result.set(activity.actorId, activity);
+      if (activity.recipientType === "agent") result.set(activity.recipientId, activity);
+    }
+    return result;
+  }, [mailboxActivities]);
 
   return (
     <Card className="min-h-[38rem] xl:min-h-0">
@@ -650,17 +1166,30 @@ function AgentWorld({ projection }: { projection: MissionProjection }) {
                 ) : (
                   <div className="flex flex-wrap gap-3">
                     {agents.map(({ agent, node, state, slot, paletteIndex, action }) => {
+                      const mailbox = latestMailboxByAgent.get(agent.agentId);
                       return (
                         <div
-                          key={`${agent.agentId}-${agent.role}`}
+                          key={`${agent.agentId}-${agent.duty}`}
                           className="group flex w-24 flex-col items-center text-center"
                           data-agent-id={agent.agentId}
                           data-world-slot={slot}
                         >
-                          <PixelActor paletteIndex={paletteIndex} state={state} action={action} role={agent.role} />
+                          <PixelActor paletteIndex={paletteIndex} state={state} action={action} duty={agent.duty} />
                           <p className="mt-1 w-full truncate text-caption font-medium">{agent.agentName}</p>
-                          <p className="w-full truncate font-mono text-caption text-muted-foreground">{agent.role}</p>
+                          <p className="w-full truncate font-mono text-caption text-muted-foreground">{agent.duty}</p>
                           <p className="w-full truncate text-caption text-muted-foreground">{node?.key ?? stateLabels[state]}</p>
+                          {mailbox ? (
+                            <button
+                              type="button"
+                              className="mt-1 flex max-w-full items-center gap-1 rounded bg-muted px-1.5 py-0.5 text-caption text-muted-foreground hover:text-foreground disabled:cursor-default"
+                              disabled={!mailbox.runId}
+                              onClick={() => mailbox.runId && onSelectRun(mailbox.runId)}
+                              data-mailbox-message-id={mailbox.messageId}
+                            >
+                              <MessageSquareText className="size-3 shrink-0" />
+                              <span className="truncate">{mailbox.messageType}</span>
+                            </button>
+                          ) : null}
                         </div>
                       );
                     })}
@@ -670,6 +1199,10 @@ function AgentWorld({ projection }: { projection: MissionProjection }) {
             );
           })}
         </div>
+        <MailboxActivityList
+          items={mailboxActivities.slice(-4).reverse()}
+          onSelectRun={onSelectRun}
+        />
         <section className="shrink-0" aria-labelledby="recent-activity">
           <h2 id="recent-activity" className="mb-2 flex items-center gap-2 text-caption font-semibold uppercase tracking-wide text-muted-foreground">
             <Activity className="size-3.5" />
@@ -697,21 +1230,21 @@ function PixelActor({
   paletteIndex,
   state,
   action,
-  role,
+  duty,
 }: {
   paletteIndex: number;
   state: PixelActorState;
   action: string;
-  role: string;
+  duty: string;
 }) {
   const atlasUrl = typeof agentRoleAtlas === "string" ? agentRoleAtlas : agentRoleAtlas.src;
-  const column = pixelRoleColumn(role, paletteIndex);
+  const column = pixelDutyColumn(duty, paletteIndex);
   const row = pixelStateRow(state);
   return (
     <div
       data-actor-state={state}
       data-actor-action={action}
-      data-actor-role={role}
+      data-actor-duty={duty}
       className={cn(
         "relative h-12 w-12 overflow-hidden rounded-md border border-foreground/20 bg-muted [image-rendering:pixelated]",
         state === "walking" && "motion-safe:animate-bounce",
@@ -730,8 +1263,8 @@ function PixelActor({
   );
 }
 
-function pixelRoleColumn(role: string, paletteIndex: number) {
-  const normalized = role.trim().toLowerCase();
+function pixelDutyColumn(duty: string, paletteIndex: number) {
+  const normalized = duty.trim().toLowerCase();
   if (normalized.includes("plan")) return 0;
   if (normalized.includes("execut") || normalized.includes("engineer") || normalized.includes("worker")) return 1;
   if (normalized.includes("review") || normalized.includes("audit") || normalized.includes("inspect")) return 2;
@@ -764,6 +1297,12 @@ function RunDetailPanel({
 }) {
   const { t } = useT("orchestration");
   const selectedNode = projection.nodes.find((node) => node.latestRun?.id === selectedRunId);
+  const mailboxActivities = useMemo(
+    () => buildMailboxActivityViews(projection.activities.items).filter((activity) =>
+      activity.runId === selectedRunId || (!!selectedNode && activity.taskNodeId === selectedNode.id),
+    ),
+    [projection.activities.items, selectedNode, selectedRunId],
+  );
 
   return (
     <Card className="min-h-[34rem] xl:min-h-0">
@@ -801,7 +1340,7 @@ function RunDetailPanel({
                 <Badge variant="secondary">{t(($) => $.detail.attempt, { attempt: detail.run.attempt })}</Badge>
               </div>
               <p className="mt-1 break-all font-mono text-caption text-muted-foreground">{detail.run.id}</p>
-              {(detail.node.status === "failed" || detail.node.status === "blocked") && onRetryTask ? (
+              {(detail.node.status === "failed" || detail.node.status === "blocked") && onRetryTask && !projection.humanGates.some((gate) => gate.status === "pending" && gate.taskNodeId === detail.node.id) ? (
                 <Button className="mt-3" size="sm" variant="outline" disabled={lifecyclePending} onClick={() => void onRetryTask(detail.node)}>
                   <RotateCcw className="size-4" />
                   {t(($) => $.detail.retry)}
@@ -812,7 +1351,7 @@ function RunDetailPanel({
             <DetailSection icon={LoaderCircle} title={t(($) => $.detail.execution)}>
               <KeyValue label={t(($) => $.detail.runtime)} value={detail.agent?.runtimeName ?? detail.assignment.runtimeId} />
               <KeyValue label="agent" value={detail.agent?.agentName ?? detail.assignment.agentId} />
-              <KeyValue label="role" value={detail.agent?.role ?? detail.node.role} />
+              <KeyValue label="duty" value={detail.agent?.duty ?? detail.node.duty} />
               <KeyValue label="provider / model" value={[detail.agent?.provider, detail.agent?.model].filter(Boolean).join(" / ") || "—"} />
               <KeyValue label="status" value={detail.execution?.status ?? detail.run.status} />
               {detail.run.failureMessage ? <KeyValue label={t(($) => $.detail.failure)} value={detail.run.failureMessage} danger /> : null}
@@ -872,6 +1411,10 @@ function RunDetailPanel({
               </div>
             </DetailSection>
 
+            <DetailSection icon={MessageSquareText} title={t(($) => $.collaboration.title)} count={mailboxActivities.length}>
+              <MailboxActivityRows items={mailboxActivities.slice(-6).reverse()} onSelectRun={onSelectRun} />
+            </DetailSection>
+
             <DetailSection icon={MessageSquareText} title={t(($) => $.detail.messages)} count={detail.messages.length}>
               {detail.messages.length === 0 ? <EmptyRow /> : detail.messages.slice(-6).map((message) => (
                 <div key={`${message.sequence}-${message.createdAt}`} className="rounded-lg bg-muted/60 p-2.5 text-caption">
@@ -903,6 +1446,60 @@ function RunDetailPanel({
 
 function isWebUrl(value: string) {
   return /^https?:\/\//i.test(value);
+}
+
+function MailboxActivityList({ items, onSelectRun }: { items: MailboxActivityView[]; onSelectRun: (runId: string) => void }) {
+  const { t } = useT("orchestration");
+  return (
+    <section className="shrink-0 rounded-lg border bg-muted/20 p-3" aria-label={t(($) => $.collaboration.title)}>
+      <h2 className="flex items-center gap-2 text-caption font-semibold uppercase tracking-wide text-muted-foreground">
+        <MessageSquareText className="size-3.5" />
+        {t(($) => $.collaboration.title)}
+        <span className="ml-auto tabular-nums">{items.length}</span>
+      </h2>
+      <p className="mt-1 text-caption text-muted-foreground">{t(($) => $.collaboration.hint)}</p>
+      <div className="mt-2 space-y-2">
+        <MailboxActivityRows items={items} onSelectRun={onSelectRun} />
+      </div>
+    </section>
+  );
+}
+
+function MailboxActivityRows({ items, onSelectRun }: { items: MailboxActivityView[]; onSelectRun: (runId: string) => void }) {
+  const { t } = useT("orchestration");
+  if (items.length === 0) return <p className="text-caption text-muted-foreground">{t(($) => $.collaboration.empty)}</p>;
+  return items.map((item) => (
+    <button
+      key={`${item.sequence}-${item.id}`}
+      type="button"
+      disabled={!item.runId}
+      onClick={() => item.runId && onSelectRun(item.runId)}
+      aria-label={t(($) => $.collaboration.locate, { sequence: item.sequence })}
+      data-mailbox-message-id={item.messageId}
+      data-mailbox-status={item.status}
+      className="block w-full rounded-lg border bg-background p-2.5 text-left text-caption transition-colors hover:border-primary/50 disabled:cursor-default disabled:hover:border-border"
+    >
+      <span className="flex items-center gap-2">
+        <span className="font-mono text-muted-foreground">#{item.sequence}</span>
+        <span className="min-w-0 flex-1 truncate font-medium">{item.messageType}</span>
+        <Badge variant={mailboxStatusVariant(item.status)}>{item.status}</Badge>
+      </span>
+      <span className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-muted-foreground">
+        <span>{t(($) => $.collaboration.recipient)}: {item.recipientType}/{item.recipientId}</span>
+        <span>{t(($) => $.collaboration.hops)}: {item.hops}/8</span>
+        {item.hops >= 8 ? <span className="font-medium text-destructive">{t(($) => $.collaboration.hop_limit)}</span> : null}
+      </span>
+      <span className="mt-1 block truncate text-muted-foreground">
+        {t(($) => $.collaboration.expires)}: <time dateTime={item.expiresAt}>{item.expiresAt}</time>
+      </span>
+    </button>
+  ));
+}
+
+function mailboxStatusVariant(status: MailboxActivityView["status"]): "outline" | "secondary" | "destructive" {
+  if (status === "expired" || status === "cancelled") return "destructive";
+  if (status === "consumed") return "secondary";
+  return "outline";
 }
 
 function formatEvidence(value: unknown) {

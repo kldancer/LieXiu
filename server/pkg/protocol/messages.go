@@ -3,10 +3,14 @@ package protocol
 import "encoding/json"
 
 const (
-	DaemonCapabilitySkillBundlesV1      = "skill-bundles-v1"
-	DaemonCapabilityCoalescedCommentsV1 = "coalesced-comments-v1"
-	DaemonCapabilityExecutionManifestV1 = "execution-manifest-v1"
-	DaemonCapabilityAgentSkillV1        = "agent-skill-v1"
+	// DaemonCapabilityOrchestrationContextV1 gates the versioned, frozen
+	// orchestration run context carried on claimed AgentTasks. Older daemons
+	// must never receive a task whose result has orchestration semantics.
+	DaemonCapabilityOrchestrationContextV1 = "orchestration-context-v1"
+	DaemonCapabilitySkillBundlesV1         = "skill-bundles-v1"
+	DaemonCapabilityCoalescedCommentsV1    = "coalesced-comments-v1"
+	DaemonCapabilityExecutionManifestV1    = "execution-manifest-v1"
+	DaemonCapabilityAgentSkillV1           = "agent-skill-v1"
 	// DaemonCapabilityLocalWorktreeV1 advertises that the daemon implements
 	// worktree mode for local_directory resources (execution_mode=worktree).
 	//
@@ -25,7 +29,29 @@ const (
 	// Gated so only daemons+servers that both support it route claim over WS;
 	// everyone else keeps using the HTTP claim endpoint.
 	DaemonCapabilityRPCV1 = "rpc-v1"
+
+	OrchestrationResultKindPlanProposal  = "plan_proposal"
+	OrchestrationResultKindArtifact      = "artifact"
+	OrchestrationResultKindReviewVerdict = "review_verdict"
 )
+
+// OrchestrationRunContextV1 is the provider-neutral claim payload for one
+// orchestration run. Input is intentionally opaque to the daemon; it is shown
+// to the Runtime in the prompt and returned through the existing output wire.
+type OrchestrationRunContextV1 struct {
+	SchemaVersion    int                           `json:"schema_version"`
+	RunID            string                        `json:"run_id"`
+	Purpose          string                        `json:"purpose"`
+	Input            json.RawMessage               `json:"input"`
+	RoleInstructions string                        `json:"role_instructions,omitempty"`
+	ResultContract   OrchestrationResultContractV1 `json:"result_contract"`
+}
+
+type OrchestrationResultContractV1 struct {
+	SchemaVersion        int      `json:"schema_version"`
+	Kind                 string   `json:"kind"`
+	AllowedArtifactKinds []string `json:"allowed_artifact_kinds,omitempty"`
+}
 
 // RPCRequestPayload is the generic daemon→server request envelope carried in a
 // protocol.Message of type EventDaemonRPCRequest. RequestID correlates the

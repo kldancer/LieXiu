@@ -45,6 +45,25 @@ func TestNormalizeRunObservation(t *testing.T) {
 			wantRun: RunStatusSucceeded, wantTask: TaskStatusReview,
 		},
 		{
+			name:    "planning completion only advances the run",
+			mission: db.Mission{Status: string(MissionStatusDraft)},
+			run: db.OrchestrationRun{
+				Purpose: "plan", Status: string(RunStatusRunning),
+				DispatchDeadlineAt: timestamptz(now.Add(time.Minute)), TimeoutSeconds: 60,
+			},
+			task:    &db.AgentTaskQueue{Status: "completed", StartedAt: timestamptz(now.Add(-10 * time.Second)), CompletedAt: timestamptz(now)},
+			wantRun: RunStatusSucceeded,
+		},
+		{
+			name:    "mission cancellation cancels planning without task node state",
+			mission: db.Mission{Status: string(MissionStatusCancelled)},
+			run: db.OrchestrationRun{
+				Purpose: "plan", Status: string(RunStatusRunning),
+				DispatchDeadlineAt: timestamptz(now.Add(time.Minute)), TimeoutSeconds: 60,
+			},
+			task: &db.AgentTaskQueue{Status: "running"}, wantRun: RunStatusCancelled, wantCancel: true,
+		},
+		{
 			name: "runtime recovery is normalized", mission: baseMission,
 			run:     func() db.OrchestrationRun { value := baseRun; value.Status = string(RunStatusRunning); return value }(),
 			node:    db.TaskNode{Status: string(TaskStatusRunning)},
@@ -191,6 +210,57 @@ func TestRunReconcilerCancelsTimedOutExecutionThroughGateway(t *testing.T) {
 	}
 }
 
+func TestRunReconcilerRetriesQueuedUnmappedExecutionThroughGateway(t *testing.T) {
+	runID := newTestUUID()
+	workspaceID := newTestUUID()
+	actorID := newTestUUID()
+	store := &staticReconcileStore{
+		runs: []ReconcilableRun{{WorkspaceID: workspaceID, RunID: runID, CreatedAt: timestamptz(time.Now().UTC())}},
+		result: ReconcileRunResult{
+			Run:              db.OrchestrationRun{ID: runID, Status: string(RunStatusQueued)},
+			EnqueueExecution: true, EnqueueActorID: actorID,
+		},
+	}
+	gateway := &recordingExecutionGateway{}
+	processed, err := NewRunReconciler(store, gateway, RunReconcilerOptions{}).ReconcileBatch(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if processed != 1 || gateway.enqueueCalls != 1 {
+		t.Fatalf("processed=%d enqueue_calls=%d, want 1, 1", processed, gateway.enqueueCalls)
+	}
+	if gateway.lastEnqueue.WorkspaceID != workspaceID || gateway.lastEnqueue.RunID != runID || gateway.lastEnqueue.ActorID != actorID {
+		t.Fatalf("unexpected enqueue request: %#v", gateway.lastEnqueue)
+	}
+}
+
+func TestRunReconcilerExpiresMailboxMessagesWithStableCommands(t *testing.T) {
+	now := time.Date(2026, 8, 19, 1, 2, 3, 456000000, time.UTC)
+	messageID := newTestUUID()
+	store := &expiryReconcileStore{
+		messages: []ExpiredMailboxMessage{{
+			WorkspaceID: newTestUUID(), MissionID: newTestUUID(), MessageID: messageID, Revision: 1,
+		}},
+	}
+	processed, err := NewRunReconciler(store, nil, RunReconcilerOptions{
+		Now: func() time.Time { return now }, BatchSize: 1,
+	}).ReconcileBatch(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if processed != 1 || len(store.expired) != 1 {
+		t.Fatalf("processed=%d expired=%d, want 1, 1", processed, len(store.expired))
+	}
+	got := store.expired[0]
+	if got.MessageID != messageID || got.Revision != 1 || !got.ObservedAt.Equal(now) {
+		t.Fatalf("unexpected expiry request: %#v", got)
+	}
+	wantCommand := derivedMailboxExpiryCommandID(messageID, 1)
+	if got.CommandID != wantCommand || got.CommandID != derivedMailboxExpiryCommandID(messageID, 1) {
+		t.Fatalf("expiry command is not stable: got=%v want=%v", got.CommandID, wantCommand)
+	}
+}
+
 type recordingReconcileStore struct {
 	once   sync.Once
 	called chan struct{}
@@ -210,6 +280,24 @@ type staticReconcileStore struct {
 	result ReconcileRunResult
 }
 
+type expiryReconcileStore struct {
+	staticReconcileStore
+	messages []ExpiredMailboxMessage
+	expired  []ExpireMailboxMessageParams
+}
+
+func (s *expiryReconcileStore) ListExpiredMailboxMessages(_ context.Context, _ time.Time, limit int) ([]ExpiredMailboxMessage, error) {
+	if len(s.messages) > limit {
+		return s.messages[:limit], nil
+	}
+	return s.messages, nil
+}
+
+func (s *expiryReconcileStore) ExpireMailboxMessage(_ context.Context, params ExpireMailboxMessageParams) error {
+	s.expired = append(s.expired, params)
+	return nil
+}
+
 func (s *staticReconcileStore) ListReconcilableRuns(context.Context, ReconcileCursor, int) ([]ReconcilableRun, error) {
 	return s.runs, nil
 }
@@ -219,12 +307,16 @@ func (s *staticReconcileStore) ReconcileRun(context.Context, ReconcileRunParams)
 }
 
 type recordingExecutionGateway struct {
-	cancelCalls int
-	lastCancel  CancelExecutionRequest
+	enqueueCalls int
+	lastEnqueue  EnqueueExecutionRequest
+	cancelCalls  int
+	lastCancel   CancelExecutionRequest
 }
 
-func (*recordingExecutionGateway) Enqueue(context.Context, EnqueueExecutionRequest) (EnqueueExecutionResult, error) {
-	return EnqueueExecutionResult{}, nil
+func (g *recordingExecutionGateway) Enqueue(_ context.Context, request EnqueueExecutionRequest) (EnqueueExecutionResult, error) {
+	g.enqueueCalls++
+	g.lastEnqueue = request
+	return EnqueueExecutionResult{Status: "queued"}, nil
 }
 
 func (g *recordingExecutionGateway) Cancel(_ context.Context, request CancelExecutionRequest) (CancelExecutionResult, error) {

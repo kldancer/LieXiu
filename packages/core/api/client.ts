@@ -110,6 +110,9 @@ import type {
   RetryMissionTaskRequest,
   RetryMissionTaskResponse,
   RunDetailProjection,
+  RequestPlanRequest, EditPlanProposalRequest, RejectPlanProposalRequest, PlanCommandResponse,
+  RolePolicyBinding, RoleProfile, StartMissionRequest,
+  ResolveHumanGateRequest, ResolveHumanGateResponse,
 } from "../orchestration/types";
 import { z } from "zod";
 import {
@@ -122,6 +125,9 @@ import {
   MissionProjectionSchema,
   RunDetailProjectionSchema,
   RetryMissionTaskResponseSchema,
+  PlanCommandResponseSchema,
+  RoleProfilesResponseSchema,
+  ResolveHumanGateResponseSchema,
 } from "../orchestration/schemas";
 import type {
   CloudRuntimeNode,
@@ -327,6 +333,15 @@ function workspaceHeader(
   slug?: string,
 ): Record<string, string> | undefined {
   return slug ? { "X-Workspace-Slug": slug } : undefined;
+}
+
+function rolePolicyBindingToWire(binding: RolePolicyBinding) {
+  return {
+    duty: binding.duty,
+    profile_key: binding.profileKey,
+    version: binding.version,
+    ...(binding.agentId ? { agent_id: binding.agentId } : {}),
+  };
 }
 
 export class ApiClient {
@@ -756,7 +771,7 @@ export class ApiClient {
     return result;
   }
 
-  async startMission(id: string, request: MissionLifecycleRequest): Promise<MissionLifecycleResponse> {
+  async startMission(id: string, request: StartMissionRequest): Promise<MissionLifecycleResponse> {
     return this.mutateMissionLifecycle(id, "start", request);
   }
 
@@ -767,7 +782,7 @@ export class ApiClient {
   private async mutateMissionLifecycle(
     id: string,
     action: "start" | "cancel",
-    request: MissionLifecycleRequest,
+    request: MissionLifecycleRequest | StartMissionRequest,
   ): Promise<MissionLifecycleResponse> {
     const raw = await this.fetch<unknown>(
       `/api/missions/${encodeURIComponent(id)}/${action}`,
@@ -777,6 +792,9 @@ export class ApiClient {
           command_id: request.commandId,
           expected_revision: request.expectedRevision,
           reason: request.reason,
+          ...(action === "start" && "rolePolicyBindings" in request
+            ? { role_policy_bindings: request.rolePolicyBindings.map(rolePolicyBindingToWire) }
+            : {}),
         }),
       },
     );
@@ -813,6 +831,76 @@ export class ApiClient {
       { endpoint: "POST /api/missions/{id}/tasks/{taskNodeID}/retry" },
     );
     if (!result) throw new Error();
+    return result;
+  }
+
+  async resolveHumanGate(id: string, gateId: string, request: ResolveHumanGateRequest): Promise<ResolveHumanGateResponse> {
+    const raw = await this.fetch<unknown>(
+      `/api/missions/${encodeURIComponent(id)}/human-gates/${encodeURIComponent(gateId)}/resolve`,
+      { method: "POST", body: JSON.stringify({
+        command_id: request.commandId, expected_revision: request.expectedRevision,
+        expected_task_revision: request.expectedTaskRevision, expected_gate_revision: request.expectedGateRevision,
+        resolution: request.resolution, reason: request.reason,
+      }) },
+    );
+    const result = parseWithFallback<ResolveHumanGateResponse | null>(raw, ResolveHumanGateResponseSchema, null, {
+      endpoint: "POST /api/missions/{id}/human-gates/{gateId}/resolve",
+    });
+    if (!result) throw new Error();
+    return result;
+  }
+
+  async requestPlan(id: string, request: RequestPlanRequest): Promise<PlanCommandResponse> {
+    return this.planCommand(id, "plan/request", {
+      command_id: request.commandId,
+      expected_revision: request.expectedRevision,
+      objective: request.objective,
+      context_refs: request.contextRefs,
+      delivery_criteria: request.deliveryCriteria,
+      role_policy_binding: rolePolicyBindingToWire(request.rolePolicyBinding),
+    });
+  }
+
+  async listRoleProfiles(workspaceId: string): Promise<RoleProfile[]> {
+    const raw = await this.fetch<unknown>(`/api/workspaces/${encodeURIComponent(workspaceId)}/role-profiles`);
+    const result = parseWithFallback<RoleProfile[] | null>(raw, RoleProfilesResponseSchema, null, {
+      endpoint: "GET /api/workspaces/{workspace_id}/role-profiles",
+    });
+    return result ?? [];
+  }
+
+  async editPlanProposal(id: string, artifactId: string, request: EditPlanProposalRequest): Promise<PlanCommandResponse> {
+    return this.planCommand(id, `plan-proposals/${encodeURIComponent(artifactId)}/edit`, {
+      command_id: request.commandId,
+      expected_revision: request.expectedRevision,
+      proposal: request.proposal,
+    });
+  }
+
+  async rejectPlanProposal(id: string, artifactId: string, request: RejectPlanProposalRequest): Promise<PlanCommandResponse> {
+    return this.planCommand(id, `plan-proposals/${encodeURIComponent(artifactId)}/reject`, {
+      command_id: request.commandId,
+      expected_revision: request.expectedRevision,
+      reason: request.reason,
+    });
+  }
+
+  async approvePlanProposal(id: string, artifactId: string, request: { commandId: string; expectedRevision: number }): Promise<PlanCommandResponse> {
+    return this.planCommand(id, `plan-proposals/${encodeURIComponent(artifactId)}/approve`, {
+      command_id: request.commandId,
+      expected_revision: request.expectedRevision,
+    });
+  }
+
+  private async planCommand(id: string, action: string, body: unknown): Promise<PlanCommandResponse> {
+    const raw = await this.fetch<unknown>(`/api/missions/${encodeURIComponent(id)}/${action}`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
+    const result = parseWithFallback<PlanCommandResponse | null>(raw, PlanCommandResponseSchema, null, {
+      endpoint: `POST /api/missions/{id}/${action}`,
+    });
+    if (!result) throw new Error("invalid plan command response");
     return result;
   }
 

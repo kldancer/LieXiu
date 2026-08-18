@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"reflect"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -69,6 +70,8 @@ type SubmitPlanParams struct {
 	ActorID          pgtype.UUID
 	ExpectedRevision int64
 	Plan             Plan
+	SourceArtifactID pgtype.UUID
+	PlanSource       PlanSource
 }
 
 type SubmitPlanResult struct {
@@ -205,6 +208,10 @@ func (r *Repository) SubmitPlan(ctx context.Context, params SubmitPlanParams) (S
 	if !errors.Is(err, pgx.ErrNoRows) {
 		return SubmitPlanResult{}, fmt.Errorf("submit plan: check command: %w", err)
 	}
+	planSource, err := normalizePlanSource(params.PlanSource, params.SourceArtifactID)
+	if err != nil {
+		return SubmitPlanResult{}, fmt.Errorf("submit plan: %w", err)
+	}
 
 	mission, err := qtx.LockMissionInWorkspace(ctx, db.LockMissionInWorkspaceParams{
 		IssueID: params.MissionID, WorkspaceID: params.WorkspaceID,
@@ -234,6 +241,13 @@ func (r *Repository) SubmitPlan(ctx context.Context, params SubmitPlanParams) (S
 	if err != nil {
 		return SubmitPlanResult{}, fmt.Errorf("submit plan: load root issue: %w", err)
 	}
+	var planningAssignmentID pgtype.UUID
+	if params.SourceArtifactID.Valid {
+		planningAssignmentID, err = validatePlanProposalSource(ctx, qtx, params, mission)
+		if err != nil {
+			return SubmitPlanResult{}, err
+		}
+	}
 
 	planJSON, err := json.Marshal(params.Plan)
 	if err != nil {
@@ -254,6 +268,14 @@ func (r *Repository) SubmitPlan(ctx context.Context, params SubmitPlanParams) (S
 	})
 	if err != nil {
 		return SubmitPlanResult{}, fmt.Errorf("submit plan: accept mission plan: %w", err)
+	}
+	if planningAssignmentID.Valid {
+		if _, err := qtx.EndOrchestrationAssignment(ctx, db.EndOrchestrationAssignmentParams{
+			TargetStatus: string(AssignmentStatusFulfilled), AssignmentID: planningAssignmentID,
+			WorkspaceID: params.WorkspaceID, MissionID: params.MissionID,
+		}); err != nil {
+			return SubmitPlanResult{}, fmt.Errorf("submit plan: fulfill planning assignment: %w", err)
+		}
 	}
 
 	creatorType := issueCreatorType(params.ActorType)
@@ -286,7 +308,7 @@ func (r *Repository) SubmitPlan(ctx context.Context, params SubmitPlanParams) (S
 			WorkspaceID:                params.WorkspaceID,
 			MissionID:                  params.MissionID,
 			NodeKey:                    node.Key,
-			Role:                       string(node.Role),
+			Role:                       node.Duty.String(),
 			AcceptanceCriteria:         criteria,
 			ArtifactKinds:              artifactKinds,
 			BudgetEstimateTokens:       node.BudgetEstimate.Tokens,
@@ -324,10 +346,16 @@ func (r *Repository) SubmitPlan(ctx context.Context, params SubmitPlanParams) (S
 	if err != nil {
 		return SubmitPlanResult{}, fmt.Errorf("submit plan: %w", err)
 	}
+	sourceArtifactID := ""
+	if params.SourceArtifactID.Valid {
+		sourceArtifactID = uuidText(params.SourceArtifactID)
+	}
 	payload, err := json.Marshal(struct {
-		PlanKey   string `json:"plan_key"`
-		NodeCount int    `json:"node_count"`
-	}{PlanKey: params.Plan.PlanKey, NodeCount: len(params.Plan.Nodes)})
+		PlanKey          string `json:"plan_key"`
+		NodeCount        int    `json:"node_count"`
+		SourceArtifactID string `json:"source_artifact_id,omitempty"`
+		PlanSource       string `json:"plan_source"`
+	}{PlanKey: params.Plan.PlanKey, NodeCount: len(params.Plan.Nodes), SourceArtifactID: sourceArtifactID, PlanSource: string(planSource)})
 	if err != nil {
 		return SubmitPlanResult{}, fmt.Errorf("submit plan: encode activity payload: %w", err)
 	}
@@ -361,6 +389,67 @@ func (r *Repository) SubmitPlan(ctx context.Context, params SubmitPlanParams) (S
 	return SubmitPlanResult{
 		Mission: mission, TaskNodes: taskNodes, Dependencies: dependencies, Activity: activity,
 	}, nil
+}
+
+func normalizePlanSource(source PlanSource, sourceArtifactID pgtype.UUID) (PlanSource, error) {
+	if source == "" {
+		if sourceArtifactID.Valid {
+			return PlanSourceProposal, nil
+		}
+		return PlanSourceManual, nil
+	}
+	if sourceArtifactID.Valid {
+		if source != PlanSourceProposal {
+			return "", fmt.Errorf("source artifact requires proposal plan source")
+		}
+		return source, nil
+	}
+	if source == PlanSourceProposal {
+		return "", fmt.Errorf("proposal plan source requires source artifact")
+	}
+	if source != PlanSourceManual && source != PlanSourceFixedTemplate {
+		return "", fmt.Errorf("unsupported plan source %q", source)
+	}
+	return source, nil
+}
+
+func validatePlanProposalSource(ctx context.Context, qtx *db.Queries, params SubmitPlanParams, mission db.Mission) (pgtype.UUID, error) {
+	artifact, err := qtx.GetArtifactInWorkspace(ctx, db.GetArtifactInWorkspaceParams{ArtifactID: params.SourceArtifactID, WorkspaceID: params.WorkspaceID})
+	if err != nil {
+		return pgtype.UUID{}, fmt.Errorf("submit plan: load source artifact: %w", err)
+	}
+	if artifact.MissionID != mission.IssueID || artifact.TaskNodeID.Valid || artifact.Kind != string(ArtifactKindPlanProposal) {
+		return pgtype.UUID{}, fmt.Errorf("submit plan: source artifact is not a Mission-scoped PlanProposal")
+	}
+	run, err := qtx.GetOrchestrationRunInWorkspace(ctx, db.GetOrchestrationRunInWorkspaceParams{RunID: artifact.RunID, WorkspaceID: params.WorkspaceID})
+	if err != nil {
+		return pgtype.UUID{}, fmt.Errorf("submit plan: load source run: %w", err)
+	}
+	if run.MissionID != mission.IssueID || run.TaskNodeID.Valid || run.Purpose != "plan" || run.Status != string(RunStatusSucceeded) {
+		return pgtype.UUID{}, fmt.Errorf("submit plan: source artifact does not belong to a successful Planning Run")
+	}
+	assignment, err := qtx.GetOrchestrationAssignmentInWorkspace(ctx, db.GetOrchestrationAssignmentInWorkspaceParams{AssignmentID: run.AssignmentID, WorkspaceID: params.WorkspaceID})
+	if err != nil {
+		return pgtype.UUID{}, fmt.Errorf("submit plan: load source assignment: %w", err)
+	}
+	if assignment.MissionID != mission.IssueID || assignment.TaskNodeID.Valid || assignment.Role != string(DutyPlanner) || assignment.Status != string(AssignmentStatusActive) {
+		return pgtype.UUID{}, fmt.Errorf("submit plan: source artifact does not belong to the active Planning Assignment")
+	}
+	proposal, validationErrs := DecodeAndValidatePlanProposal(artifact.Metadata, uuidText(mission.IssueID), params.Plan.Limits)
+	if len(validationErrs) > 0 {
+		return pgtype.UUID{}, CommandValidationError{Errors: validationErrs}
+	}
+	if !reflect.DeepEqual(PlanFromProposal(proposal), params.Plan) {
+		return pgtype.UUID{}, fmt.Errorf("submit plan: source artifact payload does not match the submitted plan")
+	}
+	canonical, err := EncodePlanProposal(proposal)
+	if err != nil {
+		return pgtype.UUID{}, fmt.Errorf("submit plan: encode source artifact: %w", err)
+	}
+	if !artifact.ContentHash.Valid || artifact.ContentHash.String != planProposalContentHash(canonical) {
+		return pgtype.UUID{}, fmt.Errorf("submit plan: source artifact content hash mismatch")
+	}
+	return assignment.ID, nil
 }
 
 type orchestrationIssueParams struct {

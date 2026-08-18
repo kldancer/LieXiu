@@ -3,7 +3,6 @@ package orchestration
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"sort"
 	"time"
@@ -94,7 +93,6 @@ func (r *Repository) AdvanceMission(ctx context.Context, params AdvanceMissionPa
 	if err != nil {
 		return AdvanceMissionResult{}, fmt.Errorf("advance mission: list review verdicts: %w", err)
 	}
-
 	activities := []db.OrchestrationActivity{}
 	changed := false
 	updateNode := func(updated db.TaskNode) {
@@ -237,6 +235,19 @@ func (r *Repository) AdvanceMission(ctx context.Context, params AdvanceMissionPa
 		changed = true
 	}
 
+	policyRows, err := qtx.ListMissionRolePolicySnapshots(ctx, db.ListMissionRolePolicySnapshotsParams{WorkspaceID: params.WorkspaceID, MissionID: params.MissionID})
+	if err != nil {
+		return AdvanceMissionResult{}, fmt.Errorf("advance mission: list role policy snapshots: %w", err)
+	}
+	policies, err := mapRolePolicySnapshots(policyRows)
+	if err != nil {
+		return AdvanceMissionResult{}, fmt.Errorf("advance mission: decode role policy snapshots: %w", err)
+	}
+	policyByDuty := make(map[Duty]RolePolicySnapshot, len(policies))
+	for _, policy := range policies {
+		policyByDuty[policy.Duty] = policy
+	}
+
 	activeRuns := countActiveRuns(runs)
 	for index := range nodes {
 		if activeRuns >= limits.MaxParallelRuns {
@@ -246,22 +257,35 @@ func (r *Repository) AdvanceMission(ctx context.Context, params AdvanceMissionPa
 		if TaskStatus(node.Status) != TaskStatusReady {
 			continue
 		}
-		role := Role(node.Role)
+		duty := Duty(node.Role)
 		purpose := "execute"
-		if role == RoleIntegrator {
+		if duty == DutyIntegrator {
 			purpose = "integrate"
 		}
-		candidate, candidateErr := qtx.SelectOrchestrationAgentCandidate(ctx, db.SelectOrchestrationAgentCandidateParams{WorkspaceID: params.WorkspaceID, AvoidAgentID: pgtype.UUID{Valid: true}})
-		if errors.Is(candidateErr, pgx.ErrNoRows) {
-			updated, updateErr := qtx.TransitionTaskNodeState(ctx, db.TransitionTaskNodeStateParams{TargetStatus: string(TaskStatusBlocked), BlockReason: textValue("no online agent with available capacity"), TaskNodeID: node.IssueID, WorkspaceID: params.WorkspaceID, MissionID: params.MissionID, ExpectedStatus: node.Status})
+		policy, ok := policyByDuty[duty]
+		if !ok {
+			return AdvanceMissionResult{}, fmt.Errorf("advance mission: frozen %s role policy snapshot is missing", duty)
+		}
+		estimate := budgetEstimateForNode(node)
+		decision := EvaluateBudgetAdmission(limits.Budget, budgetUsage, budgetAllowance, estimate)
+		if !decision.Allowed {
+			return finishBudgetBlockedAdvance(ctx, tx, qtx, mission, nodes, result, activities, changed, params, decision)
+		}
+		routing, candidateErr := selectAndLockRoutingCandidate(ctx, qtx, params.WorkspaceID, mission.CreatedBy, policy, "", "")
+		if candidateErr != nil {
+			return AdvanceMissionResult{}, fmt.Errorf("advance mission: select %s routing candidate: %w", duty, candidateErr)
+		}
+		if routing.Selected == nil {
+			reason := "no eligible routing candidate for " + duty.String()
+			updated, updateErr := qtx.TransitionTaskNodeState(ctx, db.TransitionTaskNodeStateParams{TargetStatus: string(TaskStatusBlocked), BlockReason: textValue(reason), TaskNodeID: node.IssueID, WorkspaceID: params.WorkspaceID, MissionID: params.MissionID, ExpectedStatus: node.Status})
 			if updateErr != nil {
-				return AdvanceMissionResult{}, updateErr
+				return AdvanceMissionResult{}, fmt.Errorf("advance mission: block task without %s candidate: %w", duty, updateErr)
 			}
 			nodes[index] = updated
 			if _, updateErr := qtx.UpdateIssueStatus(ctx, db.UpdateIssueStatusParams{ID: updated.IssueID, WorkspaceID: params.WorkspaceID, Status: "blocked"}); updateErr != nil {
-				return AdvanceMissionResult{}, updateErr
+				return AdvanceMissionResult{}, fmt.Errorf("advance mission: update routing-blocked issue: %w", updateErr)
 			}
-			activity, activityErr := createAutomaticActivity(ctx, qtx, mission, updated.IssueID, pgtype.UUID{}, activityTaskBlocked, "task_node", updated.IssueID, updated.IssueID, params.CorrelationID, "task:"+uuidText(updated.IssueID)+":blocked:no-capacity", map[string]any{"reason": updated.BlockReason.String})
+			activity, activityErr := createAutomaticActivity(ctx, qtx, mission, updated.IssueID, pgtype.UUID{}, activityTaskBlocked, "task_node", updated.IssueID, updated.IssueID, params.CorrelationID, fmt.Sprintf("task:%s:blocked:routing:%s:%d", uuidText(updated.IssueID), duty, updated.ReworkCount), map[string]any{"reason": reason, "duty": duty, "routing": routing})
 			if activityErr != nil {
 				return AdvanceMissionResult{}, activityErr
 			}
@@ -269,16 +293,16 @@ func (r *Repository) AdvanceMission(ctx context.Context, params AdvanceMissionPa
 			changed = true
 			continue
 		}
+		candidateAgentID, candidateErr := uuidFromText(routing.Selected.AgentID)
 		if candidateErr != nil {
-			return AdvanceMissionResult{}, fmt.Errorf("advance mission: select %s agent: %w", role, candidateErr)
+			return AdvanceMissionResult{}, fmt.Errorf("advance mission: decode selected %s agent id: %w", duty, candidateErr)
 		}
-		estimate := budgetEstimateForNode(node)
-		decision := EvaluateBudgetAdmission(limits.Budget, budgetUsage, budgetAllowance, estimate)
-		if !decision.Allowed {
-			return finishBudgetBlockedAdvance(ctx, tx, qtx, mission, nodes, result, activities, changed, params, decision)
+		candidateRuntimeID, candidateErr := uuidFromText(routing.Selected.RuntimeID)
+		if candidateErr != nil {
+			return AdvanceMissionResult{}, fmt.Errorf("advance mission: decode selected %s runtime id: %w", duty, candidateErr)
 		}
-		sequence, supersedes := nextAssignmentSequence(assignments, node.IssueID, role.String())
-		assignment, createErr := qtx.CreateOrchestrationAssignment(ctx, db.CreateOrchestrationAssignmentParams{WorkspaceID: params.WorkspaceID, MissionID: params.MissionID, TaskNodeID: node.IssueID, Role: role.String(), AgentID: candidate.AgentID, RuntimeID: candidate.RuntimeID, Sequence: sequence, SupersedesID: supersedes, CreatedBy: mission.CreatedBy})
+		sequence, supersedes := nextAssignmentSequence(assignments, node.IssueID, duty.String())
+		assignment, createErr := qtx.CreateOrchestrationAssignment(ctx, db.CreateOrchestrationAssignmentParams{WorkspaceID: params.WorkspaceID, MissionID: params.MissionID, TaskNodeID: node.IssueID, Role: duty.String(), AgentID: candidateAgentID, RuntimeID: candidateRuntimeID, Sequence: sequence, SupersedesID: supersedes, CreatedBy: mission.CreatedBy})
 		if createErr != nil {
 			return AdvanceMissionResult{}, fmt.Errorf("advance mission: create work assignment: %w", createErr)
 		}
@@ -287,10 +311,27 @@ func (r *Repository) AdvanceMission(ctx context.Context, params AdvanceMissionPa
 		if inputErr != nil {
 			return AdvanceMissionResult{}, inputErr
 		}
-		run, createErr := qtx.CreateOrchestrationRun(ctx, db.CreateOrchestrationRunParams{WorkspaceID: params.WorkspaceID, MissionID: params.MissionID, TaskNodeID: node.IssueID, AssignmentID: assignment.ID, Purpose: purpose, Attempt: 1, Input: input, DispatchDeadlineAt: timestamptz(params.ObservedAt.Add(params.DispatchWindow)), TimeoutSeconds: int32(params.RunTimeout / time.Second)})
+		mailboxContext, mailboxRows, mailboxErr := selectMailboxRunContext(
+			ctx, qtx, params.WorkspaceID, params.MissionID, node.IssueID, candidateAgentID, params.ObservedAt,
+		)
+		if mailboxErr != nil {
+			return AdvanceMissionResult{}, mailboxErr
+		}
+		input, inputErr = attachMailboxRunContext(input, mailboxContext)
+		if inputErr != nil {
+			return AdvanceMissionResult{}, inputErr
+		}
+		run, createErr := qtx.CreateOrchestrationRun(ctx, db.CreateOrchestrationRunParams{WorkspaceID: params.WorkspaceID, MissionID: params.MissionID, TaskNodeID: node.IssueID, AssignmentID: assignment.ID, Purpose: purpose, Attempt: 1, Input: input, DispatchDeadlineAt: timestamptz(params.ObservedAt.Add(params.DispatchWindow)), TimeoutSeconds: int32(policy.Config.TimeoutSeconds)})
 		if createErr != nil {
 			return AdvanceMissionResult{}, fmt.Errorf("advance mission: create work run: %w", createErr)
 		}
+		mailboxActivities, mailboxErr := consumeMailboxRunContext(
+			ctx, qtx, mission, run, candidateAgentID, mailboxContext, mailboxRows, params.ObservedAt, params.CorrelationID,
+		)
+		if mailboxErr != nil {
+			return AdvanceMissionResult{}, mailboxErr
+		}
+		activities = append(activities, mailboxActivities...)
 		runs = append(runs, run)
 		budgetUsage = AddBudgetReservation(budgetUsage, estimate)
 		result.CreatedRuns = append(result.CreatedRuns, run)
@@ -304,7 +345,11 @@ func (r *Repository) AdvanceMission(ctx context.Context, params AdvanceMissionPa
 			subjectID    pgtype.UUID
 			key          string
 		}{{activityTaskAssigned, "task_node", node.IssueID, "task:" + uuidText(node.IssueID) + ":assigned:" + fmt.Sprint(sequence)}, {activityRunQueued, "run", run.ID, "run:" + uuidText(run.ID) + ":queued"}} {
-			activity, activityErr := createAutomaticActivity(ctx, qtx, mission, node.IssueID, run.ID, spec.typ, spec.subject, spec.subjectID, run.ID, params.CorrelationID, spec.key, map[string]any{"role": role, "agent_id": uuidText(candidate.AgentID)})
+			payload := map[string]any{"duty": duty, "agent_id": routing.Selected.AgentID}
+			if spec.typ == activityTaskAssigned {
+				payload["routing"] = routing
+			}
+			activity, activityErr := createAutomaticActivity(ctx, qtx, mission, node.IssueID, run.ID, spec.typ, spec.subject, spec.subjectID, run.ID, params.CorrelationID, spec.key, payload)
 			if activityErr != nil {
 				return AdvanceMissionResult{}, activityErr
 			}
@@ -325,41 +370,93 @@ func (r *Repository) AdvanceMission(ctx context.Context, params AdvanceMissionPa
 			continue
 		}
 		artifact, ok := latestArtifactForRun(artifacts, workRun.ID)
-		if !ok || hasActiveAssignment(assignments, node.IssueID, string(RoleReviewer)) {
+		if !ok || hasActiveAssignment(assignments, node.IssueID, DutyReviewer.String()) {
 			continue
 		}
 		workAssignment := findAssignment(assignments, workRun.AssignmentID)
-		avoid := pgtype.UUID{Valid: true}
+		producerAgentID := ""
 		if workAssignment != nil {
-			avoid = workAssignment.AgentID
+			producerAgentID = uuidText(workAssignment.AgentID)
 		}
-		candidate, candidateErr := qtx.SelectOrchestrationAgentCandidate(ctx, db.SelectOrchestrationAgentCandidateParams{WorkspaceID: params.WorkspaceID, AvoidAgentID: avoid})
-		if errors.Is(candidateErr, pgx.ErrNoRows) {
-			continue
-		}
-		if candidateErr != nil {
-			return AdvanceMissionResult{}, fmt.Errorf("advance mission: select reviewer: %w", candidateErr)
+		policy, ok := policyByDuty[DutyReviewer]
+		if !ok {
+			return AdvanceMissionResult{}, fmt.Errorf("advance mission: frozen %s role policy snapshot is missing", DutyReviewer)
 		}
 		estimate := budgetEstimateForNode(node)
 		decision := EvaluateBudgetAdmission(limits.Budget, budgetUsage, budgetAllowance, estimate)
 		if !decision.Allowed {
 			return finishBudgetBlockedAdvance(ctx, tx, qtx, mission, nodes, result, activities, changed, params, decision)
 		}
-		sequence, supersedes := nextAssignmentSequence(assignments, node.IssueID, string(RoleReviewer))
-		assignment, createErr := qtx.CreateOrchestrationAssignment(ctx, db.CreateOrchestrationAssignmentParams{WorkspaceID: params.WorkspaceID, MissionID: params.MissionID, TaskNodeID: node.IssueID, Role: string(RoleReviewer), AgentID: candidate.AgentID, RuntimeID: candidate.RuntimeID, Sequence: sequence, SupersedesID: supersedes, CreatedBy: mission.CreatedBy})
+		routing, candidateErr := selectAndLockRoutingCandidate(ctx, qtx, params.WorkspaceID, mission.CreatedBy, policy, producerAgentID, "")
+		if candidateErr != nil {
+			return AdvanceMissionResult{}, fmt.Errorf("advance mission: select reviewer routing candidate: %w", candidateErr)
+		}
+		if routing.Selected == nil {
+			reason := "independent reviewer is unavailable"
+			updated, updateErr := qtx.TransitionTaskNodeState(ctx, db.TransitionTaskNodeStateParams{TargetStatus: string(TaskStatusBlocked), BlockReason: textValue(reason), TaskNodeID: node.IssueID, WorkspaceID: params.WorkspaceID, MissionID: params.MissionID, ExpectedStatus: node.Status})
+			if updateErr != nil {
+				return AdvanceMissionResult{}, fmt.Errorf("advance mission: block task without reviewer candidate: %w", updateErr)
+			}
+			updateNode(updated)
+			if _, updateErr := qtx.UpdateIssueStatus(ctx, db.UpdateIssueStatusParams{ID: updated.IssueID, WorkspaceID: params.WorkspaceID, Status: "blocked"}); updateErr != nil {
+				return AdvanceMissionResult{}, fmt.Errorf("advance mission: update reviewer-routing-blocked issue: %w", updateErr)
+			}
+			gate, gateActivity, gateErr := createPendingHumanGate(
+				ctx, qtx, mission, updated, artifact, workRun.ID, HumanGateReviewerUnavailable,
+				reason, map[string]any{"duty": DutyReviewer, "routing": routing}, workRun.ID, params.CorrelationID,
+			)
+			if gateErr != nil {
+				return AdvanceMissionResult{}, fmt.Errorf("advance mission: create reviewer human gate: %w", gateErr)
+			}
+			activities = append(activities, gateActivity)
+			activity, activityErr := createAutomaticActivity(ctx, qtx, mission, updated.IssueID, pgtype.UUID{}, activityTaskBlocked, "task_node", updated.IssueID, workRun.ID, params.CorrelationID, fmt.Sprintf("task:%s:blocked:routing:%s:gate:%s", uuidText(updated.IssueID), DutyReviewer, uuidText(gate.ID)), map[string]any{"reason": reason, "duty": DutyReviewer, "human_gate_id": uuidText(gate.ID), "routing": routing})
+			if activityErr != nil {
+				return AdvanceMissionResult{}, activityErr
+			}
+			activities = append(activities, activity)
+			changed = true
+			continue
+		}
+		candidateAgentID, candidateErr := uuidFromText(routing.Selected.AgentID)
+		if candidateErr != nil {
+			return AdvanceMissionResult{}, fmt.Errorf("advance mission: decode selected reviewer agent id: %w", candidateErr)
+		}
+		candidateRuntimeID, candidateErr := uuidFromText(routing.Selected.RuntimeID)
+		if candidateErr != nil {
+			return AdvanceMissionResult{}, fmt.Errorf("advance mission: decode selected reviewer runtime id: %w", candidateErr)
+		}
+		sequence, supersedes := nextAssignmentSequence(assignments, node.IssueID, DutyReviewer.String())
+		assignment, createErr := qtx.CreateOrchestrationAssignment(ctx, db.CreateOrchestrationAssignmentParams{WorkspaceID: params.WorkspaceID, MissionID: params.MissionID, TaskNodeID: node.IssueID, Role: DutyReviewer.String(), AgentID: candidateAgentID, RuntimeID: candidateRuntimeID, Sequence: sequence, SupersedesID: supersedes, CreatedBy: mission.CreatedBy})
 		if createErr != nil {
 			return AdvanceMissionResult{}, fmt.Errorf("advance mission: create reviewer assignment: %w", createErr)
 		}
 		assignments = append(assignments, assignment)
 		input, _ := json.Marshal(map[string]any{"artifact_id": uuidText(artifact.ID), "artifact_kind": artifact.Kind, "artifact_uri": artifact.Uri, "acceptance_criteria": json.RawMessage(node.AcceptanceCriteria)})
-		run, createErr := qtx.CreateOrchestrationRun(ctx, db.CreateOrchestrationRunParams{WorkspaceID: params.WorkspaceID, MissionID: params.MissionID, TaskNodeID: node.IssueID, AssignmentID: assignment.ID, Purpose: "review", Attempt: 1, Input: input, DispatchDeadlineAt: timestamptz(params.ObservedAt.Add(params.DispatchWindow)), TimeoutSeconds: int32(params.RunTimeout / time.Second)})
+		mailboxContext, mailboxRows, mailboxErr := selectMailboxRunContext(
+			ctx, qtx, params.WorkspaceID, params.MissionID, node.IssueID, candidateAgentID, params.ObservedAt,
+		)
+		if mailboxErr != nil {
+			return AdvanceMissionResult{}, mailboxErr
+		}
+		input, mailboxErr = attachMailboxRunContext(input, mailboxContext)
+		if mailboxErr != nil {
+			return AdvanceMissionResult{}, mailboxErr
+		}
+		run, createErr := qtx.CreateOrchestrationRun(ctx, db.CreateOrchestrationRunParams{WorkspaceID: params.WorkspaceID, MissionID: params.MissionID, TaskNodeID: node.IssueID, AssignmentID: assignment.ID, Purpose: "review", Attempt: 1, Input: input, DispatchDeadlineAt: timestamptz(params.ObservedAt.Add(params.DispatchWindow)), TimeoutSeconds: int32(policy.Config.TimeoutSeconds)})
 		if createErr != nil {
 			return AdvanceMissionResult{}, fmt.Errorf("advance mission: create review run: %w", createErr)
 		}
+		mailboxActivities, mailboxErr := consumeMailboxRunContext(
+			ctx, qtx, mission, run, candidateAgentID, mailboxContext, mailboxRows, params.ObservedAt, params.CorrelationID,
+		)
+		if mailboxErr != nil {
+			return AdvanceMissionResult{}, mailboxErr
+		}
+		activities = append(activities, mailboxActivities...)
 		runs = append(runs, run)
 		budgetUsage = AddBudgetReservation(budgetUsage, estimate)
 		result.CreatedRuns = append(result.CreatedRuns, run)
-		activity, activityErr := createAutomaticActivity(ctx, qtx, mission, node.IssueID, run.ID, activityRunQueued, "run", run.ID, run.ID, params.CorrelationID, "run:"+uuidText(run.ID)+":queued", map[string]any{"purpose": "review", "artifact_id": uuidText(artifact.ID)})
+		activity, activityErr := createAutomaticActivity(ctx, qtx, mission, node.IssueID, run.ID, activityRunQueued, "run", run.ID, run.ID, params.CorrelationID, "run:"+uuidText(run.ID)+":queued", map[string]any{"purpose": "review", "artifact_id": uuidText(artifact.ID), "routing": routing})
 		if activityErr != nil {
 			return AdvanceMissionResult{}, activityErr
 		}
@@ -402,7 +499,7 @@ func (r *Repository) AdvanceMission(ctx context.Context, params AdvanceMissionPa
 			return AdvanceMissionResult{}, updateErr
 		}
 		if activityType != "" {
-			activity, activityErr := createAutomaticActivity(ctx, qtx, mission, pgtype.UUID{}, pgtype.UUID{}, activityType, "mission", mission.IssueID, mission.IssueID, params.CorrelationID, "mission:"+uuidText(mission.IssueID)+":"+targetMission.String(), map[string]any{})
+			activity, activityErr := createAutomaticActivity(ctx, qtx, mission, pgtype.UUID{}, pgtype.UUID{}, activityType, "mission", mission.IssueID, mission.IssueID, params.CorrelationID, fmt.Sprintf("mission:%s:%s:revision:%d", uuidText(mission.IssueID), targetMission, mission.Revision), map[string]any{})
 			if activityErr != nil {
 				return AdvanceMissionResult{}, activityErr
 			}
@@ -591,7 +688,6 @@ func anyNodeHasStatus(nodes []db.TaskNode, statuses ...TaskStatus) bool {
 	}
 	return false
 }
-func (r Role) String() string          { return string(r) }
 func (s MissionStatus) String() string { return string(s) }
 
 func workRunInput(node db.TaskNode, dependencyIDs []pgtype.UUID, artifacts []db.Artifact, verdicts []db.ReviewVerdict) ([]byte, error) {

@@ -89,7 +89,7 @@ func (s *TaskService) EnqueueOrchestrationRun(ctx context.Context, params Enqueu
 		return EnqueueOrchestrationRunResult{}, ErrOrchestrationRunNotDispatchable
 	}
 	if _, err := qtx.GetIssueInWorkspace(ctx, db.GetIssueInWorkspaceParams{
-		ID: dispatch.TaskNodeID, WorkspaceID: params.WorkspaceID,
+		ID: dispatch.IssueID, WorkspaceID: params.WorkspaceID,
 	}); errors.Is(err, pgx.ErrNoRows) {
 		return EnqueueOrchestrationRunResult{}, ErrOrchestrationRunNotDispatchable
 	} else if err != nil {
@@ -97,8 +97,9 @@ func (s *TaskService) EnqueueOrchestrationRun(ctx context.Context, params Enqueu
 	}
 
 	task, err := qtx.CreateAgentTask(ctx, db.CreateAgentTaskParams{
-		AgentID: dispatch.AgentID, RuntimeID: dispatch.RuntimeID, IssueID: dispatch.TaskNodeID,
+		AgentID: dispatch.AgentID, RuntimeID: dispatch.RuntimeID, IssueID: dispatch.IssueID,
 		Priority:             dispatch.TaskPriority,
+		TaskContext:          dispatch.RunInput,
 		TriggerSummary:       pgtype.Text{String: fmt.Sprintf("orchestration %s run %s", dispatch.Purpose, util.UUIDToString(params.RunID)), Valid: true},
 		ForceFreshSession:    pgtype.Bool{Bool: true, Valid: true},
 		OriginatorUserID:     params.ActorID,

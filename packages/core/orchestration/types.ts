@@ -7,6 +7,8 @@ export type MissionStatus =
   | "failed"
   | "cancelled";
 
+export type PlanSource = "manual" | "proposal" | "fixed_template";
+
 export type TaskNodeStatus =
   | "pending"
   | "ready"
@@ -19,7 +21,43 @@ export type TaskNodeStatus =
   | "failed"
   | "cancelled";
 
-export type OrchestrationRole = "executor" | "reviewer" | "integrator";
+export type OrchestrationDuty = "planner" | "executor" | "reviewer" | "integrator";
+export interface RoleProfile {
+  id: string;
+  workspaceId: string;
+  profileKey: string;
+  version: number;
+  duty: OrchestrationDuty;
+  name: string;
+  description: string;
+  config: unknown;
+  createdAt: string;
+}
+
+export interface RolePolicyBinding {
+  duty: OrchestrationDuty;
+  profileKey: string;
+  version: number;
+  agentId?: string;
+}
+
+export interface RolePolicySnapshot {
+  id: string;
+  workspaceId: string;
+  missionId: string;
+  schemaVersion: number;
+  duty: OrchestrationDuty;
+  roleProfileId: string;
+  roleProfileKey: string;
+  roleProfileVersion: number;
+  profileName: string;
+  profileDescription: string;
+  config: unknown;
+  agentId?: string;
+  contentHash: string;
+  frozenBy: string;
+  frozenAt: string;
+}
 export type AssignmentStatus = "active" | "fulfilled" | "superseded" | "revoked";
 export type RunStatus = "queued" | "dispatched" | "running" | "succeeded" | "failed" | "cancelled";
 export type ReviewDecision = "approved" | "changes_requested" | "rejected";
@@ -77,10 +115,24 @@ export interface MissionProjectionSummary {
   updatedAt: string;
 }
 
-export interface AssignmentProjection {
+export type HumanGateKind = "reviewer_unavailable" | "rework_limit_exceeded";
+export interface HumanGateProjection {
   id: string;
   taskNodeId: string;
-  role: OrchestrationRole;
+  artifactId: string;
+  sourceRunId: string;
+  kind: HumanGateKind;
+  status: string;
+  reason: string;
+  context: unknown;
+  revision: number;
+  createdAt: string;
+}
+
+export interface AssignmentProjection {
+  id: string;
+  taskNodeId?: string;
+  duty: OrchestrationDuty;
   agentId: string;
   runtimeId: string;
   status: AssignmentStatus;
@@ -92,7 +144,7 @@ export interface AssignmentProjection {
 
 export interface RunProjection {
   id: string;
-  taskNodeId: string;
+  taskNodeId?: string;
   assignmentId: string;
   agentTaskId?: string;
   purpose: string;
@@ -111,7 +163,7 @@ export interface RunProjection {
 
 export interface ArtifactProjection {
   id: string;
-  taskNodeId: string;
+  taskNodeId?: string;
   runId: string;
   kind: string;
   version: number;
@@ -138,7 +190,7 @@ export interface TaskNodeProjection {
   key: string;
   title: string;
   description: string;
-  role: OrchestrationRole;
+  duty: OrchestrationDuty;
   status: TaskNodeStatus;
   dependencyIds: string[];
   acceptanceCriteria: string[];
@@ -157,7 +209,7 @@ export interface TeamMemberProjection {
   agentId: string;
   agentName: string;
   avatarUrl?: string;
-  role: OrchestrationRole;
+  duty: OrchestrationDuty;
   runtimeId: string;
   runtimeName: string;
   runtimeStatus: string;
@@ -196,6 +248,55 @@ export interface MissionProjection {
   nodes: TaskNodeProjection[];
   team: TeamMemberProjection[];
   activities: ActivityWindow;
+  planning: PlanningProjection;
+  rolePolicySnapshots: RolePolicySnapshot[];
+  humanGates: HumanGateProjection[];
+}
+
+export type PlanProposalDecision = "pending" | "superseded" | "rejected" | "approved";
+export interface PlanProposalProjection {
+  id: string;
+  runId: string;
+  version: number;
+  uri: string;
+  contentHash?: string;
+  summary: string;
+  proposal: unknown;
+  decision: PlanProposalDecision;
+  decisionReason?: string;
+  createdAt: string;
+}
+export interface PlanningProjection {
+  assignments: AssignmentProjection[];
+  runs: RunProjection[];
+  proposals: PlanProposalProjection[];
+  source?: PlanSource;
+}
+export interface PlanCommandResponse {
+  missionId: string;
+  status: string;
+  revision: number;
+  artifactId?: string;
+  runId?: string;
+  replayed: boolean;
+}
+export interface RequestPlanRequest {
+  commandId: string;
+  expectedRevision: number;
+  objective: string;
+  contextRefs: unknown[];
+  deliveryCriteria: string[];
+  rolePolicyBinding: RolePolicyBinding;
+}
+export interface EditPlanProposalRequest {
+  commandId: string;
+  expectedRevision: number;
+  proposal: unknown;
+}
+export interface RejectPlanProposalRequest {
+  commandId: string;
+  expectedRevision: number;
+  reason: string;
 }
 
 export interface ActivityPage {
@@ -261,6 +362,10 @@ export interface MissionLifecycleRequest {
   reason?: string;
 }
 
+export interface StartMissionRequest extends MissionLifecycleRequest {
+  rolePolicyBindings: RolePolicyBinding[];
+}
+
 export interface MissionLifecycleResponse {
   missionId: string;
   status: string;
@@ -282,6 +387,27 @@ export interface RetryMissionTaskResponse {
   taskNodeId: string;
   status: string;
   revision: number;
+  createdRunIds: string[];
+  replayed: boolean;
+}
+
+export interface ResolveHumanGateRequest {
+  commandId: string;
+  expectedRevision: number;
+  expectedTaskRevision: number;
+  expectedGateRevision: number;
+  resolution: "retry";
+  reason?: string;
+}
+
+export interface ResolveHumanGateResponse {
+  missionId: string;
+  taskNodeId: string;
+  gateId: string;
+  status: string;
+  revision: number;
+  taskRevision: number;
+  gateRevision: number;
   createdRunIds: string[];
   replayed: boolean;
 }

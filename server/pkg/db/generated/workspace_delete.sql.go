@@ -247,6 +247,9 @@ func (q *Queries) DeleteWorkspaceLeafData(ctx context.Context, dollar_1 pgtype.U
 
 const deleteWorkspaceOrchestrationData = `-- name: DeleteWorkspaceOrchestrationData :exec
 WITH
+deleted_human_gates AS (
+    DELETE FROM orchestration_human_gate WHERE orchestration_human_gate.workspace_id = $1
+),
 deleted_review_verdicts AS (
     DELETE FROM review_verdict WHERE review_verdict.workspace_id = $1
 ),
@@ -261,6 +264,13 @@ deleted_runs AS (
 ),
 deleted_assignments AS (
     DELETE FROM orchestration_assignment WHERE orchestration_assignment.workspace_id = $1
+),
+deleted_role_policy_snapshots AS (
+    DELETE FROM mission_role_policy_snapshot
+    WHERE mission_role_policy_snapshot.workspace_id = $1
+),
+deleted_role_profiles AS (
+    DELETE FROM role_profile WHERE role_profile.workspace_id = $1
 ),
 deleted_task_nodes AS (
     DELETE FROM task_node WHERE task_node.workspace_id = $1

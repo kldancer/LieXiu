@@ -2,6 +2,16 @@ package orchestration
 
 type MissionStatus string
 
+// PlanSource is the owner-visible provenance of the accepted plan. It is
+// metadata on the existing SubmitPlan transaction, not a separate lifecycle.
+type PlanSource string
+
+const (
+	PlanSourceManual        PlanSource = "manual"
+	PlanSourceProposal      PlanSource = "proposal"
+	PlanSourceFixedTemplate PlanSource = "fixed_template"
+)
+
 const (
 	MissionStatusDraft     MissionStatus = "draft"
 	MissionStatusReady     MissionStatus = "ready"
@@ -47,13 +57,32 @@ const (
 	RunStatusCancelled  RunStatus = "cancelled"
 )
 
-type Role string
+// Duty is the complete set of business responsibilities understood by the
+// orchestration state machine. Custom RoleProfile configuration must select
+// one of these values rather than introducing another lifecycle branch.
+type Duty string
 
 const (
-	RoleExecutor   Role = "executor"
-	RoleReviewer   Role = "reviewer"
-	RoleIntegrator Role = "integrator"
+	DutyPlanner    Duty = "planner"
+	DutyExecutor   Duty = "executor"
+	DutyReviewer   Duty = "reviewer"
+	DutyIntegrator Duty = "integrator"
 )
+
+func (d Duty) String() string { return string(d) }
+
+func (d Duty) Valid() bool {
+	switch d {
+	case DutyPlanner, DutyExecutor, DutyReviewer, DutyIntegrator:
+		return true
+	default:
+		return false
+	}
+}
+
+func (d Duty) TaskNodeDuty() bool {
+	return d == DutyExecutor || d == DutyIntegrator
+}
 
 type ArtifactKind string
 
@@ -64,6 +93,7 @@ const (
 	ArtifactKindFile          ArtifactKind = "file"
 	ArtifactKindTestReceipt   ArtifactKind = "test_receipt"
 	ArtifactKindFinalDelivery ArtifactKind = "final_delivery"
+	ArtifactKindPlanProposal  ArtifactKind = "plan_proposal"
 )
 
 const (
@@ -110,7 +140,7 @@ type PlanNode struct {
 	Key                string         `json:"key"`
 	Title              string         `json:"title"`
 	Description        string         `json:"description"`
-	Role               Role           `json:"role"`
+	Duty               Duty           `json:"duty"`
 	AcceptanceCriteria []string       `json:"acceptance_criteria"`
 	ArtifactKinds      []ArtifactKind `json:"artifact_kinds"`
 	DependsOn          []string       `json:"depends_on"`

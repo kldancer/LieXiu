@@ -191,6 +191,7 @@ func daemonClientCapabilities() string {
 		protocol.DaemonCapabilityAgentSkillV1,
 		protocol.DaemonCapabilityLocalWorktreeV1,
 		protocol.DaemonCapabilityRPCV1,
+		protocol.DaemonCapabilityOrchestrationContextV1,
 	}, ",")
 }
 

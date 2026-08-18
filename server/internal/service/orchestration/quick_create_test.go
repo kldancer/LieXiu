@@ -17,7 +17,7 @@ func TestQuickCreateMissionPlanIsDeterministicAndValid(t *testing.T) {
 	if first.PlanKey != quickCreatePlanKey || second.PlanKey != first.PlanKey {
 		t.Fatalf("plan key is not deterministic: first=%q second=%q", first.PlanKey, second.PlanKey)
 	}
-	if len(first.Nodes) != 2 || first.Nodes[0].Role != RoleExecutor || first.Nodes[1].Role != RoleIntegrator {
+	if len(first.Nodes) != 2 || first.Nodes[0].Duty != DutyExecutor || first.Nodes[1].Duty != DutyIntegrator {
 		t.Fatalf("unexpected quick-create plan topology: %#v", first.Nodes)
 	}
 	if len(first.Nodes[1].DependsOn) != 1 || first.Nodes[1].DependsOn[0] != first.Nodes[0].Key {

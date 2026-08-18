@@ -6,6 +6,17 @@ import {
 } from "./schemas";
 
 describe("MissionProjectionSchema", () => {
+  it("defaults missing human_gates and parses pending gates when present", () => {
+    const base = EMPTY_MISSION_PROJECTION;
+    const wire = { mission: { id: "m", progress: {}, limits: {}, budget: {} }, activities: {} };
+    expect(MissionProjectionSchema.parse(wire).humanGates).toEqual([]);
+    const result = MissionProjectionSchema.parse({
+      ...wire,
+      human_gates: [{ id: "g", task_node_id: "n", artifact_id: "a", source_run_id: "r", kind: "reviewer_unavailable", status: "pending", reason: "No reviewer", context: { producer: "x" }, revision: 2, created_at: "2026-08-18T00:00:00Z" }],
+    });
+    expect(result.humanGates).toEqual([{ id: "g", taskNodeId: "n", artifactId: "a", sourceRunId: "r", kind: "reviewer_unavailable", status: "pending", reason: "No reviewer", context: { producer: "x" }, revision: 2, createdAt: "2026-08-18T00:00:00Z" }]);
+    expect(base.humanGates).toEqual([]);
+  });
   it("maps the API wire shape to one camelCase projection", () => {
     const result = parseWithFallback(
       {
@@ -37,7 +48,7 @@ describe("MissionProjectionSchema", () => {
           id: "node-a",
           key: "A",
           title: "Implement",
-          role: "executor",
+          duty: "executor",
           status: "review",
           dependency_ids: [],
           acceptance_criteria: ["tests pass"],
@@ -60,7 +71,7 @@ describe("MissionProjectionSchema", () => {
         team: [{
           agent_id: "agent-1",
           agent_name: "Reviewer",
-          role: "reviewer",
+          duty: "reviewer",
           runtime_id: "runtime-1",
           runtime_name: "Local runtime",
           runtime_status: "online",
@@ -69,6 +80,40 @@ describe("MissionProjectionSchema", () => {
         }],
         activities: {
           items: [], first_sequence: 1, last_sequence: 18, has_previous: false,
+        },
+        planning: {
+          source: "proposal",
+          assignments: [{
+            id: "assignment-plan",
+            duty: "planner",
+            agent_id: "agent-plan",
+            runtime_id: "runtime-plan",
+            status: "fulfilled",
+            sequence: 1,
+            created_at: "2026-08-17T09:00:00Z",
+          }],
+          runs: [{
+            id: "run-plan",
+            assignment_id: "assignment-plan",
+            purpose: "plan",
+            attempt: 1,
+            status: "succeeded",
+            input: { objective: "Ship the tool" },
+            dispatch_deadline_at: "2026-08-17T09:05:00Z",
+            timeout_seconds: 300,
+            created_at: "2026-08-17T09:00:00Z",
+          }],
+          proposals: [{
+            id: "proposal-1",
+            run_id: "run-plan",
+            version: 1,
+            uri: "planner://proposal-1",
+            content_hash: "sha256:proposal",
+            summary: "Plan proposal",
+            proposal: { objective: "Ship the tool" },
+            decision: "pending",
+            created_at: "2026-08-17T09:01:00Z",
+          }],
         },
       },
       MissionProjectionSchema,
@@ -83,6 +128,13 @@ describe("MissionProjectionSchema", () => {
     expect(result.nodes[0]?.latestRun?.assignmentId).toBe("assignment-2");
     expect(result.nodes[0]?.budgetEstimate).toEqual({ tokens: 300, costUsdTicks: 700 });
     expect(result.team[0]?.currentNodeIds).toEqual(["node-a"]);
+    expect(result.planning.assignments[0]?.duty).toBe("planner");
+    expect(result.planning.source).toBe("proposal");
+    expect(result.planning.proposals[0]).toMatchObject({
+      id: "proposal-1",
+      runId: "run-plan",
+      decision: "pending",
+    });
   });
 
   it("returns the stable empty projection when the required identity is malformed", () => {

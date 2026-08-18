@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -64,15 +65,76 @@ type SubmitPlanCommand struct {
 	ActorID          pgtype.UUID
 	ExpectedRevision int64
 	Plan             Plan
+	Source           PlanSource
+}
+
+type SubmitPlanProposalCommand struct {
+	WorkspaceID        pgtype.UUID
+	MissionID          pgtype.UUID
+	ProposalArtifactID pgtype.UUID
+	CommandID          pgtype.UUID
+	CorrelationID      pgtype.UUID
+	ActorID            pgtype.UUID
+	ExpectedRevision   int64
+}
+
+type RequestPlanCommand struct {
+	WorkspaceID       pgtype.UUID
+	MissionID         pgtype.UUID
+	CommandID         pgtype.UUID
+	CorrelationID     pgtype.UUID
+	ActorID           pgtype.UUID
+	ExpectedRevision  int64
+	Input             PlanProposalInput
+	RolePolicyBinding RolePolicyBinding
+}
+
+func (s *Service) RequestPlan(ctx context.Context, command RequestPlanCommand) (RequestPlanResult, error) {
+	errs := validateCommandIdentity(command.WorkspaceID, command.MissionID, command.CommandID, command.CorrelationID, command.ActorID, true)
+	if command.ExpectedRevision < 1 {
+		errs = append(errs, ValidationError{Path: "expected_revision", Code: "invalid_revision", Message: "expected_revision must be at least 1"})
+	}
+	errs = append(errs, ValidatePlanProposalInput(command.Input)...)
+	normalizedBinding, bindingErrs := normalizePlannerRolePolicyBinding(command.RolePolicyBinding)
+	command.RolePolicyBinding = normalizedBinding
+	errs = append(errs, bindingErrs...)
+	if len(errs) > 0 {
+		return RequestPlanResult{}, CommandValidationError{Errors: errs}
+	}
+	if err := s.requireOwner(ctx, command.WorkspaceID, command.ActorID); err != nil {
+		return RequestPlanResult{}, err
+	}
+	result, err := s.repository.RequestPlan(ctx, RequestPlanParams{
+		WorkspaceID: command.WorkspaceID, MissionID: command.MissionID,
+		CommandID: command.CommandID, CorrelationID: command.CorrelationID,
+		ActorID: command.ActorID, ExpectedRevision: command.ExpectedRevision, Input: command.Input,
+		RolePolicyBinding: command.RolePolicyBinding,
+		ObservedAt:        time.Now().UTC(),
+	})
+	if err != nil {
+		return RequestPlanResult{}, err
+	}
+	if s.execution == nil {
+		return result, fmt.Errorf("request plan: execution gateway is not configured")
+	}
+	enqueued, enqueueErr := s.execution.Enqueue(ctx, EnqueueExecutionRequest{
+		WorkspaceID: command.WorkspaceID, RunID: result.Run.ID, ActorID: command.ActorID,
+	})
+	result.Execution = enqueued
+	if enqueueErr != nil {
+		return result, fmt.Errorf("request plan: enqueue planning run: %w", enqueueErr)
+	}
+	return result, nil
 }
 
 type StartMissionCommand struct {
-	WorkspaceID      pgtype.UUID
-	MissionID        pgtype.UUID
-	CommandID        pgtype.UUID
-	CorrelationID    pgtype.UUID
-	ActorID          pgtype.UUID
-	ExpectedRevision int64
+	WorkspaceID        pgtype.UUID
+	MissionID          pgtype.UUID
+	CommandID          pgtype.UUID
+	CorrelationID      pgtype.UUID
+	ActorID            pgtype.UUID
+	ExpectedRevision   int64
+	RolePolicyBindings []RolePolicyBinding
 }
 
 type CancelMissionCommand struct {
@@ -122,6 +184,12 @@ func (s *Service) SubmitPlan(ctx context.Context, command SubmitPlanCommand) (Su
 	if command.ExpectedRevision < 1 {
 		errs = append(errs, ValidationError{Path: "expected_revision", Code: "invalid_revision", Message: "expected_revision must be at least 1"})
 	}
+	if command.Source == "" {
+		command.Source = PlanSourceManual
+	}
+	if command.Source != PlanSourceManual && command.Source != PlanSourceFixedTemplate {
+		errs = append(errs, ValidationError{Path: "source", Code: "invalid_plan_source", Message: "source must be manual or fixed_template"})
+	}
 	if len(errs) > 0 {
 		return SubmitPlanResult{}, CommandValidationError{Errors: errs}
 	}
@@ -135,7 +203,40 @@ func (s *Service) SubmitPlan(ctx context.Context, command SubmitPlanCommand) (Su
 		WorkspaceID: command.WorkspaceID, MissionID: command.MissionID,
 		CommandID: command.CommandID, CorrelationID: command.CorrelationID,
 		ActorType: "user", ActorID: command.ActorID,
-		ExpectedRevision: command.ExpectedRevision, Plan: command.Plan,
+		ExpectedRevision: command.ExpectedRevision, Plan: command.Plan, PlanSource: command.Source,
+	})
+}
+
+func (s *Service) SubmitPlanProposal(ctx context.Context, command SubmitPlanProposalCommand) (SubmitPlanResult, error) {
+	errs := validateCommandIdentity(command.WorkspaceID, command.MissionID, command.CommandID, command.CorrelationID, command.ActorID, true)
+	if !validUUID(command.ProposalArtifactID) {
+		errs = append(errs, ValidationError{Path: "proposal_artifact_id", Code: "invalid_uuid", Message: "proposal_artifact_id is required"})
+	}
+	if command.ExpectedRevision < 1 {
+		errs = append(errs, ValidationError{Path: "expected_revision", Code: "invalid_revision", Message: "expected_revision must be at least 1"})
+	}
+	if len(errs) > 0 {
+		return SubmitPlanResult{}, CommandValidationError{Errors: errs}
+	}
+	if err := s.requireOwner(ctx, command.WorkspaceID, command.ActorID); err != nil {
+		return SubmitPlanResult{}, err
+	}
+	artifact, err := s.queries.GetArtifactInWorkspace(ctx, db.GetArtifactInWorkspaceParams{ArtifactID: command.ProposalArtifactID, WorkspaceID: command.WorkspaceID})
+	if err != nil {
+		return SubmitPlanResult{}, fmt.Errorf("submit plan proposal: load artifact: %w", err)
+	}
+	if artifact.MissionID != command.MissionID || artifact.TaskNodeID.Valid || artifact.Kind != string(ArtifactKindPlanProposal) {
+		return SubmitPlanResult{}, CommandValidationError{Errors: []ValidationError{{Path: "proposal_artifact_id", Code: "invalid_plan_proposal_artifact", Message: "artifact must be a Mission-scoped PlanProposal for the target mission"}}}
+	}
+	proposal, proposalErrs := DecodeAndValidatePlanProposal(artifact.Metadata, uuidText(command.MissionID), s.hardLimits)
+	if len(proposalErrs) > 0 {
+		return SubmitPlanResult{}, CommandValidationError{Errors: proposalErrs}
+	}
+	return s.repository.SubmitPlan(ctx, SubmitPlanParams{
+		WorkspaceID: command.WorkspaceID, MissionID: command.MissionID,
+		CommandID: command.CommandID, CorrelationID: command.CorrelationID,
+		ActorType: "user", ActorID: command.ActorID, ExpectedRevision: command.ExpectedRevision,
+		Plan: PlanFromProposal(proposal), SourceArtifactID: command.ProposalArtifactID, PlanSource: PlanSourceProposal,
 	})
 }
 
@@ -144,6 +245,9 @@ func (s *Service) StartMission(ctx context.Context, command StartMissionCommand)
 	if command.ExpectedRevision < 1 {
 		errs = append(errs, ValidationError{Path: "expected_revision", Code: "invalid_revision", Message: "expected_revision must be at least 1"})
 	}
+	normalizedBindings, bindingErrs := normalizeStartRolePolicyBindings(command.RolePolicyBindings)
+	command.RolePolicyBindings = normalizedBindings
+	errs = append(errs, bindingErrs...)
 	if len(errs) > 0 {
 		return StartMissionResult{}, CommandValidationError{Errors: errs}
 	}
@@ -154,6 +258,7 @@ func (s *Service) StartMission(ctx context.Context, command StartMissionCommand)
 		WorkspaceID: command.WorkspaceID, MissionID: command.MissionID,
 		CommandID: command.CommandID, CorrelationID: command.CorrelationID,
 		ActorID: command.ActorID, ExpectedRevision: command.ExpectedRevision,
+		RolePolicyBindings: command.RolePolicyBindings,
 	})
 }
 

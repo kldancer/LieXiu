@@ -150,6 +150,48 @@ func (q *Queries) ApproveMissionBudgetRecord(ctx context.Context, arg ApproveMis
 	return i, err
 }
 
+const beginMissionPlanning = `-- name: BeginMissionPlanning :one
+UPDATE mission
+SET revision = revision + 1,
+    updated_at = now()
+WHERE issue_id = $1
+  AND workspace_id = $2
+  AND status = 'draft'
+  AND revision = $3
+RETURNING issue_id, workspace_id, status, plan_key, plan_schema_version, plan, limits, next_activity_sequence, revision, created_by, created_at, updated_at, budget_gate_status, budget_grant_tokens, budget_grant_cost_usd_ticks, budget_approved_by, budget_approved_at
+`
+
+type BeginMissionPlanningParams struct {
+	IssueID          pgtype.UUID `json:"issue_id"`
+	WorkspaceID      pgtype.UUID `json:"workspace_id"`
+	ExpectedRevision int64       `json:"expected_revision"`
+}
+
+func (q *Queries) BeginMissionPlanning(ctx context.Context, arg BeginMissionPlanningParams) (Mission, error) {
+	row := q.db.QueryRow(ctx, beginMissionPlanning, arg.IssueID, arg.WorkspaceID, arg.ExpectedRevision)
+	var i Mission
+	err := row.Scan(
+		&i.IssueID,
+		&i.WorkspaceID,
+		&i.Status,
+		&i.PlanKey,
+		&i.PlanSchemaVersion,
+		&i.Plan,
+		&i.Limits,
+		&i.NextActivitySequence,
+		&i.Revision,
+		&i.CreatedBy,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.BudgetGateStatus,
+		&i.BudgetGrantTokens,
+		&i.BudgetGrantCostUsdTicks,
+		&i.BudgetApprovedBy,
+		&i.BudgetApprovedAt,
+	)
+	return i, err
+}
+
 const cancelMissionRecord = `-- name: CancelMissionRecord :one
 UPDATE mission
 SET status = 'cancelled',
@@ -298,6 +340,104 @@ func (q *Queries) CreateArtifactRecord(ctx context.Context, arg CreateArtifactRe
 		&i.Summary,
 		&i.Metadata,
 		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const createMailboxMessage = `-- name: CreateMailboxMessage :one
+INSERT INTO orchestration_mailbox_message (
+    id, workspace_id, mission_id, task_node_id, run_id, artifact_id,
+    reply_to_message_id, schema_version, type, sender_type, sender_id,
+    recipient_type, recipient_id, status, dedupe_key, hops,
+    payload_version, payload, command_id, created_by, created_at,
+    expires_at, status_changed_at
+) VALUES (
+    $1, $2, $3, $4,
+    $5, $6, $7,
+    $8, $9, $10,
+    $11, $12, $13,
+    'pending', $14, $15,
+    $16, $17, $18,
+    $19, $20, $21,
+    $20
+)
+RETURNING id, workspace_id, mission_id, task_node_id, run_id, artifact_id, reply_to_message_id, schema_version, type, sender_type, sender_id, recipient_type, recipient_id, status, dedupe_key, hops, payload_version, payload, command_id, created_by, revision, created_at, expires_at, status_changed_at
+`
+
+type CreateMailboxMessageParams struct {
+	MessageID        pgtype.UUID        `json:"message_id"`
+	WorkspaceID      pgtype.UUID        `json:"workspace_id"`
+	MissionID        pgtype.UUID        `json:"mission_id"`
+	TaskNodeID       pgtype.UUID        `json:"task_node_id"`
+	RunID            pgtype.UUID        `json:"run_id"`
+	ArtifactID       pgtype.UUID        `json:"artifact_id"`
+	ReplyToMessageID pgtype.UUID        `json:"reply_to_message_id"`
+	SchemaVersion    int32              `json:"schema_version"`
+	Type             string             `json:"type"`
+	SenderType       string             `json:"sender_type"`
+	SenderID         pgtype.UUID        `json:"sender_id"`
+	RecipientType    string             `json:"recipient_type"`
+	RecipientID      pgtype.UUID        `json:"recipient_id"`
+	DedupeKey        string             `json:"dedupe_key"`
+	Hops             int32              `json:"hops"`
+	PayloadVersion   int32              `json:"payload_version"`
+	Payload          []byte             `json:"payload"`
+	CommandID        pgtype.UUID        `json:"command_id"`
+	CreatedBy        pgtype.UUID        `json:"created_by"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+	ExpiresAt        pgtype.Timestamptz `json:"expires_at"`
+}
+
+func (q *Queries) CreateMailboxMessage(ctx context.Context, arg CreateMailboxMessageParams) (OrchestrationMailboxMessage, error) {
+	row := q.db.QueryRow(ctx, createMailboxMessage,
+		arg.MessageID,
+		arg.WorkspaceID,
+		arg.MissionID,
+		arg.TaskNodeID,
+		arg.RunID,
+		arg.ArtifactID,
+		arg.ReplyToMessageID,
+		arg.SchemaVersion,
+		arg.Type,
+		arg.SenderType,
+		arg.SenderID,
+		arg.RecipientType,
+		arg.RecipientID,
+		arg.DedupeKey,
+		arg.Hops,
+		arg.PayloadVersion,
+		arg.Payload,
+		arg.CommandID,
+		arg.CreatedBy,
+		arg.CreatedAt,
+		arg.ExpiresAt,
+	)
+	var i OrchestrationMailboxMessage
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.MissionID,
+		&i.TaskNodeID,
+		&i.RunID,
+		&i.ArtifactID,
+		&i.ReplyToMessageID,
+		&i.SchemaVersion,
+		&i.Type,
+		&i.SenderType,
+		&i.SenderID,
+		&i.RecipientType,
+		&i.RecipientID,
+		&i.Status,
+		&i.DedupeKey,
+		&i.Hops,
+		&i.PayloadVersion,
+		&i.Payload,
+		&i.CommandID,
+		&i.CreatedBy,
+		&i.Revision,
+		&i.CreatedAt,
+		&i.ExpiresAt,
+		&i.StatusChangedAt,
 	)
 	return i, err
 }
@@ -567,6 +707,62 @@ func (q *Queries) CreateOrchestrationRun(ctx context.Context, arg CreateOrchestr
 	return i, err
 }
 
+const createPendingHumanGate = `-- name: CreatePendingHumanGate :one
+INSERT INTO orchestration_human_gate (
+    workspace_id, mission_id, task_node_id, artifact_id, source_run_id,
+    kind, reason, context
+) VALUES (
+    $1, $2, $3,
+    $4, $5, $6,
+    $7, $8
+)
+RETURNING id, workspace_id, mission_id, task_node_id, artifact_id, source_run_id, kind, status, reason, context, revision, resolved_by, resolution, resolution_reason, resolved_at, created_at
+`
+
+type CreatePendingHumanGateParams struct {
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+	MissionID   pgtype.UUID `json:"mission_id"`
+	TaskNodeID  pgtype.UUID `json:"task_node_id"`
+	ArtifactID  pgtype.UUID `json:"artifact_id"`
+	SourceRunID pgtype.UUID `json:"source_run_id"`
+	Kind        string      `json:"kind"`
+	Reason      string      `json:"reason"`
+	Context     []byte      `json:"context"`
+}
+
+func (q *Queries) CreatePendingHumanGate(ctx context.Context, arg CreatePendingHumanGateParams) (OrchestrationHumanGate, error) {
+	row := q.db.QueryRow(ctx, createPendingHumanGate,
+		arg.WorkspaceID,
+		arg.MissionID,
+		arg.TaskNodeID,
+		arg.ArtifactID,
+		arg.SourceRunID,
+		arg.Kind,
+		arg.Reason,
+		arg.Context,
+	)
+	var i OrchestrationHumanGate
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.MissionID,
+		&i.TaskNodeID,
+		&i.ArtifactID,
+		&i.SourceRunID,
+		&i.Kind,
+		&i.Status,
+		&i.Reason,
+		&i.Context,
+		&i.Revision,
+		&i.ResolvedBy,
+		&i.Resolution,
+		&i.ResolutionReason,
+		&i.ResolvedAt,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const createReviewVerdictRecord = `-- name: CreateReviewVerdictRecord :one
 INSERT INTO review_verdict (
     workspace_id, mission_id, task_node_id, review_run_id, artifact_id,
@@ -723,6 +919,42 @@ func (q *Queries) EndOrchestrationAssignment(ctx context.Context, arg EndOrchest
 	return i, err
 }
 
+const getActivePlanningAssignment = `-- name: GetActivePlanningAssignment :one
+SELECT id, workspace_id, mission_id, task_node_id, role, agent_id, runtime_id, status, sequence, supersedes_id, created_by, created_at, ended_at FROM orchestration_assignment
+WHERE workspace_id = $1
+  AND mission_id = $2
+  AND task_node_id IS NULL
+  AND role = 'planner'
+  AND status = 'active'
+LIMIT 1
+`
+
+type GetActivePlanningAssignmentParams struct {
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+	MissionID   pgtype.UUID `json:"mission_id"`
+}
+
+func (q *Queries) GetActivePlanningAssignment(ctx context.Context, arg GetActivePlanningAssignmentParams) (OrchestrationAssignment, error) {
+	row := q.db.QueryRow(ctx, getActivePlanningAssignment, arg.WorkspaceID, arg.MissionID)
+	var i OrchestrationAssignment
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.MissionID,
+		&i.TaskNodeID,
+		&i.Role,
+		&i.AgentID,
+		&i.RuntimeID,
+		&i.Status,
+		&i.Sequence,
+		&i.SupersedesID,
+		&i.CreatedBy,
+		&i.CreatedAt,
+		&i.EndedAt,
+	)
+	return i, err
+}
+
 const getArtifactInWorkspace = `-- name: GetArtifactInWorkspace :one
 SELECT id, workspace_id, mission_id, task_node_id, run_id, kind, version, uri, content_hash, summary, metadata, created_at FROM artifact
 WHERE id = $1
@@ -750,6 +982,231 @@ func (q *Queries) GetArtifactInWorkspace(ctx context.Context, arg GetArtifactInW
 		&i.Summary,
 		&i.Metadata,
 		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const getHumanGateInWorkspace = `-- name: GetHumanGateInWorkspace :one
+SELECT id, workspace_id, mission_id, task_node_id, artifact_id, source_run_id, kind, status, reason, context, revision, resolved_by, resolution, resolution_reason, resolved_at, created_at FROM orchestration_human_gate
+WHERE id = $1
+  AND workspace_id = $2
+  AND mission_id = $3
+`
+
+type GetHumanGateInWorkspaceParams struct {
+	GateID      pgtype.UUID `json:"gate_id"`
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+	MissionID   pgtype.UUID `json:"mission_id"`
+}
+
+func (q *Queries) GetHumanGateInWorkspace(ctx context.Context, arg GetHumanGateInWorkspaceParams) (OrchestrationHumanGate, error) {
+	row := q.db.QueryRow(ctx, getHumanGateInWorkspace, arg.GateID, arg.WorkspaceID, arg.MissionID)
+	var i OrchestrationHumanGate
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.MissionID,
+		&i.TaskNodeID,
+		&i.ArtifactID,
+		&i.SourceRunID,
+		&i.Kind,
+		&i.Status,
+		&i.Reason,
+		&i.Context,
+		&i.Revision,
+		&i.ResolvedBy,
+		&i.Resolution,
+		&i.ResolutionReason,
+		&i.ResolvedAt,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const getMailboxMessageByCommand = `-- name: GetMailboxMessageByCommand :one
+SELECT id, workspace_id, mission_id, task_node_id, run_id, artifact_id, reply_to_message_id, schema_version, type, sender_type, sender_id, recipient_type, recipient_id, status, dedupe_key, hops, payload_version, payload, command_id, created_by, revision, created_at, expires_at, status_changed_at FROM orchestration_mailbox_message
+WHERE workspace_id = $1
+  AND command_id = $2
+`
+
+type GetMailboxMessageByCommandParams struct {
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+	CommandID   pgtype.UUID `json:"command_id"`
+}
+
+func (q *Queries) GetMailboxMessageByCommand(ctx context.Context, arg GetMailboxMessageByCommandParams) (OrchestrationMailboxMessage, error) {
+	row := q.db.QueryRow(ctx, getMailboxMessageByCommand, arg.WorkspaceID, arg.CommandID)
+	var i OrchestrationMailboxMessage
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.MissionID,
+		&i.TaskNodeID,
+		&i.RunID,
+		&i.ArtifactID,
+		&i.ReplyToMessageID,
+		&i.SchemaVersion,
+		&i.Type,
+		&i.SenderType,
+		&i.SenderID,
+		&i.RecipientType,
+		&i.RecipientID,
+		&i.Status,
+		&i.DedupeKey,
+		&i.Hops,
+		&i.PayloadVersion,
+		&i.Payload,
+		&i.CommandID,
+		&i.CreatedBy,
+		&i.Revision,
+		&i.CreatedAt,
+		&i.ExpiresAt,
+		&i.StatusChangedAt,
+	)
+	return i, err
+}
+
+const getMailboxMessageByDedupe = `-- name: GetMailboxMessageByDedupe :one
+SELECT id, workspace_id, mission_id, task_node_id, run_id, artifact_id, reply_to_message_id, schema_version, type, sender_type, sender_id, recipient_type, recipient_id, status, dedupe_key, hops, payload_version, payload, command_id, created_by, revision, created_at, expires_at, status_changed_at FROM orchestration_mailbox_message
+WHERE workspace_id = $1
+  AND mission_id = $2
+  AND sender_type = $3
+  AND sender_id IS NOT DISTINCT FROM $4::uuid
+  AND dedupe_key = $5
+`
+
+type GetMailboxMessageByDedupeParams struct {
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+	MissionID   pgtype.UUID `json:"mission_id"`
+	SenderType  string      `json:"sender_type"`
+	SenderID    pgtype.UUID `json:"sender_id"`
+	DedupeKey   string      `json:"dedupe_key"`
+}
+
+func (q *Queries) GetMailboxMessageByDedupe(ctx context.Context, arg GetMailboxMessageByDedupeParams) (OrchestrationMailboxMessage, error) {
+	row := q.db.QueryRow(ctx, getMailboxMessageByDedupe,
+		arg.WorkspaceID,
+		arg.MissionID,
+		arg.SenderType,
+		arg.SenderID,
+		arg.DedupeKey,
+	)
+	var i OrchestrationMailboxMessage
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.MissionID,
+		&i.TaskNodeID,
+		&i.RunID,
+		&i.ArtifactID,
+		&i.ReplyToMessageID,
+		&i.SchemaVersion,
+		&i.Type,
+		&i.SenderType,
+		&i.SenderID,
+		&i.RecipientType,
+		&i.RecipientID,
+		&i.Status,
+		&i.DedupeKey,
+		&i.Hops,
+		&i.PayloadVersion,
+		&i.Payload,
+		&i.CommandID,
+		&i.CreatedBy,
+		&i.Revision,
+		&i.CreatedAt,
+		&i.ExpiresAt,
+		&i.StatusChangedAt,
+	)
+	return i, err
+}
+
+const getMailboxMessageInMission = `-- name: GetMailboxMessageInMission :one
+SELECT id, workspace_id, mission_id, task_node_id, run_id, artifact_id, reply_to_message_id, schema_version, type, sender_type, sender_id, recipient_type, recipient_id, status, dedupe_key, hops, payload_version, payload, command_id, created_by, revision, created_at, expires_at, status_changed_at FROM orchestration_mailbox_message
+WHERE id = $1
+  AND workspace_id = $2
+  AND mission_id = $3
+`
+
+type GetMailboxMessageInMissionParams struct {
+	MessageID   pgtype.UUID `json:"message_id"`
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+	MissionID   pgtype.UUID `json:"mission_id"`
+}
+
+func (q *Queries) GetMailboxMessageInMission(ctx context.Context, arg GetMailboxMessageInMissionParams) (OrchestrationMailboxMessage, error) {
+	row := q.db.QueryRow(ctx, getMailboxMessageInMission, arg.MessageID, arg.WorkspaceID, arg.MissionID)
+	var i OrchestrationMailboxMessage
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.MissionID,
+		&i.TaskNodeID,
+		&i.RunID,
+		&i.ArtifactID,
+		&i.ReplyToMessageID,
+		&i.SchemaVersion,
+		&i.Type,
+		&i.SenderType,
+		&i.SenderID,
+		&i.RecipientType,
+		&i.RecipientID,
+		&i.Status,
+		&i.DedupeKey,
+		&i.Hops,
+		&i.PayloadVersion,
+		&i.Payload,
+		&i.CommandID,
+		&i.CreatedBy,
+		&i.Revision,
+		&i.CreatedAt,
+		&i.ExpiresAt,
+		&i.StatusChangedAt,
+	)
+	return i, err
+}
+
+const getMailboxRunPrincipal = `-- name: GetMailboxRunPrincipal :one
+SELECT
+    run.id,
+    run.mission_id,
+    run.task_node_id,
+    run.assignment_id,
+    assignment.agent_id
+FROM orchestration_run run
+JOIN orchestration_assignment assignment
+  ON assignment.id = run.assignment_id
+ AND assignment.workspace_id = run.workspace_id
+ AND assignment.mission_id = run.mission_id
+ AND assignment.task_node_id IS NOT DISTINCT FROM run.task_node_id
+WHERE run.id = $1
+  AND run.workspace_id = $2
+  AND run.mission_id = $3
+`
+
+type GetMailboxRunPrincipalParams struct {
+	RunID       pgtype.UUID `json:"run_id"`
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+	MissionID   pgtype.UUID `json:"mission_id"`
+}
+
+type GetMailboxRunPrincipalRow struct {
+	ID           pgtype.UUID `json:"id"`
+	MissionID    pgtype.UUID `json:"mission_id"`
+	TaskNodeID   pgtype.UUID `json:"task_node_id"`
+	AssignmentID pgtype.UUID `json:"assignment_id"`
+	AgentID      pgtype.UUID `json:"agent_id"`
+}
+
+func (q *Queries) GetMailboxRunPrincipal(ctx context.Context, arg GetMailboxRunPrincipalParams) (GetMailboxRunPrincipalRow, error) {
+	row := q.db.QueryRow(ctx, getMailboxRunPrincipal, arg.RunID, arg.WorkspaceID, arg.MissionID)
+	var i GetMailboxRunPrincipalRow
+	err := row.Scan(
+		&i.ID,
+		&i.MissionID,
+		&i.TaskNodeID,
+		&i.AssignmentID,
+		&i.AgentID,
 	)
 	return i, err
 }
@@ -784,18 +1241,24 @@ WITH per_run AS (
     GROUP BY run.id, run.status, node.budget_estimate_tokens, node.budget_estimate_cost_usd_ticks
 )
 SELECT
-    COALESCE(SUM(actual_tokens), 0)::bigint AS consumed_tokens,
+    COALESCE(SUM(CASE
+        WHEN status NOT IN ('queued', 'dispatched', 'running') AND usage_rows = 0
+            THEN budget_estimate_tokens
+        ELSE actual_tokens
+    END), 0)::bigint AS consumed_tokens,
     COALESCE(SUM(CASE
         WHEN status IN ('queued', 'dispatched', 'running')
             THEN GREATEST(budget_estimate_tokens - actual_tokens, 0)
-        WHEN usage_rows = 0 THEN budget_estimate_tokens
         ELSE 0
     END), 0)::bigint AS reserved_tokens,
-    COALESCE(SUM(actual_cost_usd_ticks), 0)::bigint AS consumed_cost_usd_ticks,
+    COALESCE(SUM(CASE
+        WHEN status NOT IN ('queued', 'dispatched', 'running') AND authoritative_cost_rows = 0
+            THEN budget_estimate_cost_usd_ticks
+        ELSE actual_cost_usd_ticks
+    END), 0)::bigint AS consumed_cost_usd_ticks,
     COALESCE(SUM(CASE
         WHEN status IN ('queued', 'dispatched', 'running')
             THEN GREATEST(budget_estimate_cost_usd_ticks - actual_cost_usd_ticks, 0)
-        WHEN authoritative_cost_rows = 0 THEN budget_estimate_cost_usd_ticks
         ELSE 0
     END), 0)::bigint AS reserved_cost_usd_ticks
 FROM per_run
@@ -1033,6 +1496,44 @@ func (q *Queries) GetOrchestrationRunInWorkspace(ctx context.Context, arg GetOrc
 	return i, err
 }
 
+const getPendingHumanGateForTask = `-- name: GetPendingHumanGateForTask :one
+SELECT id, workspace_id, mission_id, task_node_id, artifact_id, source_run_id, kind, status, reason, context, revision, resolved_by, resolution, resolution_reason, resolved_at, created_at FROM orchestration_human_gate
+WHERE workspace_id = $1
+  AND mission_id = $2
+  AND task_node_id = $3
+  AND status = 'pending'
+`
+
+type GetPendingHumanGateForTaskParams struct {
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+	MissionID   pgtype.UUID `json:"mission_id"`
+	TaskNodeID  pgtype.UUID `json:"task_node_id"`
+}
+
+func (q *Queries) GetPendingHumanGateForTask(ctx context.Context, arg GetPendingHumanGateForTaskParams) (OrchestrationHumanGate, error) {
+	row := q.db.QueryRow(ctx, getPendingHumanGateForTask, arg.WorkspaceID, arg.MissionID, arg.TaskNodeID)
+	var i OrchestrationHumanGate
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.MissionID,
+		&i.TaskNodeID,
+		&i.ArtifactID,
+		&i.SourceRunID,
+		&i.Kind,
+		&i.Status,
+		&i.Reason,
+		&i.Context,
+		&i.Revision,
+		&i.ResolvedBy,
+		&i.Resolution,
+		&i.ResolutionReason,
+		&i.ResolvedAt,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const getReviewVerdictByRun = `-- name: GetReviewVerdictByRun :one
 SELECT id, workspace_id, mission_id, task_node_id, review_run_id, artifact_id, decision, evidence, requested_changes, created_at FROM review_verdict
 WHERE review_run_id = $1
@@ -1189,6 +1690,65 @@ func (q *Queries) ListArtifactsByMission(ctx context.Context, arg ListArtifactsB
 	return items, nil
 }
 
+const listExpiredMailboxMessages = `-- name: ListExpiredMailboxMessages :many
+SELECT id, workspace_id, mission_id, task_node_id, run_id, artifact_id, reply_to_message_id, schema_version, type, sender_type, sender_id, recipient_type, recipient_id, status, dedupe_key, hops, payload_version, payload, command_id, created_by, revision, created_at, expires_at, status_changed_at
+FROM orchestration_mailbox_message
+WHERE status = 'pending'
+  AND expires_at <= $1
+ORDER BY expires_at ASC, id ASC
+LIMIT $2
+`
+
+type ListExpiredMailboxMessagesParams struct {
+	ObservedAt pgtype.Timestamptz `json:"observed_at"`
+	PageSize   int32              `json:"page_size"`
+}
+
+func (q *Queries) ListExpiredMailboxMessages(ctx context.Context, arg ListExpiredMailboxMessagesParams) ([]OrchestrationMailboxMessage, error) {
+	rows, err := q.db.Query(ctx, listExpiredMailboxMessages, arg.ObservedAt, arg.PageSize)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []OrchestrationMailboxMessage{}
+	for rows.Next() {
+		var i OrchestrationMailboxMessage
+		if err := rows.Scan(
+			&i.ID,
+			&i.WorkspaceID,
+			&i.MissionID,
+			&i.TaskNodeID,
+			&i.RunID,
+			&i.ArtifactID,
+			&i.ReplyToMessageID,
+			&i.SchemaVersion,
+			&i.Type,
+			&i.SenderType,
+			&i.SenderID,
+			&i.RecipientType,
+			&i.RecipientID,
+			&i.Status,
+			&i.DedupeKey,
+			&i.Hops,
+			&i.PayloadVersion,
+			&i.Payload,
+			&i.CommandID,
+			&i.CreatedBy,
+			&i.Revision,
+			&i.CreatedAt,
+			&i.ExpiresAt,
+			&i.StatusChangedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listOrchestrationActivitiesAfterSequence = `-- name: ListOrchestrationActivitiesAfterSequence :many
 SELECT id, workspace_id, mission_id, task_node_id, run_id, type, actor_type, actor_id, subject_type, subject_id, causation_id, correlation_id, payload_version, payload, dedupe_key, sequence, occurred_at FROM orchestration_activity
 WHERE workspace_id = $1
@@ -1289,6 +1849,130 @@ func (q *Queries) ListOrchestrationActivitiesByCausation(ctx context.Context, ar
 			&i.DedupeKey,
 			&i.Sequence,
 			&i.OccurredAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listOrchestrationAgentRoutingFacts = `-- name: ListOrchestrationAgentRoutingFacts :many
+SELECT
+    agent.id AS agent_id,
+    agent.runtime_id,
+    agent.created_at AS agent_created_at,
+    agent.archived_at,
+    agent.owner_id AS agent_owner_id,
+    agent.permission_mode,
+    agent.model,
+    agent.max_concurrent_tasks,
+    runtime.status AS runtime_status,
+    runtime.provider AS runtime_provider,
+    runtime.metadata AS runtime_metadata,
+    runtime.owner_id AS runtime_owner_id,
+    runtime.visibility AS runtime_visibility,
+    (
+        (SELECT count(*)
+         FROM orchestration_run active_run
+         JOIN orchestration_assignment active_assignment
+           ON active_assignment.id = active_run.assignment_id
+          AND active_assignment.workspace_id = $1
+          AND active_assignment.mission_id = active_run.mission_id
+         WHERE active_run.workspace_id = $1
+           AND active_assignment.agent_id = agent.id
+           AND active_run.status IN ('queued', 'dispatched', 'running'))
+        +
+        (SELECT count(*)
+         FROM agent_task_queue active_task
+         JOIN issue task_issue
+           ON task_issue.id = active_task.issue_id
+          AND task_issue.workspace_id = $1
+         WHERE active_task.agent_id = agent.id
+           AND active_task.orchestration_run_id IS NULL
+           AND active_task.status IN ('queued', 'deferred', 'dispatched', 'waiting_local_directory', 'running'))
+    )::bigint AS current_load,
+    EXISTS (
+        SELECT 1
+        FROM agent_invocation_target workspace_target
+        WHERE workspace_target.agent_id = agent.id
+          AND workspace_target.target_type = 'workspace'
+          AND workspace_target.target_id = $1::uuid
+    ) AS has_workspace_invocation_target,
+    EXISTS (
+        SELECT 1
+        FROM agent_invocation_target member_target
+        WHERE member_target.agent_id = agent.id
+          AND member_target.target_type = 'member'
+          AND member_target.target_id = $2::uuid
+    ) AS has_member_invocation_target,
+    agent.workspace_id
+FROM agent
+LEFT JOIN agent_runtime runtime
+  ON runtime.id = agent.runtime_id
+ AND runtime.workspace_id = agent.workspace_id
+WHERE agent.workspace_id = $1
+`
+
+type ListOrchestrationAgentRoutingFactsParams struct {
+	WorkspaceID     pgtype.UUID `json:"workspace_id"`
+	EffectiveUserID pgtype.UUID `json:"effective_user_id"`
+}
+
+type ListOrchestrationAgentRoutingFactsRow struct {
+	AgentID                      pgtype.UUID        `json:"agent_id"`
+	RuntimeID                    pgtype.UUID        `json:"runtime_id"`
+	AgentCreatedAt               pgtype.Timestamptz `json:"agent_created_at"`
+	ArchivedAt                   pgtype.Timestamptz `json:"archived_at"`
+	AgentOwnerID                 pgtype.UUID        `json:"agent_owner_id"`
+	PermissionMode               string             `json:"permission_mode"`
+	Model                        pgtype.Text        `json:"model"`
+	MaxConcurrentTasks           int32              `json:"max_concurrent_tasks"`
+	RuntimeStatus                pgtype.Text        `json:"runtime_status"`
+	RuntimeProvider              pgtype.Text        `json:"runtime_provider"`
+	RuntimeMetadata              []byte             `json:"runtime_metadata"`
+	RuntimeOwnerID               pgtype.UUID        `json:"runtime_owner_id"`
+	RuntimeVisibility            pgtype.Text        `json:"runtime_visibility"`
+	CurrentLoad                  int64              `json:"current_load"`
+	HasWorkspaceInvocationTarget bool               `json:"has_workspace_invocation_target"`
+	HasMemberInvocationTarget    bool               `json:"has_member_invocation_target"`
+	WorkspaceID                  pgtype.UUID        `json:"workspace_id"`
+}
+
+// Read-only routing inventory.  Keep archived and unbound agents in the
+// result so the selector can explain those outcomes instead of treating them
+// as missing data.  Runtime columns are nullable because the agent/runtime
+// relationship is intentionally a LEFT JOIN in this diagnostic query.
+func (q *Queries) ListOrchestrationAgentRoutingFacts(ctx context.Context, arg ListOrchestrationAgentRoutingFactsParams) ([]ListOrchestrationAgentRoutingFactsRow, error) {
+	rows, err := q.db.Query(ctx, listOrchestrationAgentRoutingFacts, arg.WorkspaceID, arg.EffectiveUserID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListOrchestrationAgentRoutingFactsRow{}
+	for rows.Next() {
+		var i ListOrchestrationAgentRoutingFactsRow
+		if err := rows.Scan(
+			&i.AgentID,
+			&i.RuntimeID,
+			&i.AgentCreatedAt,
+			&i.ArchivedAt,
+			&i.AgentOwnerID,
+			&i.PermissionMode,
+			&i.Model,
+			&i.MaxConcurrentTasks,
+			&i.RuntimeStatus,
+			&i.RuntimeProvider,
+			&i.RuntimeMetadata,
+			&i.RuntimeOwnerID,
+			&i.RuntimeVisibility,
+			&i.CurrentLoad,
+			&i.HasWorkspaceInvocationTarget,
+			&i.HasMemberInvocationTarget,
+			&i.WorkspaceID,
 		); err != nil {
 			return nil, err
 		}
@@ -1425,6 +2109,187 @@ func (q *Queries) ListOrchestrationRunsByMission(ctx context.Context, arg ListOr
 			&i.StartedAt,
 			&i.FinishedAt,
 			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listPendingHumanGatesByMission = `-- name: ListPendingHumanGatesByMission :many
+SELECT id, workspace_id, mission_id, task_node_id, artifact_id, source_run_id, kind, status, reason, context, revision, resolved_by, resolution, resolution_reason, resolved_at, created_at FROM orchestration_human_gate
+WHERE workspace_id = $1
+  AND mission_id = $2
+  AND status = 'pending'
+ORDER BY created_at, id
+`
+
+type ListPendingHumanGatesByMissionParams struct {
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+	MissionID   pgtype.UUID `json:"mission_id"`
+}
+
+func (q *Queries) ListPendingHumanGatesByMission(ctx context.Context, arg ListPendingHumanGatesByMissionParams) ([]OrchestrationHumanGate, error) {
+	rows, err := q.db.Query(ctx, listPendingHumanGatesByMission, arg.WorkspaceID, arg.MissionID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []OrchestrationHumanGate{}
+	for rows.Next() {
+		var i OrchestrationHumanGate
+		if err := rows.Scan(
+			&i.ID,
+			&i.WorkspaceID,
+			&i.MissionID,
+			&i.TaskNodeID,
+			&i.ArtifactID,
+			&i.SourceRunID,
+			&i.Kind,
+			&i.Status,
+			&i.Reason,
+			&i.Context,
+			&i.Revision,
+			&i.ResolvedBy,
+			&i.Resolution,
+			&i.ResolutionReason,
+			&i.ResolvedAt,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listPendingMailboxMessagesForRun = `-- name: ListPendingMailboxMessagesForRun :many
+SELECT id, workspace_id, mission_id, task_node_id, run_id, artifact_id, reply_to_message_id, schema_version, type, sender_type, sender_id, recipient_type, recipient_id, status, dedupe_key, hops, payload_version, payload, command_id, created_by, revision, created_at, expires_at, status_changed_at
+FROM orchestration_mailbox_message
+WHERE workspace_id = $1
+  AND mission_id = $2
+  AND recipient_type = 'agent'
+  AND recipient_id = $3
+  AND status = 'pending'
+  AND created_at <= $4
+  AND expires_at > $4
+  AND (
+      task_node_id IS NULL
+      OR task_node_id = $5::uuid
+  )
+ORDER BY created_at ASC, id ASC
+LIMIT $6
+FOR UPDATE
+`
+
+type ListPendingMailboxMessagesForRunParams struct {
+	WorkspaceID      pgtype.UUID        `json:"workspace_id"`
+	MissionID        pgtype.UUID        `json:"mission_id"`
+	RecipientAgentID pgtype.UUID        `json:"recipient_agent_id"`
+	ObservedAt       pgtype.Timestamptz `json:"observed_at"`
+	TaskNodeID       pgtype.UUID        `json:"task_node_id"`
+	PageSize         int32              `json:"page_size"`
+}
+
+func (q *Queries) ListPendingMailboxMessagesForRun(ctx context.Context, arg ListPendingMailboxMessagesForRunParams) ([]OrchestrationMailboxMessage, error) {
+	rows, err := q.db.Query(ctx, listPendingMailboxMessagesForRun,
+		arg.WorkspaceID,
+		arg.MissionID,
+		arg.RecipientAgentID,
+		arg.ObservedAt,
+		arg.TaskNodeID,
+		arg.PageSize,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []OrchestrationMailboxMessage{}
+	for rows.Next() {
+		var i OrchestrationMailboxMessage
+		if err := rows.Scan(
+			&i.ID,
+			&i.WorkspaceID,
+			&i.MissionID,
+			&i.TaskNodeID,
+			&i.RunID,
+			&i.ArtifactID,
+			&i.ReplyToMessageID,
+			&i.SchemaVersion,
+			&i.Type,
+			&i.SenderType,
+			&i.SenderID,
+			&i.RecipientType,
+			&i.RecipientID,
+			&i.Status,
+			&i.DedupeKey,
+			&i.Hops,
+			&i.PayloadVersion,
+			&i.Payload,
+			&i.CommandID,
+			&i.CreatedBy,
+			&i.Revision,
+			&i.CreatedAt,
+			&i.ExpiresAt,
+			&i.StatusChangedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listPlanProposalDecisionActivities = `-- name: ListPlanProposalDecisionActivities :many
+SELECT id, workspace_id, mission_id, task_node_id, run_id, type, actor_type, actor_id, subject_type, subject_id, causation_id, correlation_id, payload_version, payload, dedupe_key, sequence, occurred_at FROM orchestration_activity
+WHERE workspace_id = $1
+  AND mission_id = $2
+  AND type IN ('plan_proposal.edited', 'plan_proposal.rejected', 'mission.plan_accepted')
+ORDER BY sequence ASC
+`
+
+type ListPlanProposalDecisionActivitiesParams struct {
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+	MissionID   pgtype.UUID `json:"mission_id"`
+}
+
+func (q *Queries) ListPlanProposalDecisionActivities(ctx context.Context, arg ListPlanProposalDecisionActivitiesParams) ([]OrchestrationActivity, error) {
+	rows, err := q.db.Query(ctx, listPlanProposalDecisionActivities, arg.WorkspaceID, arg.MissionID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []OrchestrationActivity{}
+	for rows.Next() {
+		var i OrchestrationActivity
+		if err := rows.Scan(
+			&i.ID,
+			&i.WorkspaceID,
+			&i.MissionID,
+			&i.TaskNodeID,
+			&i.RunID,
+			&i.Type,
+			&i.ActorType,
+			&i.ActorID,
+			&i.SubjectType,
+			&i.SubjectID,
+			&i.CausationID,
+			&i.CorrelationID,
+			&i.PayloadVersion,
+			&i.Payload,
+			&i.DedupeKey,
+			&i.Sequence,
+			&i.OccurredAt,
 		); err != nil {
 			return nil, err
 		}
@@ -1807,6 +2672,71 @@ func (q *Queries) LockAgentTaskByOrchestrationRun(ctx context.Context, arg LockA
 	return i, err
 }
 
+const lockMailboxCommand = `-- name: LockMailboxCommand :exec
+SELECT pg_advisory_xact_lock(
+    hashtextextended(
+        $1::uuid::text || ':mailbox-command:' || $2::uuid::text,
+        0
+    )
+)
+`
+
+type LockMailboxCommandParams struct {
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+	CommandID   pgtype.UUID `json:"command_id"`
+}
+
+func (q *Queries) LockMailboxCommand(ctx context.Context, arg LockMailboxCommandParams) error {
+	_, err := q.db.Exec(ctx, lockMailboxCommand, arg.WorkspaceID, arg.CommandID)
+	return err
+}
+
+const lockMailboxMessageInMission = `-- name: LockMailboxMessageInMission :one
+SELECT id, workspace_id, mission_id, task_node_id, run_id, artifact_id, reply_to_message_id, schema_version, type, sender_type, sender_id, recipient_type, recipient_id, status, dedupe_key, hops, payload_version, payload, command_id, created_by, revision, created_at, expires_at, status_changed_at FROM orchestration_mailbox_message
+WHERE id = $1
+  AND workspace_id = $2
+  AND mission_id = $3
+FOR UPDATE
+`
+
+type LockMailboxMessageInMissionParams struct {
+	MessageID   pgtype.UUID `json:"message_id"`
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+	MissionID   pgtype.UUID `json:"mission_id"`
+}
+
+func (q *Queries) LockMailboxMessageInMission(ctx context.Context, arg LockMailboxMessageInMissionParams) (OrchestrationMailboxMessage, error) {
+	row := q.db.QueryRow(ctx, lockMailboxMessageInMission, arg.MessageID, arg.WorkspaceID, arg.MissionID)
+	var i OrchestrationMailboxMessage
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.MissionID,
+		&i.TaskNodeID,
+		&i.RunID,
+		&i.ArtifactID,
+		&i.ReplyToMessageID,
+		&i.SchemaVersion,
+		&i.Type,
+		&i.SenderType,
+		&i.SenderID,
+		&i.RecipientType,
+		&i.RecipientID,
+		&i.Status,
+		&i.DedupeKey,
+		&i.Hops,
+		&i.PayloadVersion,
+		&i.Payload,
+		&i.CommandID,
+		&i.CreatedBy,
+		&i.Revision,
+		&i.CreatedAt,
+		&i.ExpiresAt,
+		&i.StatusChangedAt,
+	)
+	return i, err
+}
+
 const lockMissionInWorkspace = `-- name: LockMissionInWorkspace :one
 SELECT issue_id, workspace_id, status, plan_key, plan_schema_version, plan, limits, next_activity_sequence, revision, created_by, created_at, updated_at, budget_gate_status, budget_grant_tokens, budget_grant_cost_usd_ticks, budget_approved_by, budget_approved_at FROM mission
 WHERE issue_id = $1
@@ -1844,25 +2774,145 @@ func (q *Queries) LockMissionInWorkspace(ctx context.Context, arg LockMissionInW
 	return i, err
 }
 
+const lockOrchestrationAgentRoutingFacts = `-- name: LockOrchestrationAgentRoutingFacts :one
+SELECT
+    agent.id AS agent_id,
+    agent.runtime_id,
+    agent.created_at AS agent_created_at,
+    agent.archived_at,
+    agent.owner_id AS agent_owner_id,
+    agent.permission_mode,
+    agent.model,
+    agent.max_concurrent_tasks,
+    runtime.status AS runtime_status,
+    runtime.provider AS runtime_provider,
+    runtime.metadata AS runtime_metadata,
+    runtime.owner_id AS runtime_owner_id,
+    runtime.visibility AS runtime_visibility,
+    (
+        (SELECT count(*)
+         FROM orchestration_run active_run
+         JOIN orchestration_assignment active_assignment
+           ON active_assignment.id = active_run.assignment_id
+          AND active_assignment.workspace_id = $1
+          AND active_assignment.mission_id = active_run.mission_id
+         WHERE active_run.workspace_id = $1
+           AND active_assignment.agent_id = agent.id
+           AND active_run.status IN ('queued', 'dispatched', 'running'))
+        +
+        (SELECT count(*)
+         FROM agent_task_queue active_task
+         JOIN issue task_issue
+           ON task_issue.id = active_task.issue_id
+          AND task_issue.workspace_id = $1
+         WHERE active_task.agent_id = agent.id
+           AND active_task.orchestration_run_id IS NULL
+           AND active_task.status IN ('queued', 'deferred', 'dispatched', 'waiting_local_directory', 'running'))
+    )::bigint AS current_load,
+    EXISTS (
+        SELECT 1
+        FROM agent_invocation_target workspace_target
+        WHERE workspace_target.agent_id = agent.id
+          AND workspace_target.target_type = 'workspace'
+          AND workspace_target.target_id = $1::uuid
+    ) AS has_workspace_invocation_target,
+    EXISTS (
+        SELECT 1
+        FROM agent_invocation_target member_target
+        WHERE member_target.agent_id = agent.id
+          AND member_target.target_type = 'member'
+          AND member_target.target_id = $2::uuid
+    ) AS has_member_invocation_target,
+    agent.workspace_id
+FROM agent
+JOIN agent_runtime runtime
+  ON runtime.id = agent.runtime_id
+ AND runtime.workspace_id = agent.workspace_id
+WHERE agent.workspace_id = $1
+  AND agent.id = $3
+  AND agent.archived_at IS NULL
+  AND agent.runtime_id IS NOT NULL
+  AND runtime.status = 'online'
+FOR UPDATE OF agent, runtime
+`
+
+type LockOrchestrationAgentRoutingFactsParams struct {
+	WorkspaceID     pgtype.UUID `json:"workspace_id"`
+	EffectiveUserID pgtype.UUID `json:"effective_user_id"`
+	AgentID         pgtype.UUID `json:"agent_id"`
+}
+
+type LockOrchestrationAgentRoutingFactsRow struct {
+	AgentID                      pgtype.UUID        `json:"agent_id"`
+	RuntimeID                    pgtype.UUID        `json:"runtime_id"`
+	AgentCreatedAt               pgtype.Timestamptz `json:"agent_created_at"`
+	ArchivedAt                   pgtype.Timestamptz `json:"archived_at"`
+	AgentOwnerID                 pgtype.UUID        `json:"agent_owner_id"`
+	PermissionMode               string             `json:"permission_mode"`
+	Model                        pgtype.Text        `json:"model"`
+	MaxConcurrentTasks           int32              `json:"max_concurrent_tasks"`
+	RuntimeStatus                string             `json:"runtime_status"`
+	RuntimeProvider              string             `json:"runtime_provider"`
+	RuntimeMetadata              []byte             `json:"runtime_metadata"`
+	RuntimeOwnerID               pgtype.UUID        `json:"runtime_owner_id"`
+	RuntimeVisibility            string             `json:"runtime_visibility"`
+	CurrentLoad                  int64              `json:"current_load"`
+	HasWorkspaceInvocationTarget bool               `json:"has_workspace_invocation_target"`
+	HasMemberInvocationTarget    bool               `json:"has_member_invocation_target"`
+	WorkspaceID                  pgtype.UUID        `json:"workspace_id"`
+}
+
+// Lock and re-read one currently bindable pair.  The selector must perform
+// its capacity decision from this post-lock load, not from the unlocked list.
+func (q *Queries) LockOrchestrationAgentRoutingFacts(ctx context.Context, arg LockOrchestrationAgentRoutingFactsParams) (LockOrchestrationAgentRoutingFactsRow, error) {
+	row := q.db.QueryRow(ctx, lockOrchestrationAgentRoutingFacts, arg.WorkspaceID, arg.EffectiveUserID, arg.AgentID)
+	var i LockOrchestrationAgentRoutingFactsRow
+	err := row.Scan(
+		&i.AgentID,
+		&i.RuntimeID,
+		&i.AgentCreatedAt,
+		&i.ArchivedAt,
+		&i.AgentOwnerID,
+		&i.PermissionMode,
+		&i.Model,
+		&i.MaxConcurrentTasks,
+		&i.RuntimeStatus,
+		&i.RuntimeProvider,
+		&i.RuntimeMetadata,
+		&i.RuntimeOwnerID,
+		&i.RuntimeVisibility,
+		&i.CurrentLoad,
+		&i.HasWorkspaceInvocationTarget,
+		&i.HasMemberInvocationTarget,
+		&i.WorkspaceID,
+	)
+	return i, err
+}
+
 const lockOrchestrationRunForEnqueue = `-- name: LockOrchestrationRunForEnqueue :one
 SELECT
     run.id AS run_id,
     run.mission_id,
     run.task_node_id,
+    COALESCE(run.task_node_id, run.mission_id)::uuid AS issue_id,
     run.assignment_id,
     run.purpose,
+    run.input AS run_input,
     run.attempt,
     run.status AS run_status,
     assignment.agent_id,
     assignment.runtime_id,
-    node.priority AS task_priority
+    COALESCE(node.priority, 0)::integer AS task_priority
 FROM orchestration_run run
 JOIN orchestration_assignment assignment
   ON assignment.id = run.assignment_id
  AND assignment.workspace_id = run.workspace_id
  AND assignment.mission_id = run.mission_id
- AND assignment.task_node_id = run.task_node_id
-JOIN task_node node
+ AND assignment.task_node_id IS NOT DISTINCT FROM run.task_node_id
+JOIN mission
+  ON mission.issue_id = run.mission_id
+ AND mission.workspace_id = run.workspace_id
+LEFT JOIN task_node node
   ON node.issue_id = run.task_node_id
  AND node.workspace_id = run.workspace_id
  AND node.mission_id = run.mission_id
@@ -1871,6 +2921,8 @@ WHERE run.id = $1
   AND run.status = 'queued'
   AND assignment.status = 'active'
   AND (
+    (run.purpose = 'plan' AND run.task_node_id IS NULL AND mission.status = 'draft')
+    OR
     (run.purpose = 'review' AND node.status = 'review')
     OR
     (run.purpose IN ('execute', 'integrate') AND node.status = 'assigned')
@@ -1887,8 +2939,10 @@ type LockOrchestrationRunForEnqueueRow struct {
 	RunID        pgtype.UUID `json:"run_id"`
 	MissionID    pgtype.UUID `json:"mission_id"`
 	TaskNodeID   pgtype.UUID `json:"task_node_id"`
+	IssueID      pgtype.UUID `json:"issue_id"`
 	AssignmentID pgtype.UUID `json:"assignment_id"`
 	Purpose      string      `json:"purpose"`
+	RunInput     []byte      `json:"run_input"`
 	Attempt      int32       `json:"attempt"`
 	RunStatus    string      `json:"run_status"`
 	AgentID      pgtype.UUID `json:"agent_id"`
@@ -1903,8 +2957,10 @@ func (q *Queries) LockOrchestrationRunForEnqueue(ctx context.Context, arg LockOr
 		&i.RunID,
 		&i.MissionID,
 		&i.TaskNodeID,
+		&i.IssueID,
 		&i.AssignmentID,
 		&i.Purpose,
+		&i.RunInput,
 		&i.Attempt,
 		&i.RunStatus,
 		&i.AgentID,
@@ -1946,6 +3002,45 @@ func (q *Queries) LockOrchestrationRunForReconcile(ctx context.Context, arg Lock
 		&i.TimeoutSeconds,
 		&i.StartedAt,
 		&i.FinishedAt,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const lockPendingHumanGate = `-- name: LockPendingHumanGate :one
+SELECT id, workspace_id, mission_id, task_node_id, artifact_id, source_run_id, kind, status, reason, context, revision, resolved_by, resolution, resolution_reason, resolved_at, created_at FROM orchestration_human_gate
+WHERE id = $1
+  AND workspace_id = $2
+  AND mission_id = $3
+  AND status = 'pending'
+FOR UPDATE
+`
+
+type LockPendingHumanGateParams struct {
+	GateID      pgtype.UUID `json:"gate_id"`
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+	MissionID   pgtype.UUID `json:"mission_id"`
+}
+
+func (q *Queries) LockPendingHumanGate(ctx context.Context, arg LockPendingHumanGateParams) (OrchestrationHumanGate, error) {
+	row := q.db.QueryRow(ctx, lockPendingHumanGate, arg.GateID, arg.WorkspaceID, arg.MissionID)
+	var i OrchestrationHumanGate
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.MissionID,
+		&i.TaskNodeID,
+		&i.ArtifactID,
+		&i.SourceRunID,
+		&i.Kind,
+		&i.Status,
+		&i.Reason,
+		&i.Context,
+		&i.Revision,
+		&i.ResolvedBy,
+		&i.Resolution,
+		&i.ResolutionReason,
+		&i.ResolvedAt,
 		&i.CreatedAt,
 	)
 	return i, err
@@ -2058,6 +3153,207 @@ func (q *Queries) NextArtifactVersion(ctx context.Context, arg NextArtifactVersi
 	var column_1 int32
 	err := row.Scan(&column_1)
 	return column_1, err
+}
+
+const nextPlanProposalVersion = `-- name: NextPlanProposalVersion :one
+SELECT COALESCE(max(version), 0)::int + 1
+FROM artifact
+WHERE workspace_id = $1
+  AND mission_id = $2
+  AND task_node_id IS NULL
+  AND kind = 'plan_proposal'
+`
+
+type NextPlanProposalVersionParams struct {
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+	MissionID   pgtype.UUID `json:"mission_id"`
+}
+
+func (q *Queries) NextPlanProposalVersion(ctx context.Context, arg NextPlanProposalVersionParams) (int32, error) {
+	row := q.db.QueryRow(ctx, nextPlanProposalVersion, arg.WorkspaceID, arg.MissionID)
+	var column_1 int32
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
+const nextPlanningAssignmentSequence = `-- name: NextPlanningAssignmentSequence :one
+SELECT COALESCE(max(sequence), 0)::integer + 1
+FROM orchestration_assignment
+WHERE workspace_id = $1
+  AND mission_id = $2
+  AND task_node_id IS NULL
+  AND role = 'planner'
+`
+
+type NextPlanningAssignmentSequenceParams struct {
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+	MissionID   pgtype.UUID `json:"mission_id"`
+}
+
+func (q *Queries) NextPlanningAssignmentSequence(ctx context.Context, arg NextPlanningAssignmentSequenceParams) (int32, error) {
+	row := q.db.QueryRow(ctx, nextPlanningAssignmentSequence, arg.WorkspaceID, arg.MissionID)
+	var column_1 int32
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
+const resolvePendingHumanGate = `-- name: ResolvePendingHumanGate :one
+UPDATE orchestration_human_gate
+SET status = 'resolved',
+    resolved_by = $1,
+    resolution = $2,
+    resolution_reason = $3,
+    resolved_at = now(),
+    revision = revision + 1
+WHERE id = $4
+  AND workspace_id = $5
+  AND mission_id = $6
+  AND status = 'pending'
+  AND revision = $7
+RETURNING id, workspace_id, mission_id, task_node_id, artifact_id, source_run_id, kind, status, reason, context, revision, resolved_by, resolution, resolution_reason, resolved_at, created_at
+`
+
+type ResolvePendingHumanGateParams struct {
+	ResolvedBy       pgtype.UUID `json:"resolved_by"`
+	Resolution       pgtype.Text `json:"resolution"`
+	ResolutionReason pgtype.Text `json:"resolution_reason"`
+	GateID           pgtype.UUID `json:"gate_id"`
+	WorkspaceID      pgtype.UUID `json:"workspace_id"`
+	MissionID        pgtype.UUID `json:"mission_id"`
+	ExpectedRevision int64       `json:"expected_revision"`
+}
+
+func (q *Queries) ResolvePendingHumanGate(ctx context.Context, arg ResolvePendingHumanGateParams) (OrchestrationHumanGate, error) {
+	row := q.db.QueryRow(ctx, resolvePendingHumanGate,
+		arg.ResolvedBy,
+		arg.Resolution,
+		arg.ResolutionReason,
+		arg.GateID,
+		arg.WorkspaceID,
+		arg.MissionID,
+		arg.ExpectedRevision,
+	)
+	var i OrchestrationHumanGate
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.MissionID,
+		&i.TaskNodeID,
+		&i.ArtifactID,
+		&i.SourceRunID,
+		&i.Kind,
+		&i.Status,
+		&i.Reason,
+		&i.Context,
+		&i.Revision,
+		&i.ResolvedBy,
+		&i.Resolution,
+		&i.ResolutionReason,
+		&i.ResolvedAt,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const restoreTaskNodeForReviewerGate = `-- name: RestoreTaskNodeForReviewerGate :one
+UPDATE task_node
+SET status = 'review',
+    block_reason = NULL,
+    revision = revision + 1,
+    updated_at = now()
+WHERE issue_id = $1
+  AND workspace_id = $2
+  AND mission_id = $3
+  AND status = 'blocked'
+  AND revision = $4
+RETURNING issue_id, workspace_id, mission_id, node_key, role, acceptance_criteria, artifact_kinds, priority, status, block_reason, rework_count, revision, created_at, updated_at, budget_estimate_tokens, budget_estimate_cost_usd_ticks
+`
+
+type RestoreTaskNodeForReviewerGateParams struct {
+	TaskNodeID       pgtype.UUID `json:"task_node_id"`
+	WorkspaceID      pgtype.UUID `json:"workspace_id"`
+	MissionID        pgtype.UUID `json:"mission_id"`
+	ExpectedRevision int64       `json:"expected_revision"`
+}
+
+func (q *Queries) RestoreTaskNodeForReviewerGate(ctx context.Context, arg RestoreTaskNodeForReviewerGateParams) (TaskNode, error) {
+	row := q.db.QueryRow(ctx, restoreTaskNodeForReviewerGate,
+		arg.TaskNodeID,
+		arg.WorkspaceID,
+		arg.MissionID,
+		arg.ExpectedRevision,
+	)
+	var i TaskNode
+	err := row.Scan(
+		&i.IssueID,
+		&i.WorkspaceID,
+		&i.MissionID,
+		&i.NodeKey,
+		&i.Role,
+		&i.AcceptanceCriteria,
+		&i.ArtifactKinds,
+		&i.Priority,
+		&i.Status,
+		&i.BlockReason,
+		&i.ReworkCount,
+		&i.Revision,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.BudgetEstimateTokens,
+		&i.BudgetEstimateCostUsdTicks,
+	)
+	return i, err
+}
+
+const restoreTaskNodeForReworkGate = `-- name: RestoreTaskNodeForReworkGate :one
+UPDATE task_node
+SET status = 'rework',
+    block_reason = NULL,
+    rework_count = rework_count + 1,
+    revision = revision + 1,
+    updated_at = now()
+WHERE issue_id = $1
+  AND workspace_id = $2
+  AND mission_id = $3
+  AND status = 'blocked'
+  AND revision = $4
+RETURNING issue_id, workspace_id, mission_id, node_key, role, acceptance_criteria, artifact_kinds, priority, status, block_reason, rework_count, revision, created_at, updated_at, budget_estimate_tokens, budget_estimate_cost_usd_ticks
+`
+
+type RestoreTaskNodeForReworkGateParams struct {
+	TaskNodeID       pgtype.UUID `json:"task_node_id"`
+	WorkspaceID      pgtype.UUID `json:"workspace_id"`
+	MissionID        pgtype.UUID `json:"mission_id"`
+	ExpectedRevision int64       `json:"expected_revision"`
+}
+
+func (q *Queries) RestoreTaskNodeForReworkGate(ctx context.Context, arg RestoreTaskNodeForReworkGateParams) (TaskNode, error) {
+	row := q.db.QueryRow(ctx, restoreTaskNodeForReworkGate,
+		arg.TaskNodeID,
+		arg.WorkspaceID,
+		arg.MissionID,
+		arg.ExpectedRevision,
+	)
+	var i TaskNode
+	err := row.Scan(
+		&i.IssueID,
+		&i.WorkspaceID,
+		&i.MissionID,
+		&i.NodeKey,
+		&i.Role,
+		&i.AcceptanceCriteria,
+		&i.ArtifactKinds,
+		&i.Priority,
+		&i.Status,
+		&i.BlockReason,
+		&i.ReworkCount,
+		&i.Revision,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.BudgetEstimateTokens,
+		&i.BudgetEstimateCostUsdTicks,
+	)
+	return i, err
 }
 
 const resumeMissionForTaskRetry = `-- name: ResumeMissionForTaskRetry :one
@@ -2247,51 +3543,6 @@ func (q *Queries) RevokeMissionAssignments(ctx context.Context, arg RevokeMissio
 	return items, nil
 }
 
-const selectOrchestrationAgentCandidate = `-- name: SelectOrchestrationAgentCandidate :one
-SELECT agent.id AS agent_id, agent.runtime_id
-FROM agent
-JOIN agent_runtime runtime
-  ON runtime.id = agent.runtime_id
- AND runtime.workspace_id = agent.workspace_id
-WHERE agent.workspace_id = $1
-  AND agent.archived_at IS NULL
-  AND agent.runtime_id IS NOT NULL
-  AND runtime.status = 'online'
-  AND (
-    (SELECT count(*) FROM orchestration_run active_run
-     JOIN orchestration_assignment active_assignment ON active_assignment.id = active_run.assignment_id
-     WHERE active_assignment.agent_id = agent.id
-       AND active_run.status IN ('queued', 'dispatched', 'running'))
-    +
-    (SELECT count(*) FROM agent_task_queue active_task
-     WHERE active_task.agent_id = agent.id
-       AND active_task.orchestration_run_id IS NULL
-       AND active_task.status IN ('queued', 'deferred', 'dispatched', 'waiting_local_directory', 'running'))
-  ) < agent.max_concurrent_tasks
-ORDER BY (agent.id = $2::uuid) ASC,
-         agent.created_at ASC,
-         agent.id ASC
-LIMIT 1
-FOR UPDATE OF agent
-`
-
-type SelectOrchestrationAgentCandidateParams struct {
-	WorkspaceID  pgtype.UUID `json:"workspace_id"`
-	AvoidAgentID pgtype.UUID `json:"avoid_agent_id"`
-}
-
-type SelectOrchestrationAgentCandidateRow struct {
-	AgentID   pgtype.UUID `json:"agent_id"`
-	RuntimeID pgtype.UUID `json:"runtime_id"`
-}
-
-func (q *Queries) SelectOrchestrationAgentCandidate(ctx context.Context, arg SelectOrchestrationAgentCandidateParams) (SelectOrchestrationAgentCandidateRow, error) {
-	row := q.db.QueryRow(ctx, selectOrchestrationAgentCandidate, arg.WorkspaceID, arg.AvoidAgentID)
-	var i SelectOrchestrationAgentCandidateRow
-	err := row.Scan(&i.AgentID, &i.RuntimeID)
-	return i, err
-}
-
 const setMissionBudgetGate = `-- name: SetMissionBudgetGate :one
 UPDATE mission
 SET status = 'blocked',
@@ -2374,6 +3625,67 @@ func (q *Queries) StartMissionRecord(ctx context.Context, arg StartMissionRecord
 		&i.BudgetGrantCostUsdTicks,
 		&i.BudgetApprovedBy,
 		&i.BudgetApprovedAt,
+	)
+	return i, err
+}
+
+const transitionMailboxMessageStatus = `-- name: TransitionMailboxMessageStatus :one
+UPDATE orchestration_mailbox_message
+SET status = $1,
+    revision = revision + 1,
+    status_changed_at = $2
+WHERE id = $3
+  AND workspace_id = $4
+  AND mission_id = $5
+  AND status = 'pending'
+  AND revision = $6
+RETURNING id, workspace_id, mission_id, task_node_id, run_id, artifact_id, reply_to_message_id, schema_version, type, sender_type, sender_id, recipient_type, recipient_id, status, dedupe_key, hops, payload_version, payload, command_id, created_by, revision, created_at, expires_at, status_changed_at
+`
+
+type TransitionMailboxMessageStatusParams struct {
+	TargetStatus     string             `json:"target_status"`
+	ObservedAt       pgtype.Timestamptz `json:"observed_at"`
+	MessageID        pgtype.UUID        `json:"message_id"`
+	WorkspaceID      pgtype.UUID        `json:"workspace_id"`
+	MissionID        pgtype.UUID        `json:"mission_id"`
+	ExpectedRevision int64              `json:"expected_revision"`
+}
+
+func (q *Queries) TransitionMailboxMessageStatus(ctx context.Context, arg TransitionMailboxMessageStatusParams) (OrchestrationMailboxMessage, error) {
+	row := q.db.QueryRow(ctx, transitionMailboxMessageStatus,
+		arg.TargetStatus,
+		arg.ObservedAt,
+		arg.MessageID,
+		arg.WorkspaceID,
+		arg.MissionID,
+		arg.ExpectedRevision,
+	)
+	var i OrchestrationMailboxMessage
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.MissionID,
+		&i.TaskNodeID,
+		&i.RunID,
+		&i.ArtifactID,
+		&i.ReplyToMessageID,
+		&i.SchemaVersion,
+		&i.Type,
+		&i.SenderType,
+		&i.SenderID,
+		&i.RecipientType,
+		&i.RecipientID,
+		&i.Status,
+		&i.DedupeKey,
+		&i.Hops,
+		&i.PayloadVersion,
+		&i.Payload,
+		&i.CommandID,
+		&i.CreatedBy,
+		&i.Revision,
+		&i.CreatedAt,
+		&i.ExpiresAt,
+		&i.StatusChangedAt,
 	)
 	return i, err
 }

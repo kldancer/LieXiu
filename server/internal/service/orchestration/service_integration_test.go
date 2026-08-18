@@ -2,6 +2,7 @@ package orchestration
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"testing"
@@ -48,6 +49,8 @@ func TestServiceOwnerValidationAndFourCommandLifecycle(t *testing.T) {
 	t.Cleanup(func() {
 		cleanupCtx := context.Background()
 		for _, statement := range []string{
+			`DELETE FROM mission_role_policy_snapshot WHERE workspace_id = $1`,
+			`DELETE FROM role_profile WHERE workspace_id = $1`,
 			`DELETE FROM review_verdict WHERE workspace_id = $1`,
 			`DELETE FROM artifact WHERE workspace_id = $1`,
 			`DELETE FROM orchestration_run WHERE workspace_id = $1`,
@@ -69,7 +72,9 @@ func TestServiceOwnerValidationAndFourCommandLifecycle(t *testing.T) {
 	})
 
 	queries := db.New(pool)
-	service := NewService(queries, NewRepository(queries, pool), nil, DefaultPlanHardLimits())
+	repository := NewRepository(queries, pool)
+	service := NewService(queries, repository, nil, DefaultPlanHardLimits())
+	startBindings := seedRolePolicyBindings(t, ctx, repository, workspaceID, ownerID, DutyExecutor, DutyReviewer, DutyIntegrator)
 	limits := PlanLimits{MaxParallelRuns: 2, MaxTaskAttempts: 2, MaxReworkCycles: 1}
 
 	quickCommandID := newTestUUID()
@@ -112,6 +117,31 @@ func TestServiceOwnerValidationAndFourCommandLifecycle(t *testing.T) {
 	if quickNodes != 2 || quickAgentTasks != 0 {
 		t.Fatalf("quick-create materialization: nodes=%d agent_tasks=%d, want 2 and 0", quickNodes, quickAgentTasks)
 	}
+	quickProjection, err := service.GetMissionProjection(ctx, workspaceID, quick.MissionID)
+	if err != nil {
+		t.Fatalf("get quick-create projection: %v", err)
+	}
+	if quickProjection.Planning.Source != PlanSourceFixedTemplate {
+		t.Fatalf("quick-create plan source=%q, want %q", quickProjection.Planning.Source, PlanSourceFixedTemplate)
+	}
+	var quickActivityPayload []byte
+	if err := pool.QueryRow(ctx, `SELECT payload FROM orchestration_activity WHERE mission_id=$1 AND type=$2`, quick.MissionID, activityMissionPlanAccepted).Scan(&quickActivityPayload); err != nil {
+		t.Fatalf("load quick-create plan activity: %v", err)
+	}
+	var quickLineage struct {
+		PlanSource       string `json:"plan_source"`
+		SourceArtifactID string `json:"source_artifact_id"`
+	}
+	if err := json.Unmarshal(quickActivityPayload, &quickLineage); err != nil || quickLineage.PlanSource != string(PlanSourceFixedTemplate) || quickLineage.SourceArtifactID != "" {
+		t.Fatalf("quick-create plan lineage=%#v err=%v", quickLineage, err)
+	}
+	startedQuick, err := service.StartMission(ctx, StartMissionCommand{
+		WorkspaceID: workspaceID, MissionID: quick.MissionID, CommandID: newTestUUID(),
+		ActorID: ownerID, ExpectedRevision: quick.Revision, RolePolicyBindings: startBindings,
+	})
+	if err != nil {
+		t.Fatalf("StartMission quick-create fixture: %v", err)
+	}
 	var blockedNodeID pgtype.UUID
 	var blockedNodeRevision int64
 	if err := pool.QueryRow(ctx, `SELECT issue_id, revision FROM task_node WHERE workspace_id=$1 AND mission_id=$2 AND node_key='execute'`, workspaceID, quick.MissionID).Scan(&blockedNodeID, &blockedNodeRevision); err != nil {
@@ -127,13 +157,13 @@ func TestServiceOwnerValidationAndFourCommandLifecycle(t *testing.T) {
 	retriedNode, err := service.RetryTaskNode(ctx, RetryTaskNodeCommand{
 		WorkspaceID: workspaceID, MissionID: quick.MissionID, TaskNodeID: blockedNodeID,
 		CommandID: retryCommandID, ActorID: ownerID,
-		ExpectedRevision: 2, ExpectedTaskRevision: blockedNodeRevision,
+		ExpectedRevision: startedQuick.Mission.Revision, ExpectedTaskRevision: blockedNodeRevision,
 		Reason: "runtime recovered",
 	})
 	if err != nil {
 		t.Fatalf("RetryTaskNode: %v", err)
 	}
-	if retriedNode.TaskNode.Status != string(TaskStatusPending) || retriedNode.Mission.Revision != 3 || retriedNode.Idempotent {
+	if retriedNode.TaskNode.Status != string(TaskStatusPending) || retriedNode.Mission.Revision != startedQuick.Mission.Revision+1 || retriedNode.Idempotent {
 		t.Fatalf("unexpected RetryTaskNode transaction result: %#v", retriedNode)
 	}
 	if len(retriedNode.Advance.CreatedRuns) != 0 {
@@ -142,7 +172,7 @@ func TestServiceOwnerValidationAndFourCommandLifecycle(t *testing.T) {
 	replayedRetry, err := service.RetryTaskNode(ctx, RetryTaskNodeCommand{
 		WorkspaceID: workspaceID, MissionID: quick.MissionID, TaskNodeID: blockedNodeID,
 		CommandID: retryCommandID, ActorID: ownerID,
-		ExpectedRevision: 2, ExpectedTaskRevision: blockedNodeRevision,
+		ExpectedRevision: startedQuick.Mission.Revision, ExpectedTaskRevision: blockedNodeRevision,
 		Reason: "changed replay payload is ignored",
 	})
 	if err != nil || !replayedRetry.Idempotent || replayedRetry.Mission.IssueID != quick.MissionID {
@@ -210,19 +240,73 @@ func TestServiceOwnerValidationAndFourCommandLifecycle(t *testing.T) {
 	_, err = service.StartMission(ctx, StartMissionCommand{
 		WorkspaceID: workspaceID, MissionID: created.Mission.IssueID,
 		CommandID: newTestUUID(), ActorID: ownerID, ExpectedRevision: 1,
+		RolePolicyBindings: startBindings,
 	})
 	if !errors.Is(err, ErrRevisionConflict) {
 		t.Fatalf("stale StartMission error = %v, want ErrRevisionConflict", err)
 	}
-	started, err := service.StartMission(ctx, StartMissionCommand{
+	invalidBindings := append([]RolePolicyBinding(nil), startBindings...)
+	executorBinding := rolePolicyBindingFor(t, startBindings, DutyExecutor)
+	for index := range invalidBindings {
+		if invalidBindings[index].Duty == DutyReviewer {
+			invalidBindings[index].ProfileKey = executorBinding.ProfileKey
+			invalidBindings[index].Version = executorBinding.Version
+		}
+	}
+	if _, err := service.StartMission(ctx, StartMissionCommand{
 		WorkspaceID: workspaceID, MissionID: created.Mission.IssueID,
 		CommandID: newTestUUID(), ActorID: ownerID, ExpectedRevision: 2,
+		RolePolicyBindings: invalidBindings,
+	}); err == nil {
+		t.Fatal("duty-mismatched StartMission unexpectedly succeeded")
+	}
+	var frozenRows int
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM mission_role_policy_snapshot WHERE workspace_id=$1 AND mission_id=$2`, workspaceID, created.Mission.IssueID).Scan(&frozenRows); err != nil {
+		t.Fatal(err)
+	}
+	if frozenRows != 0 {
+		t.Fatalf("failed StartMission leaked %d RolePolicy snapshots", frozenRows)
+	}
+	startCommandID := newTestUUID()
+	started, err := service.StartMission(ctx, StartMissionCommand{
+		WorkspaceID: workspaceID, MissionID: created.Mission.IssueID,
+		CommandID: startCommandID, ActorID: ownerID, ExpectedRevision: 2,
+		RolePolicyBindings: startBindings,
 	})
 	if err != nil {
 		t.Fatalf("StartMission: %v", err)
 	}
 	if started.Mission.Status != string(MissionStatusRunning) {
 		t.Fatalf("started status = %s, want running", started.Mission.Status)
+	}
+	if len(started.RolePolicySnapshots) != 3 {
+		t.Fatalf("started RolePolicy snapshots=%#v, want exactly 3", started.RolePolicySnapshots)
+	}
+	reviewerV2 := createNextRolePolicyBinding(t, ctx, repository, workspaceID, ownerID, rolePolicyBindingFor(t, startBindings, DutyReviewer))
+	changedBindings := append([]RolePolicyBinding(nil), startBindings...)
+	for index := range changedBindings {
+		if changedBindings[index].Duty == DutyReviewer {
+			changedBindings[index] = reviewerV2
+		}
+	}
+	if _, err := service.StartMission(ctx, StartMissionCommand{
+		WorkspaceID: workspaceID, MissionID: created.Mission.IssueID,
+		CommandID: startCommandID, ActorID: ownerID, ExpectedRevision: 2,
+		RolePolicyBindings: changedBindings,
+	}); !errors.Is(err, ErrCommandConflict) {
+		t.Fatalf("same start command changed RolePolicy binding error=%v, want ErrCommandConflict", err)
+	}
+	startedProjection, err := service.GetMissionProjection(ctx, workspaceID, created.Mission.IssueID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(startedProjection.RolePolicySnapshots) != 3 {
+		t.Fatalf("projection RolePolicy snapshots=%#v, want 3", startedProjection.RolePolicySnapshots)
+	}
+	for _, snapshot := range startedProjection.RolePolicySnapshots {
+		if snapshot.Duty == DutyReviewer && (snapshot.RoleProfileVersion != 1 || snapshot.Config.Instructions != "v1") {
+			t.Fatalf("new reviewer version altered frozen snapshot: %#v", snapshot)
+		}
 	}
 
 	_, err = service.CancelMission(ctx, CancelMissionCommand{

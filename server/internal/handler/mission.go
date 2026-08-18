@@ -3,6 +3,7 @@ package handler
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -30,6 +31,19 @@ type MissionLifecycleRequest struct {
 	CommandID        string `json:"command_id"`
 	ExpectedRevision int64  `json:"expected_revision"`
 	Reason           string `json:"reason,omitempty"`
+}
+
+type RolePolicyBindingRequest struct {
+	Duty       orchestration.Duty `json:"duty"`
+	ProfileKey string             `json:"profile_key"`
+	Version    int32              `json:"version"`
+	AgentID    string             `json:"agent_id,omitempty"`
+}
+
+type StartMissionRequest struct {
+	CommandID          string                     `json:"command_id"`
+	ExpectedRevision   int64                      `json:"expected_revision"`
+	RolePolicyBindings []RolePolicyBindingRequest `json:"role_policy_bindings"`
 }
 
 type MissionLifecycleResponse struct {
@@ -70,6 +84,199 @@ type ApproveMissionBudgetResponse struct {
 	Revision      int64    `json:"revision"`
 	CreatedRunIDs []string `json:"created_run_ids"`
 	Replayed      bool     `json:"replayed"`
+}
+
+type ResolveHumanGateRequest struct {
+	CommandID            string `json:"command_id"`
+	ExpectedRevision     int64  `json:"expected_revision"`
+	ExpectedTaskRevision int64  `json:"expected_task_revision"`
+	ExpectedGateRevision int64  `json:"expected_gate_revision"`
+	Resolution           string `json:"resolution"`
+	Reason               string `json:"reason,omitempty"`
+}
+
+type ResolveHumanGateResponse struct {
+	MissionID     string   `json:"mission_id"`
+	TaskNodeID    string   `json:"task_node_id"`
+	GateID        string   `json:"gate_id"`
+	Status        string   `json:"status"`
+	Revision      int64    `json:"revision"`
+	TaskRevision  int64    `json:"task_revision"`
+	GateRevision  int64    `json:"gate_revision"`
+	CreatedRunIDs []string `json:"created_run_ids"`
+	Replayed      bool     `json:"replayed"`
+}
+
+type RequestMissionPlanRequest struct {
+	CommandID         string                                 `json:"command_id"`
+	ExpectedRevision  int64                                  `json:"expected_revision"`
+	Objective         string                                 `json:"objective"`
+	ContextRefs       []orchestration.PlanProposalContextRef `json:"context_refs"`
+	DeliveryCriteria  []string                               `json:"delivery_criteria"`
+	RolePolicyBinding RolePolicyBindingRequest               `json:"role_policy_binding"`
+}
+
+type EditPlanProposalRequest struct {
+	CommandID        string                     `json:"command_id"`
+	ExpectedRevision int64                      `json:"expected_revision"`
+	Proposal         orchestration.PlanProposal `json:"proposal"`
+}
+
+type RejectPlanProposalRequest struct {
+	CommandID        string `json:"command_id"`
+	ExpectedRevision int64  `json:"expected_revision"`
+	Reason           string `json:"reason"`
+}
+
+type PlanProposalCommandResponse struct {
+	MissionID  string `json:"mission_id"`
+	Status     string `json:"status"`
+	Revision   int64  `json:"revision"`
+	ArtifactID string `json:"artifact_id,omitempty"`
+	RunID      string `json:"run_id,omitempty"`
+	Replayed   bool   `json:"replayed"`
+}
+
+func (h *Handler) RequestMissionPlan(w http.ResponseWriter, r *http.Request) {
+	workspaceID, missionID, actorID, ok := h.missionPlanActorScope(w, r)
+	if !ok {
+		return
+	}
+	var req RequestMissionPlanRequest
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	commandID, ok := parseUUIDOrBadRequest(w, strings.TrimSpace(req.CommandID), "command_id")
+	if !ok {
+		return
+	}
+	binding, ok := parseRolePolicyBindingRequest(w, req.RolePolicyBinding, "role_policy_binding")
+	if !ok {
+		return
+	}
+	result, err := h.Orchestration.RequestPlan(r.Context(), orchestration.RequestPlanCommand{
+		WorkspaceID: workspaceID, MissionID: missionID, CommandID: commandID, ActorID: actorID,
+		ExpectedRevision:  req.ExpectedRevision,
+		Input:             orchestration.PlanProposalInput{Objective: req.Objective, ContextRefs: req.ContextRefs, DeliveryCriteria: req.DeliveryCriteria},
+		RolePolicyBinding: binding,
+	})
+	if err != nil {
+		writeMissionCommandError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusAccepted, PlanProposalCommandResponse{MissionID: uuidToString(result.Mission.IssueID), Status: result.Mission.Status, Revision: result.Mission.Revision, RunID: uuidToString(result.Run.ID), Replayed: result.Idempotent})
+}
+
+func (h *Handler) EditPlanProposal(w http.ResponseWriter, r *http.Request) {
+	workspaceID, missionID, artifactID, actorID, ok := h.missionPlanArtifactScope(w, r)
+	if !ok {
+		return
+	}
+	var req EditPlanProposalRequest
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	commandID, ok := parseUUIDOrBadRequest(w, strings.TrimSpace(req.CommandID), "command_id")
+	if !ok {
+		return
+	}
+	result, err := h.Orchestration.EditPlanProposal(r.Context(), orchestration.EditPlanProposalCommand{WorkspaceID: workspaceID, MissionID: missionID, ProposalArtifactID: artifactID, CommandID: commandID, ActorID: actorID, ExpectedRevision: req.ExpectedRevision, Proposal: req.Proposal})
+	if err != nil {
+		writeMissionCommandError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, PlanProposalCommandResponse{MissionID: uuidToString(result.Mission.IssueID), Status: result.Mission.Status, Revision: result.Mission.Revision, ArtifactID: uuidToString(result.Artifact.ID), RunID: uuidToString(result.Artifact.RunID), Replayed: result.Idempotent})
+}
+
+func (h *Handler) RejectPlanProposal(w http.ResponseWriter, r *http.Request) {
+	workspaceID, missionID, artifactID, actorID, ok := h.missionPlanArtifactScope(w, r)
+	if !ok {
+		return
+	}
+	var req RejectPlanProposalRequest
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	commandID, ok := parseUUIDOrBadRequest(w, strings.TrimSpace(req.CommandID), "command_id")
+	if !ok {
+		return
+	}
+	result, err := h.Orchestration.RejectPlanProposal(r.Context(), orchestration.RejectPlanProposalCommand{WorkspaceID: workspaceID, MissionID: missionID, ProposalArtifactID: artifactID, CommandID: commandID, ActorID: actorID, ExpectedRevision: req.ExpectedRevision, Reason: req.Reason})
+	if err != nil {
+		writeMissionCommandError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, PlanProposalCommandResponse{MissionID: uuidToString(result.Mission.IssueID), Status: result.Mission.Status, Revision: result.Mission.Revision, ArtifactID: uuidToString(result.Artifact.ID), RunID: uuidToString(result.Artifact.RunID), Replayed: result.Idempotent})
+}
+
+func (h *Handler) ApprovePlanProposal(w http.ResponseWriter, r *http.Request) {
+	workspaceID, missionID, artifactID, actorID, ok := h.missionPlanArtifactScope(w, r)
+	if !ok {
+		return
+	}
+	var req MissionLifecycleRequest
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	commandID, ok := parseUUIDOrBadRequest(w, strings.TrimSpace(req.CommandID), "command_id")
+	if !ok {
+		return
+	}
+	result, err := h.Orchestration.ApprovePlanProposal(r.Context(), orchestration.SubmitPlanProposalCommand{WorkspaceID: workspaceID, MissionID: missionID, ProposalArtifactID: artifactID, CommandID: commandID, ActorID: actorID, ExpectedRevision: req.ExpectedRevision})
+	if err != nil {
+		writeMissionCommandError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, PlanProposalCommandResponse{MissionID: uuidToString(result.Mission.IssueID), Status: result.Mission.Status, Revision: result.Mission.Revision, ArtifactID: uuidToString(artifactID), Replayed: result.Idempotent})
+}
+
+func (h *Handler) missionPlanActorScope(w http.ResponseWriter, r *http.Request) (workspaceID, missionID, actorID pgtype.UUID, ok bool) {
+	workspaceID, missionID, ok = h.missionReadScope(w, r)
+	if !ok {
+		return workspaceID, missionID, actorID, false
+	}
+	actorText, valid := requireUserID(w, r)
+	if !valid {
+		return workspaceID, missionID, actorID, false
+	}
+	actorID, valid = parseUUIDOrBadRequest(w, actorText, "actor_id")
+	return workspaceID, missionID, actorID, valid
+}
+
+func parseRolePolicyBindingRequest(w http.ResponseWriter, request RolePolicyBindingRequest, path string) (orchestration.RolePolicyBinding, bool) {
+	binding := orchestration.RolePolicyBinding{
+		Duty: request.Duty, ProfileKey: request.ProfileKey, Version: request.Version,
+	}
+	if strings.TrimSpace(request.AgentID) == "" {
+		return binding, true
+	}
+	agentID, ok := parseUUIDOrBadRequest(w, strings.TrimSpace(request.AgentID), path+".agent_id")
+	if !ok {
+		return orchestration.RolePolicyBinding{}, false
+	}
+	binding.AgentID = agentID
+	return binding, true
+}
+
+func (h *Handler) missionPlanArtifactScope(w http.ResponseWriter, r *http.Request) (workspaceID, missionID, artifactID, actorID pgtype.UUID, ok bool) {
+	workspaceID, missionID, actorID, ok = h.missionPlanActorScope(w, r)
+	if !ok {
+		return workspaceID, missionID, artifactID, actorID, false
+	}
+	artifactID, ok = parseUUIDOrBadRequest(w, chi.URLParam(r, "artifactID"), "proposal_artifact_id")
+	return workspaceID, missionID, artifactID, actorID, ok
 }
 
 // QuickCreateMission keeps the historical /api/issues/quick-create route as a
@@ -193,20 +400,39 @@ func (h *Handler) RetryMissionTask(w http.ResponseWriter, r *http.Request) {
 // execution. The initial Advance is part of the HTTP command boundary so a
 // successful click cannot leave a running Mission with no dispatched work.
 func (h *Handler) StartMission(w http.ResponseWriter, r *http.Request) {
-	workspaceID, missionID, actorID, req, ok := h.missionLifecycleScope(w, r)
+	workspaceID, missionID, actorID, ok := h.missionPlanActorScope(w, r)
 	if !ok {
 		return
 	}
+	var req StartMissionRequest
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	commandID, ok := parseUUIDOrBadRequest(w, strings.TrimSpace(req.CommandID), "command_id")
+	if !ok {
+		return
+	}
+	bindings := make([]orchestration.RolePolicyBinding, 0, len(req.RolePolicyBindings))
+	for index, item := range req.RolePolicyBindings {
+		binding, valid := parseRolePolicyBindingRequest(w, item, fmt.Sprintf("role_policy_bindings[%d]", index))
+		if !valid {
+			return
+		}
+		bindings = append(bindings, binding)
+	}
 	result, err := h.Orchestration.StartMission(r.Context(), orchestration.StartMissionCommand{
-		WorkspaceID: workspaceID, MissionID: missionID, CommandID: req.commandID,
-		ActorID: actorID, ExpectedRevision: req.request.ExpectedRevision,
+		WorkspaceID: workspaceID, MissionID: missionID, CommandID: commandID,
+		ActorID: actorID, ExpectedRevision: req.ExpectedRevision, RolePolicyBindings: bindings,
 	})
 	if err != nil {
 		writeMissionCommandError(w, err)
 		return
 	}
 	advance, err := h.Orchestration.AdvanceMission(r.Context(), orchestration.AdvanceMissionCommand{
-		WorkspaceID: workspaceID, MissionID: missionID, CorrelationID: req.commandID,
+		WorkspaceID: workspaceID, MissionID: missionID, CorrelationID: commandID,
 	})
 	if err != nil {
 		writeMissionCommandError(w, err)
@@ -332,6 +558,62 @@ func (h *Handler) ApproveMissionBudget(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func (h *Handler) ResolveHumanGate(w http.ResponseWriter, r *http.Request) {
+	if h == nil || h.Orchestration == nil {
+		writeError(w, http.StatusServiceUnavailable, "orchestration service unavailable")
+		return
+	}
+	workspaceID, missionID, ok := h.missionReadScope(w, r)
+	if !ok {
+		return
+	}
+	actorText, ok := requireUserID(w, r)
+	if !ok {
+		return
+	}
+	actorID, ok := parseUUIDOrBadRequest(w, actorText, "actor_id")
+	if !ok {
+		return
+	}
+	gateID, ok := parseUUIDOrBadRequest(w, chi.URLParam(r, "gateID"), "gate_id")
+	if !ok {
+		return
+	}
+	var req ResolveHumanGateRequest
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	commandID, ok := parseUUIDOrBadRequest(w, strings.TrimSpace(req.CommandID), "command_id")
+	if !ok {
+		return
+	}
+	result, err := h.Orchestration.ResolveHumanGate(r.Context(), orchestration.ResolveHumanGateCommand{
+		WorkspaceID: workspaceID, MissionID: missionID, GateID: gateID, CommandID: commandID, ActorID: actorID,
+		ExpectedRevision: req.ExpectedRevision, ExpectedTaskRevision: req.ExpectedTaskRevision,
+		ExpectedGateRevision: req.ExpectedGateRevision, Resolution: req.Resolution, Reason: req.Reason,
+	})
+	if err != nil {
+		writeMissionCommandError(w, err)
+		return
+	}
+	mission := result.Mission
+	if result.Advance.Mission.IssueID.Valid {
+		mission = result.Advance.Mission
+	}
+	runIDs := make([]string, 0, len(result.Advance.CreatedRuns))
+	for _, run := range result.Advance.CreatedRuns {
+		runIDs = append(runIDs, uuidToString(run.ID))
+	}
+	writeJSON(w, http.StatusAccepted, ResolveHumanGateResponse{
+		MissionID: uuidToString(mission.IssueID), TaskNodeID: uuidToString(result.TaskNode.IssueID), GateID: uuidToString(result.Gate.ID),
+		Status: mission.Status, Revision: mission.Revision, TaskRevision: result.TaskNode.Revision, GateRevision: result.Gate.Revision,
+		CreatedRunIDs: runIDs, Replayed: result.Idempotent,
+	})
+}
+
 func (h *Handler) GetMissionProjection(w http.ResponseWriter, r *http.Request) {
 	workspaceID, missionID, ok := h.missionReadScope(w, r)
 	if !ok {
@@ -432,6 +714,7 @@ func writeMissionReadError(w http.ResponseWriter, err error) {
 
 func writeMissionCommandError(w http.ResponseWriter, err error) {
 	var validationErr orchestration.CommandValidationError
+	var routingErr *orchestration.RoutingUnavailableError
 	switch {
 	case errors.As(err, &validationErr):
 		w.Header().Set("Content-Type", "application/json")
@@ -440,10 +723,20 @@ func writeMissionCommandError(w http.ResponseWriter, err error) {
 			"error":  "invalid mission command",
 			"errors": validationErr.Errors,
 		})
+	case errors.As(err, &routingErr):
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusConflict)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"error":   routingErr.Error(),
+			"duty":    routingErr.Duty,
+			"routing": routingErr.Routing,
+		})
 	case errors.Is(err, orchestration.ErrOwnerRequired):
 		writeError(w, http.StatusForbidden, "workspace owner permission is required")
 	case errors.Is(err, orchestration.ErrCommandConflict),
 		errors.Is(err, orchestration.ErrRevisionConflict),
+		errors.Is(err, orchestration.ErrRolePolicyAlreadyFrozen),
+		errors.Is(err, orchestration.ErrPlanProposalNotPending),
 		errors.Is(err, orchestration.ErrMissionNotStartable),
 		errors.Is(err, orchestration.ErrMissionNotCancellable),
 		errors.Is(err, orchestration.ErrMissionHasNoTasks),
@@ -452,7 +745,10 @@ func writeMissionCommandError(w http.ResponseWriter, err error) {
 		errors.Is(err, orchestration.ErrMissionNotDraft),
 		errors.Is(err, orchestration.ErrMissionNotRetryable),
 		errors.Is(err, orchestration.ErrTaskNodeNotRetryable),
-		errors.Is(err, orchestration.ErrTaskRevisionConflict):
+		errors.Is(err, orchestration.ErrTaskRevisionConflict),
+		errors.Is(err, orchestration.ErrHumanGateNotPending),
+		errors.Is(err, orchestration.ErrHumanGateRevisionConflict),
+		errors.Is(err, orchestration.ErrHumanGateResolutionRequired):
 		writeError(w, http.StatusConflict, err.Error())
 	default:
 		writeError(w, http.StatusInternalServerError, "failed to create mission")

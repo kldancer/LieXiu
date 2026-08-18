@@ -143,7 +143,7 @@ func (s *Service) GetRunDetail(ctx context.Context, workspaceID, missionID, runI
 		}
 	}
 	for _, member := range projection.Team {
-		if member.AgentID == detail.Assignment.AgentID && member.Role == detail.Assignment.Role && member.RuntimeID == detail.Assignment.RuntimeID {
+		if member.AgentID == detail.Assignment.AgentID && member.Duty == detail.Assignment.Duty && member.RuntimeID == detail.Assignment.RuntimeID {
 			value := member
 			detail.Agent = &value
 			break

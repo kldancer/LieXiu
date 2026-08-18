@@ -51,6 +51,8 @@ func TestRepositoryMissionPlanTransactionAndIdempotency(t *testing.T) {
 	t.Cleanup(func() {
 		cleanupCtx := context.Background()
 		for _, statement := range []string{
+			`DELETE FROM mission_role_policy_snapshot WHERE workspace_id = $1`,
+			`DELETE FROM role_profile WHERE workspace_id = $1`,
 			`DELETE FROM review_verdict WHERE workspace_id = $1`,
 			`DELETE FROM artifact WHERE workspace_id = $1`,
 			`DELETE FROM orchestration_run WHERE workspace_id = $1`,
@@ -70,6 +72,7 @@ func TestRepositoryMissionPlanTransactionAndIdempotency(t *testing.T) {
 	})
 
 	repository := NewRepository(db.New(pool), pool)
+	startBindings := seedRolePolicyBindings(t, ctx, repository, workspaceID, userID, DutyExecutor, DutyReviewer, DutyIntegrator)
 	createCommandID := newTestUUID()
 	created, err := repository.CreateMission(ctx, CreateMissionParams{
 		WorkspaceID: workspaceID,
@@ -160,6 +163,7 @@ func TestRepositoryMissionPlanTransactionAndIdempotency(t *testing.T) {
 	started, err := repository.StartMission(ctx, StartMissionParams{
 		WorkspaceID: workspaceID, MissionID: created.Mission.IssueID,
 		CommandID: startCommandID, ActorID: userID, ExpectedRevision: 2,
+		RolePolicyBindings: startBindings,
 	})
 	if err != nil {
 		t.Fatalf("StartMission: %v", err)
@@ -180,6 +184,7 @@ func TestRepositoryMissionPlanTransactionAndIdempotency(t *testing.T) {
 	replayedStart, err := repository.StartMission(ctx, StartMissionParams{
 		WorkspaceID: workspaceID, MissionID: created.Mission.IssueID,
 		CommandID: startCommandID, ActorID: userID, ExpectedRevision: 2,
+		RolePolicyBindings: startBindings,
 	})
 	if err != nil {
 		t.Fatalf("replay StartMission: %v", err)
@@ -351,7 +356,7 @@ func TestRepositorySubmitPlanRollsBackIncompleteRelationships(t *testing.T) {
 		Limits:        DefaultPlanHardLimits(),
 		Nodes: []PlanNode{{
 			Key: "A", Title: "Incomplete node", Description: "References a missing node",
-			Role: RoleExecutor, AcceptanceCriteria: []string{"must roll back"},
+			Duty: DutyExecutor, AcceptanceCriteria: []string{"must roll back"},
 			ArtifactKinds: []ArtifactKind{ArtifactKindCommit}, DependsOn: []string{"missing"},
 		}},
 	}
@@ -398,12 +403,12 @@ func validRepositoryTestPlan(missionID string) Plan {
 		Nodes: []PlanNode{
 			{
 				Key: "A", Title: "Produce an artifact", Description: "Produce a reviewable artifact",
-				Role: RoleExecutor, AcceptanceCriteria: []string{"artifact exists"},
+				Duty: DutyExecutor, AcceptanceCriteria: []string{"artifact exists"},
 				ArtifactKinds: []ArtifactKind{ArtifactKindCommit},
 			},
 			{
 				Key: "B", Title: "Integrate the artifact", Description: "Create the final delivery",
-				Role: RoleIntegrator, AcceptanceCriteria: []string{"delivery exists"},
+				Duty: DutyIntegrator, AcceptanceCriteria: []string{"delivery exists"},
 				ArtifactKinds: []ArtifactKind{ArtifactKindFinalDelivery}, DependsOn: []string{"A"},
 			},
 		},

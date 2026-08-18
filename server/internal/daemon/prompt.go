@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/kailonyang/liexiu/server/internal/daemon/execenv"
+	"github.com/kailonyang/liexiu/server/pkg/protocol"
 )
 
 func sessionContinuityNoticeFor(Task) string { return execenv.SessionContinuityNoticeIssue }
@@ -105,6 +106,9 @@ func buildActiveSiblingRunsBlock(currentIssueID string, runs []ActiveSiblingRunD
 // post with `--content-file`) because the shell-layer corruption it guards
 // against is not specific to any one provider or host (MUL-2904, #4182).
 func BuildPrompt(task Task, provider string) string {
+	if task.OrchestrationRun != nil {
+		return buildOrchestrationPrompt(*task.OrchestrationRun)
+	}
 	body := buildPromptBody(task, provider)
 	// Run-scoped context is appended, never prepended: everything ahead of it
 	// is stable across runs of a resumed session, and appending keeps it after
@@ -116,6 +120,32 @@ func BuildPrompt(task Task, provider string) string {
 		body += blocks
 	}
 	return body
+}
+
+// buildOrchestrationPrompt is deliberately provider-neutral. The daemon only
+// transports the frozen run input and contract; it does not interpret mission
+// state or select a provider-specific workflow.
+func buildOrchestrationPrompt(run protocol.OrchestrationRunContextV1) string {
+	var b strings.Builder
+	b.WriteString("Execute the orchestration task using the frozen input below. Treat it as authoritative and do not invent or widen requirements.\n\n")
+	fmt.Fprintf(&b, "Orchestration run: %s\nPurpose: %s\n\nFrozen input (JSON):\n%s\n\n", run.RunID, run.Purpose, strings.TrimSpace(string(run.Input)))
+	if instructions := strings.TrimSpace(run.RoleInstructions); instructions != "" {
+		fmt.Fprintf(&b, "Frozen role instructions:\n%s\n\n", instructions)
+	}
+	b.WriteString("Your final stdout must contain exactly one JSON value, with no Markdown fences, prose, commentary, or additional output. The JSON must satisfy this result contract:\n")
+	switch run.ResultContract.Kind {
+	case protocol.OrchestrationResultKindPlanProposal:
+		b.WriteString("Return the canonical PlanProposal JSON object. The only allowed top-level fields are schema_version, mission_id, proposal_key, input, limits, and nodes. Copy mission_id exactly from Frozen input; set schema_version to Frozen input.proposal_schema_version; copy the complete Frozen input.input object verbatim into the top-level input field; and copy the complete Frozen input.limits object verbatim into the top-level limits field. Do not promote nested limit fields such as max_parallel_runs, max_task_attempts, max_rework_cycles, max_tokens, max_cost_usd_ticks, or gate to the top level. Use this exact shape: {\"schema_version\":1,\"mission_id\":\"...\",\"proposal_key\":\"...\",\"input\":{...},\"limits\":{...},\"nodes\":[...]}. Each nodes item must contain only key, title, description, duty, acceptance_criteria, artifact_kinds, depends_on, and budget_estimate. duty must be exactly the lowercase JSON string \"executor\" or \"integrator\"; never use planner, reviewer, execution, integration, title case, or any other value. artifact_kinds must be a JSON array using only the exact lowercase kinds required by the frozen objective, such as \"commit\" and \"final_delivery\". budget_estimate must contain exactly tokens and cost_usd_ticks, both positive integers that obey the Frozen input limits and any more specific frozen objective. When limits.budget.max_tokens or limits.budget.max_cost_usd_ticks is enabled, zero or a missing matching estimate is invalid. Do not wrap the proposal in another object, add fields, or omit fields.\n")
+	case protocol.OrchestrationResultKindArtifact:
+		b.WriteString("Return exactly: {\"schema_version\":1,\"artifact\":{\"kind\":\"...\",\"uri\":\"...\",\"content_hash\":\"...\",\"summary\":\"...\",\"metadata\":{}}}. artifact.kind must be one of: ")
+		b.WriteString(strings.Join(run.ResultContract.AllowedArtifactKinds, ", "))
+		b.WriteString(". artifact.uri must be a non-empty string after trimming whitespace and at most 4096 bytes. If the frozen input does not provide an external artifact location, use a stable provider-neutral URI derived from its node_key, for example urn:liexiu:artifact:<kind>:<node_key>; never return an empty URI. artifact.content_hash and artifact.summary must each be strings of at most 4096 bytes, and artifact.metadata must be a JSON object with at most 128 fields. Do not add fields outside this exact shape.\n")
+	case protocol.OrchestrationResultKindReviewVerdict:
+		b.WriteString("Return exactly: {\"schema_version\":1,\"decision\":\"approved|changes_requested|rejected\",\"evidence\":{},\"requested_changes\":[]}.\n")
+	default:
+		b.WriteString("The result contract is unsupported; return one JSON object describing the validation error.\n")
+	}
+	return b.String()
 }
 
 func buildPromptBody(task Task, provider string) string {

@@ -5,7 +5,109 @@ import (
 	"testing"
 
 	"github.com/kailonyang/liexiu/server/internal/daemon/execenv"
+	"github.com/kailonyang/liexiu/server/pkg/protocol"
 )
+
+func TestBuildPromptOrchestrationUsesFrozenContract(t *testing.T) {
+	task := Task{IssueID: "ordinary-issue", OrchestrationRun: &protocol.OrchestrationRunContextV1{
+		SchemaVersion: 1, RunID: "run-1", Purpose: "execute",
+		Input: []byte(`{"schema_version":1,"value":"frozen"}`),
+		ResultContract: protocol.OrchestrationResultContractV1{
+			SchemaVersion: 1, Kind: protocol.OrchestrationResultKindArtifact,
+			AllowedArtifactKinds: []string{"commit", "test_receipt"},
+		},
+	}}
+	out := BuildPrompt(task, "provider-that-must-not-leak")
+	for _, want := range []string{
+		`{"schema_version":1,"value":"frozen"}`,
+		`{"schema_version":1,"artifact":{"kind":"...","uri":"...","content_hash":"...","summary":"...","metadata":{}}}`,
+		"commit, test_receipt",
+		"exactly one JSON value",
+		"artifact.uri must be a non-empty string after trimming whitespace and at most 4096 bytes",
+		"urn:liexiu:artifact:<kind>:<node_key>",
+		"never return an empty URI",
+		"artifact.metadata must be a JSON object with at most 128 fields",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("orchestration prompt missing %q:\n%s", want, out)
+		}
+	}
+	for _, forbidden := range []string{"provider-that-must-not-leak", "liexiu issue get", "```"} {
+		if strings.Contains(out, forbidden) {
+			t.Errorf("orchestration prompt contains provider/ordinary/markdown text %q:\n%s", forbidden, out)
+		}
+	}
+}
+
+func TestBuildPromptOrchestrationContracts(t *testing.T) {
+	tests := []struct {
+		name     string
+		purpose  string
+		contract protocol.OrchestrationResultContractV1
+		contains []string
+	}{
+		{
+			name:    "planner",
+			purpose: "plan",
+			contract: protocol.OrchestrationResultContractV1{
+				SchemaVersion: 1, Kind: protocol.OrchestrationResultKindPlanProposal,
+			},
+			contains: []string{
+				"canonical PlanProposal JSON object",
+				"schema_version", "mission_id", "proposal_key", "input", "limits", "nodes",
+				"key", "title", "description", "duty", "acceptance_criteria", "artifact_kinds", "depends_on", "budget_estimate",
+				"only allowed top-level fields", "copy the complete Frozen input.input object verbatim", "copy the complete Frozen input.limits object verbatim",
+				"Do not promote nested limit fields", "max_tokens", "max_cost_usd_ticks", "budget_estimate must contain exactly tokens and cost_usd_ticks, both positive integers",
+				`duty must be exactly the lowercase JSON string "executor" or "integrator"`, `"commit" and "final_delivery"`,
+				"zero or a missing matching estimate is invalid",
+			},
+		},
+		{
+			name:    "integrator",
+			purpose: "integrate",
+			contract: protocol.OrchestrationResultContractV1{
+				SchemaVersion: 1, Kind: protocol.OrchestrationResultKindArtifact,
+				AllowedArtifactKinds: []string{"final_delivery"},
+			},
+			contains: []string{"schema_version", "artifact", "final_delivery", "content_hash", "summary", "metadata", "non-empty string", "at most 4096 bytes", "at most 128 fields"},
+		},
+		{
+			name:    "reviewer",
+			purpose: "review",
+			contract: protocol.OrchestrationResultContractV1{
+				SchemaVersion: 1, Kind: protocol.OrchestrationResultKindReviewVerdict,
+			},
+			contains: []string{"schema_version", "decision", "approved|changes_requested|rejected", "evidence", "requested_changes"},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			prompt := BuildPrompt(Task{OrchestrationRun: &protocol.OrchestrationRunContextV1{
+				SchemaVersion: 1, RunID: "run-" + tc.name, Purpose: tc.purpose,
+				Input: []byte(`{"frozen":true}`), RoleInstructions: "Follow the frozen duty policy.", ResultContract: tc.contract,
+			}}, "provider-name-must-not-appear")
+			if !strings.Contains(prompt, "Frozen role instructions:\nFollow the frozen duty policy.") {
+				t.Errorf("%s prompt omitted frozen role instructions:\n%s", tc.name, prompt)
+			}
+			for _, want := range tc.contains {
+				if !strings.Contains(prompt, want) {
+					t.Errorf("%s prompt missing %q:\n%s", tc.name, want, prompt)
+				}
+			}
+			if strings.Contains(prompt, "provider-name-must-not-appear") || strings.Contains(prompt, "liexiu issue get") {
+				t.Errorf("%s prompt leaked provider or ordinary task instructions:\n%s", tc.name, prompt)
+			}
+		})
+	}
+}
+
+func TestBuildPromptOrdinaryTaskKeepsExistingPath(t *testing.T) {
+	out := BuildPrompt(Task{IssueID: "ordinary-issue"}, "claude")
+	if !strings.Contains(out, "liexiu issue get ordinary-issue --output json") {
+		t.Fatalf("ordinary task no longer uses the ordinary prompt path:\n%s", out)
+	}
+}
 
 // TestBuildQuickCreatePromptRules locks in the rules that govern how the
 // quick-create agent is allowed to translate raw user input into the issue

@@ -154,6 +154,13 @@ func (r *Repository) RetryTaskNode(ctx context.Context, params RetryTaskNodePara
 	if node.Revision != params.ExpectedTaskRevision {
 		return RetryTaskNodeResult{}, ErrTaskRevisionConflict
 	}
+	if _, gateErr := qtx.GetPendingHumanGateForTask(ctx, db.GetPendingHumanGateForTaskParams{
+		WorkspaceID: params.WorkspaceID, MissionID: params.MissionID, TaskNodeID: params.TaskNodeID,
+	}); gateErr == nil {
+		return RetryTaskNodeResult{}, ErrHumanGateResolutionRequired
+	} else if !errors.Is(gateErr, pgx.ErrNoRows) {
+		return RetryTaskNodeResult{}, fmt.Errorf("retry task node: check pending human gate: %w", gateErr)
+	}
 
 	mission, err = qtx.ResumeMissionForTaskRetry(ctx, db.ResumeMissionForTaskRetryParams{
 		MissionID: params.MissionID, WorkspaceID: params.WorkspaceID, ExpectedRevision: params.ExpectedRevision,

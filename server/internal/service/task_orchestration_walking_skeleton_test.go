@@ -33,6 +33,7 @@ func TestOrchestrationWalkingSkeletonRetryReworkAndIntegration(t *testing.T) {
 	repository := orchestration.NewRepository(queries, pool)
 	gateway := NewTaskExecutionGateway(NewTaskService(queries, pool, nil, events.New()))
 	orchestrator := orchestration.NewService(queries, repository, gateway, orchestration.DefaultPlanHardLimits())
+	startBindings := seedServiceRolePolicyBindings(t, ctx, repository, fixture.workspaceID, fixture.userID, orchestration.DutyExecutor, orchestration.DutyReviewer, orchestration.DutyIntegrator)
 
 	created, err := orchestrator.CreateMission(ctx, orchestration.CreateMissionCommand{WorkspaceID: fixture.workspaceID, CommandID: walkingUUID(), ActorID: fixture.userID, Title: "A/B to C walking skeleton", Limits: orchestration.PlanLimits{MaxParallelRuns: 2, MaxTaskAttempts: 2, MaxReworkCycles: 1}})
 	if err != nil {
@@ -43,7 +44,7 @@ func TestOrchestrationWalkingSkeletonRetryReworkAndIntegration(t *testing.T) {
 	if _, err := orchestrator.SubmitPlan(ctx, orchestration.SubmitPlanCommand{WorkspaceID: fixture.workspaceID, MissionID: missionID, CommandID: walkingUUID(), ActorID: fixture.userID, ExpectedRevision: 1, Plan: plan}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := orchestrator.StartMission(ctx, orchestration.StartMissionCommand{WorkspaceID: fixture.workspaceID, MissionID: missionID, CommandID: walkingUUID(), ActorID: fixture.userID, ExpectedRevision: 2}); err != nil {
+	if _, err := orchestrator.StartMission(ctx, orchestration.StartMissionCommand{WorkspaceID: fixture.workspaceID, MissionID: missionID, CommandID: walkingUUID(), ActorID: fixture.userID, ExpectedRevision: 2, RolePolicyBindings: startBindings}); err != nil {
 		t.Fatal(err)
 	}
 	nodes := loadNodesByKey(t, ctx, queries, fixture.workspaceID, missionID)
@@ -189,7 +190,7 @@ func createWalkingSkeletonFixture(t *testing.T, ctx context.Context, pool *pgxpo
 func cleanupWalkingSkeletonFixture(t *testing.T, pool *pgxpool.Pool, f walkingSkeletonFixture) {
 	t.Helper()
 	ctx := context.Background()
-	for _, statement := range []string{`DELETE FROM review_verdict WHERE workspace_id=$1`, `DELETE FROM artifact WHERE workspace_id=$1`, `DELETE FROM orchestration_run WHERE workspace_id=$1`, `DELETE FROM orchestration_assignment WHERE workspace_id=$1`, `DELETE FROM orchestration_activity WHERE workspace_id=$1`, `DELETE FROM task_node WHERE workspace_id=$1`, `DELETE FROM mission WHERE workspace_id=$1`, `DELETE FROM workspace WHERE id=$1`} {
+	for _, statement := range []string{`DELETE FROM mission_role_policy_snapshot WHERE workspace_id=$1`, `DELETE FROM role_profile WHERE workspace_id=$1`, `DELETE FROM review_verdict WHERE workspace_id=$1`, `DELETE FROM artifact WHERE workspace_id=$1`, `DELETE FROM orchestration_run WHERE workspace_id=$1`, `DELETE FROM orchestration_assignment WHERE workspace_id=$1`, `DELETE FROM orchestration_activity WHERE workspace_id=$1`, `DELETE FROM task_node WHERE workspace_id=$1`, `DELETE FROM mission WHERE workspace_id=$1`, `DELETE FROM workspace WHERE id=$1`} {
 		if _, err := pool.Exec(ctx, statement, f.workspaceID); err != nil {
 			t.Errorf("cleanup: %v", err)
 		}
@@ -201,7 +202,7 @@ func cleanupWalkingSkeletonFixture(t *testing.T, pool *pgxpool.Pool, f walkingSk
 func walkingUUID() pgtype.UUID { id := uuid.New(); return pgtype.UUID{Bytes: id, Valid: true} }
 func walkingSkeletonPlan(missionID pgtype.UUID) orchestration.Plan {
 	id, _ := uuid.FromBytes(missionID.Bytes[:])
-	return orchestration.Plan{SchemaVersion: 1, MissionID: id.String(), PlanKey: "walking-skeleton", Limits: orchestration.PlanLimits{MaxParallelRuns: 2, MaxTaskAttempts: 2, MaxReworkCycles: 1}, Nodes: []orchestration.PlanNode{{Key: "A", Title: "A", Description: "A", Role: orchestration.RoleExecutor, AcceptanceCriteria: []string{"A accepted"}, ArtifactKinds: []orchestration.ArtifactKind{orchestration.ArtifactKindCommit}}, {Key: "B", Title: "B", Description: "B", Role: orchestration.RoleExecutor, AcceptanceCriteria: []string{"B accepted"}, ArtifactKinds: []orchestration.ArtifactKind{orchestration.ArtifactKindCommit}}, {Key: "C", Title: "C", Description: "C", Role: orchestration.RoleIntegrator, AcceptanceCriteria: []string{"delivery accepted"}, ArtifactKinds: []orchestration.ArtifactKind{orchestration.ArtifactKindFinalDelivery}, DependsOn: []string{"A", "B"}}}}
+	return orchestration.Plan{SchemaVersion: 1, MissionID: id.String(), PlanKey: "walking-skeleton", Limits: orchestration.PlanLimits{MaxParallelRuns: 2, MaxTaskAttempts: 2, MaxReworkCycles: 1}, Nodes: []orchestration.PlanNode{{Key: "A", Title: "A", Description: "A", Duty: orchestration.DutyExecutor, AcceptanceCriteria: []string{"A accepted"}, ArtifactKinds: []orchestration.ArtifactKind{orchestration.ArtifactKindCommit}}, {Key: "B", Title: "B", Description: "B", Duty: orchestration.DutyExecutor, AcceptanceCriteria: []string{"B accepted"}, ArtifactKinds: []orchestration.ArtifactKind{orchestration.ArtifactKindCommit}}, {Key: "C", Title: "C", Description: "C", Duty: orchestration.DutyIntegrator, AcceptanceCriteria: []string{"delivery accepted"}, ArtifactKinds: []orchestration.ArtifactKind{orchestration.ArtifactKindFinalDelivery}, DependsOn: []string{"A", "B"}}}}
 }
 func loadNodesByKey(t *testing.T, ctx context.Context, q *db.Queries, workspaceID, missionID pgtype.UUID) map[string]db.TaskNode {
 	t.Helper()

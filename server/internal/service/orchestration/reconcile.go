@@ -9,6 +9,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 	db "github.com/kailonyang/liexiu/server/pkg/db/generated"
 )
@@ -40,7 +41,12 @@ type ReconcileRunResult struct {
 	Run                   db.OrchestrationRun
 	TaskNode              db.TaskNode
 	Activities            []db.OrchestrationActivity
+	PlanProposalArtifact  *db.Artifact
+	Artifact              *db.Artifact
+	ReviewVerdict         *db.ReviewVerdict
 	Changed               bool
+	EnqueueExecution      bool
+	EnqueueActorID        pgtype.UUID
 	CancelExecution       bool
 	CancelAgentTaskID     pgtype.UUID
 	CancelExecutionReason string
@@ -49,6 +55,30 @@ type ReconcileRunResult struct {
 type RunReconcileStore interface {
 	ListReconcilableRuns(context.Context, ReconcileCursor, int) ([]ReconcilableRun, error)
 	ReconcileRun(context.Context, ReconcileRunParams) (ReconcileRunResult, error)
+}
+
+type ExpiredMailboxMessage struct {
+	WorkspaceID pgtype.UUID
+	MissionID   pgtype.UUID
+	MessageID   pgtype.UUID
+	Revision    int64
+}
+
+type ExpireMailboxMessageParams struct {
+	WorkspaceID pgtype.UUID
+	MissionID   pgtype.UUID
+	MessageID   pgtype.UUID
+	CommandID   pgtype.UUID
+	Revision    int64
+	ObservedAt  time.Time
+}
+
+// MailboxExpiryStore is optional so the Run reconciler remains usable with
+// repository-only test stores. The production Repository implements it and
+// shares the same bounded startup/periodic recovery loop.
+type MailboxExpiryStore interface {
+	ListExpiredMailboxMessages(context.Context, time.Time, int) ([]ExpiredMailboxMessage, error)
+	ExpireMailboxMessage(context.Context, ExpireMailboxMessageParams) error
 }
 
 type RunReconcilerOptions struct {
@@ -121,13 +151,14 @@ func (r *RunReconciler) ReconcileBatch(ctx context.Context) (int, error) {
 	if r == nil || r.store == nil {
 		return 0, fmt.Errorf("run reconciler is not configured")
 	}
+	processed, expiryErr := r.expireMailboxBatch(ctx)
 	runs, err := r.store.ListReconcilableRuns(ctx, r.cursor, r.batchSize)
 	if err != nil {
-		return 0, fmt.Errorf("list reconcilable runs: %w", err)
+		return processed, errors.Join(expiryErr, fmt.Errorf("list reconcilable runs: %w", err))
 	}
 	if len(runs) == 0 {
 		r.cursor = ReconcileCursor{}
-		return 0, nil
+		return processed, expiryErr
 	}
 
 	var batchErrors []error
@@ -140,6 +171,18 @@ func (r *RunReconciler) ReconcileBatch(ctx context.Context) (int, error) {
 		})
 		if reconcileErr != nil {
 			batchErrors = append(batchErrors, fmt.Errorf("reconcile run %s: %w", uuidText(candidate.RunID), reconcileErr))
+			continue
+		}
+		if result.EnqueueExecution {
+			if r.execution == nil {
+				batchErrors = append(batchErrors, fmt.Errorf("enqueue run %s execution: execution gateway is not configured", uuidText(candidate.RunID)))
+				continue
+			}
+			if _, enqueueErr := r.execution.Enqueue(ctx, EnqueueExecutionRequest{
+				WorkspaceID: candidate.WorkspaceID, RunID: candidate.RunID, ActorID: result.EnqueueActorID,
+			}); enqueueErr != nil {
+				batchErrors = append(batchErrors, fmt.Errorf("enqueue run %s execution: %w", uuidText(candidate.RunID), enqueueErr))
+			}
 			continue
 		}
 		if !result.CancelExecution {
@@ -170,7 +213,38 @@ func (r *RunReconciler) ReconcileBatch(ctx context.Context) (int, error) {
 	if len(runs) < r.batchSize {
 		r.cursor = ReconcileCursor{}
 	}
-	return len(runs), errors.Join(batchErrors...)
+	return processed + len(runs), errors.Join(append(batchErrors, expiryErr)...)
+}
+
+func (r *RunReconciler) expireMailboxBatch(ctx context.Context) (int, error) {
+	store, ok := r.store.(MailboxExpiryStore)
+	if !ok {
+		return 0, nil
+	}
+	observedAt := r.now().UTC().Truncate(time.Microsecond)
+	messages, err := store.ListExpiredMailboxMessages(ctx, observedAt, r.batchSize)
+	if err != nil {
+		return 0, fmt.Errorf("list expired mailbox messages: %w", err)
+	}
+	var batchErrors []error
+	for _, message := range messages {
+		if err := store.ExpireMailboxMessage(ctx, ExpireMailboxMessageParams{
+			WorkspaceID: message.WorkspaceID,
+			MissionID:   message.MissionID,
+			MessageID:   message.MessageID,
+			CommandID:   derivedMailboxExpiryCommandID(message.MessageID, message.Revision),
+			Revision:    message.Revision,
+			ObservedAt:  observedAt,
+		}); err != nil && !errors.Is(err, ErrMailboxStatusConflict) {
+			batchErrors = append(batchErrors, fmt.Errorf("expire mailbox message %s: %w", uuidText(message.MessageID), err))
+		}
+	}
+	return len(messages), errors.Join(batchErrors...)
+}
+
+func derivedMailboxExpiryCommandID(messageID pgtype.UUID, revision int64) pgtype.UUID {
+	derived := uuid.NewSHA1(uuid.UUID(messageID.Bytes), []byte(fmt.Sprintf("mailbox-expiry:%d", revision)))
+	return pgtype.UUID{Bytes: [16]byte(derived), Valid: true}
 }
 
 type runObservation struct {
@@ -190,6 +264,7 @@ func normalizeRunObservation(mission db.Mission, run db.OrchestrationRun, node d
 		return runObservation{}, fmt.Errorf("observed_at is required")
 	}
 	observation := runObservation{status: RunStatus(run.Status), startedAt: run.StartedAt, finishedAt: run.FinishedAt}
+	planning := run.Purpose == "plan" && !run.TaskNodeID.Valid
 	if isTerminalRunStatus(RunStatus(run.Status)) {
 		if task != nil && isActiveAgentTaskStatus(task.Status) && (run.Status == string(RunStatusFailed) || run.Status == string(RunStatusCancelled)) {
 			observation.cancelExecution = true
@@ -197,10 +272,10 @@ func normalizeRunObservation(mission db.Mission, run db.OrchestrationRun, node d
 		return observation, nil
 	}
 	missionStatus := MissionStatus(mission.Status)
-	if missionStatus == MissionStatusCancelled || missionStatus == MissionStatusFailed || TaskStatus(node.Status) == TaskStatusCancelled {
+	if missionStatus == MissionStatusCancelled || missionStatus == MissionStatusFailed || (!planning && TaskStatus(node.Status) == TaskStatusCancelled) {
 		observation.status = RunStatusCancelled
 		observation.finishedAt = timestamptz(observedAt)
-		if !isTerminalTaskStatus(TaskStatus(node.Status)) {
+		if !planning && !isTerminalTaskStatus(TaskStatus(node.Status)) {
 			observation.taskStatus = TaskStatusCancelled
 			observation.taskStatusValid = true
 		}
@@ -226,7 +301,7 @@ func normalizeRunObservation(mission db.Mission, run db.OrchestrationRun, node d
 		if !observation.finishedAt.Valid {
 			observation.finishedAt = timestamptz(observedAt)
 		}
-		if TaskStatus(node.Status) == TaskStatusRunning {
+		if !planning && TaskStatus(node.Status) == TaskStatusRunning {
 			observation.taskStatus = TaskStatusAssigned
 			observation.taskStatusValid = true
 		}
@@ -251,7 +326,7 @@ func normalizeRunObservation(mission db.Mission, run db.OrchestrationRun, node d
 		if !observation.startedAt.Valid {
 			observation.startedAt = timestamptz(observedAt)
 		}
-		if TaskStatus(node.Status) == TaskStatusAssigned {
+		if !planning && TaskStatus(node.Status) == TaskStatusAssigned {
 			observation.taskStatus = TaskStatusRunning
 			observation.taskStatusValid = true
 		}
@@ -259,7 +334,7 @@ func normalizeRunObservation(mission db.Mission, run db.OrchestrationRun, node d
 		observation.status = RunStatusSucceeded
 		observation.startedAt = firstTimestamp(run.StartedAt, task.StartedAt)
 		observation.finishedAt = firstTimestamp(task.CompletedAt, timestamptz(observedAt))
-		if !isTerminalTaskStatus(TaskStatus(node.Status)) {
+		if !planning && !isTerminalTaskStatus(TaskStatus(node.Status)) {
 			observation.taskStatus = TaskStatusReview
 			observation.taskStatusValid = true
 		}
@@ -269,7 +344,7 @@ func normalizeRunObservation(mission db.Mission, run db.OrchestrationRun, node d
 		observation.finishedAt = firstTimestamp(task.CompletedAt, timestamptz(observedAt))
 		observation.failureKind = textValue(normalizeFailureKind(task.FailureReason.String))
 		observation.failureMessage = textValue(normalizeFailureMessage(task.Error.String, observation.failureKind.String))
-		if TaskStatus(node.Status) == TaskStatusRunning {
+		if !planning && TaskStatus(node.Status) == TaskStatusRunning {
 			observation.taskStatus = TaskStatusAssigned
 			observation.taskStatusValid = true
 		}
@@ -277,7 +352,7 @@ func normalizeRunObservation(mission db.Mission, run db.OrchestrationRun, node d
 		observation.status = RunStatusCancelled
 		observation.startedAt = firstTimestamp(run.StartedAt, task.StartedAt)
 		observation.finishedAt = firstTimestamp(task.CompletedAt, timestamptz(observedAt))
-		if !isTerminalTaskStatus(TaskStatus(node.Status)) {
+		if !planning && !isTerminalTaskStatus(TaskStatus(node.Status)) {
 			observation.taskStatus = TaskStatusCancelled
 			observation.taskStatusValid = true
 		}

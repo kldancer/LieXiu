@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
-import type { TaskNodeProjection, TeamMemberProjection } from "@liexiu/core/orchestration";
+import type { ActivityProjection, TaskNodeProjection, TeamMemberProjection } from "@liexiu/core/orchestration";
 import {
   boardLaneForStatus,
   buildDagLayout,
+  buildMailboxActivityViews,
   buildPixelActors,
   pixelActionForActivity,
   pixelActorState,
@@ -60,7 +61,34 @@ describe("orchestration visual mappings", () => {
     expect(pixelActionForActivity("task.blocked")).toBe("alert");
     expect(pixelActionForActivity(undefined)).toBe("none");
   });
+
+	it("builds safe deterministic mailbox summaries and drops duplicate or malformed events", () => {
+		const expired = mailboxActivity("event-expired", 12, "mailbox.message_expired", "expired", 8);
+		const pending = mailboxActivity("event-pending", 11, "mailbox.message_sent", "pending", 0);
+		const duplicate = { ...pending, id: "event-pending-replay" };
+		const malformed = { ...mailboxActivity("event-malformed", 13, "mailbox.message_sent", "pending", 0), payload: { secret: "must-not-render" } };
+		const views = buildMailboxActivityViews([expired, malformed, duplicate, pending]);
+
+		expect(views.map(({ sequence, status, hops }) => [sequence, status, hops])).toEqual([
+			[11, "pending", 0],
+			[12, "expired", 8],
+		]);
+		expect(views[0]).not.toHaveProperty("payload");
+	});
 });
+
+function mailboxActivity(id: string, sequence: number, type: string, status: string, hops: number): ActivityProjection {
+	return {
+		id, sequence, type, taskNodeId: "node-run", runId: "run-1", actorType: "agent", actorId: "agent-a",
+		subjectType: "mailbox_message", subjectId: "message-1", causationId: "command-1", correlationId: "command-1",
+		payloadVersion: 1, occurredAt: "2026-08-19T00:00:00Z",
+		payload: {
+			message_id: "message-1", message_type: "context_request", recipient_type: "agent", recipient_id: "agent-b",
+			from_status: status === "pending" ? "" : "pending", to_status: status,
+			expires_at: "2026-08-19T01:00:00Z", hops,
+		},
+	};
+}
 
 function node(id: string, key: string, dependencyIds: string[]): TaskNodeProjection {
   return {
@@ -68,7 +96,7 @@ function node(id: string, key: string, dependencyIds: string[]): TaskNodeProject
     key,
     title: key,
     description: "",
-    role: "executor",
+    duty: "executor",
     status: "pending",
     dependencyIds,
     acceptanceCriteria: [],
@@ -78,11 +106,11 @@ function node(id: string, key: string, dependencyIds: string[]): TaskNodeProject
   };
 }
 
-function agent(agentId: string, agentName: string, role: TeamMemberProjection["role"]): TeamMemberProjection {
+function agent(agentId: string, agentName: string, duty: TeamMemberProjection["duty"]): TeamMemberProjection {
   return {
     agentId,
     agentName,
-    role,
+    duty,
     runtimeId: `runtime-${agentId}`,
     runtimeName: "runtime",
     runtimeStatus: "online",

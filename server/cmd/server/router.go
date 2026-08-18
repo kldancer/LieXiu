@@ -520,6 +520,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 					// are admin-gated below).
 					r.Get("/runtime-profiles", h.ListRuntimeProfiles)
 					r.Get("/runtime-profiles/{profileId}", h.GetRuntimeProfile)
+					r.Get("/role-profiles", h.ListRoleProfiles)
 				})
 				// Admin-level access
 				r.Group(func(r chi.Router) {
@@ -531,6 +532,12 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 					r.Patch("/runtime-profiles/{profileId}", h.UpdateRuntimeProfile)
 					r.Put("/runtime-profiles/{profileId}", h.UpdateRuntimeProfile)
 					r.Delete("/runtime-profiles/{profileId}", h.DeleteRuntimeProfile)
+				})
+				// RoleProfile versions affect future Mission execution policy and
+				// therefore remain owner-only.
+				r.Group(func(r chi.Router) {
+					r.Use(middleware.RequireWorkspaceRoleFromURL(queries, "id", "owner"))
+					r.With(handler.RequireHumanActor).Post("/role-profiles", h.CreateRoleProfileVersion)
 				})
 				// GitHub integration — connect / disconnect remain admin-only;
 				// the read-only list endpoint lives in the member-level group
@@ -562,13 +569,19 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 
 			// Mission orchestration read model. All three visualization surfaces
 			// consume these workspace-scoped projections.
+			r.Post("/api/orchestration/collaboration/messages", h.SendRuntimeCollaborationMessage)
 			r.Route("/api/missions/{id}", func(r chi.Router) {
 				r.Get("/", h.GetMissionProjection)
+				r.Post("/plan/request", h.RequestMissionPlan)
+				r.Post("/plan-proposals/{artifactID}/edit", h.EditPlanProposal)
+				r.Post("/plan-proposals/{artifactID}/reject", h.RejectPlanProposal)
+				r.Post("/plan-proposals/{artifactID}/approve", h.ApprovePlanProposal)
 				r.Post("/start", h.StartMission)
 				r.Post("/cancel", h.CancelMission)
 				r.Get("/activities", h.ListMissionActivities)
 				r.Get("/runs/{runID}", h.GetMissionRunDetail)
 				r.Post("/budget/approve", h.ApproveMissionBudget)
+				r.Post("/human-gates/{gateID}/resolve", h.ResolveHumanGate)
 				r.Post("/tasks/{taskNodeID}/retry", h.RetryMissionTask)
 			})
 

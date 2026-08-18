@@ -1,4 +1,4 @@
-.PHONY: help makehelp dev server daemon cli liexiu build test migrate-up migrate-down sqlc seed clean setup start stop check worktree-env setup-main start-main stop-main check-main setup-worktree start-worktree stop-worktree check-worktree remove-worktree db-up db-down db-drop db-reset selfhost selfhost-build selfhost-stop
+.PHONY: help makehelp dev server daemon cli liexiu build test realacceptance-multi-runtime migrate-up migrate-down sqlc seed clean setup start stop check worktree-env setup-main start-main stop-main check-main setup-worktree start-worktree stop-worktree check-worktree remove-worktree db-up db-down db-drop db-reset selfhost selfhost-build selfhost-stop
 
 MAIN_ENV_FILE ?= .env
 WORKTREE_ENV_FILE ?= .env.worktree
@@ -295,6 +295,9 @@ test: ## Run Go tests after ensuring the target DB exists and migrations are app
 	@bash scripts/ensure-postgres.sh "$(ENV_FILE)"
 	cd server && go run ./cmd/migrate up
 	bash scripts/test-go.sh --race
+
+realacceptance-multi-runtime: ## Run the explicitly authorized two-runtime Mission acceptance
+	@bash scripts/run-multi-runtime-realacceptance.sh
 
 # Database
 ##@ Database

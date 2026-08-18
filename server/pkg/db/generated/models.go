@@ -122,7 +122,7 @@ type AgentTaskQueue struct {
 	RuntimeConnectedApps []byte        `json:"runtime_connected_apps"`
 	CoalescedCommentIds  []pgtype.UUID `json:"coalesced_comment_ids"`
 	DeliveredCommentIds  []pgtype.UUID `json:"delivered_comment_ids"`
-	// Waterfall level that resolved originator_user_id for this run: direct_human | delegation | comment_source | owner_fallback | backfill | unattributed. Audit/visibility metadata only — never consulted for authorization. TEXT with no CHECK so new trigger paths can add a source without a migration (MUL-4302 §7). NULL on pre-migration rows.
+	// Waterfall level that resolved originator_user_id for this run: direct_human | delegation | comment_source | rule_owner | owner_fallback | backfill | unattributed. Audit/visibility metadata only — never consulted for authorization. TEXT with no CHECK so new trigger paths can add a source without a migration (MUL-4302 §7). NULL on pre-migration rows.
 	OriginatorSource pgtype.Text `json:"originator_source"`
 	// For originator_source=delegation: the parent task whose accountable human was copied onto this run. Value is copied, not chained, so delegation cycles are harmless (MUL-4302 §3.2). No FK; app-layer integrity only.
 	DelegatedFromTaskID pgtype.UUID `json:"delegated_from_task_id"`
@@ -130,11 +130,11 @@ type AgentTaskQueue struct {
 	RetryOfTaskID pgtype.UUID `json:"retry_of_task_id"`
 	// Human manual-rerun lineage: the historical task a member re-ran. The rerun itself is a NEW direct_human attribution to the rerunning member; this column preserves the link to the original (MUL-4302 §5). No FK.
 	RerunOfTaskID pgtype.UUID `json:"rerun_of_task_id"`
-	// Uniform kind tag for the direct cause of this run (comment | issue_assignment | orchestration_run | rerun | ...), paired with trigger_evidence_ref_id. Free TEXT so new evidence kinds need no migration (MUL-4302 §2).
+	// Uniform kind tag for the direct cause of this run (comment | issue_assignment | autopilot_run | rule_version | rerun | ...), paired with trigger_evidence_ref_id. Free TEXT so new evidence kinds need no migration (MUL-4302 §2).
 	TriggerEvidenceKind pgtype.Text `json:"trigger_evidence_kind"`
-	// The row id referenced by trigger_evidence_kind (a comment id, source task id, orchestration run id, ...). No FK; resolvable per-kind in the app layer (MUL-4302 §2).
+	// The row id referenced by trigger_evidence_kind (a comment id, autopilot_run id, rule_version id, source task id, ...). No FK; resolvable per-kind in the app layer (MUL-4302 §2).
 	TriggerEvidenceRefID pgtype.UUID `json:"trigger_evidence_ref_id"`
-	// The one human accountable for this run, for audit / visibility / cost only — NEVER consulted for authorization (that is originator_user_id). Invariant: when originator_user_id IS NOT NULL, this equals it; the two diverge only when originator_user_id IS NULL (degraded owner_fallback may name an accountable human while authorization carries none). No FK, no cascade (MUL-4302 §1/§7). NULL means no accountable human was resolved: a pre-migration row, OR a NEW row whose audit source is not-yet-resolved / unattributed — NOT pre-migration only.
+	// The one human accountable for this run, for audit / visibility / cost only — NEVER consulted for authorization (that is originator_user_id). Invariant: when originator_user_id IS NOT NULL, this equals it; the two diverge only when originator_user_id IS NULL (autopilot rule_owner / degraded owner_fallback name an accountable human while authorization carries none). No FK, no cascade (MUL-4302 §1/§7). NULL means no accountable human was resolved: a pre-migration row, OR a NEW row whose audit source is not-yet-resolved / unattributed (e.g. run_only autopilot until rule_owner lands) — NOT pre-migration only.
 	AccountableUserID         pgtype.UUID `json:"accountable_user_id"`
 	SessionRolloutMissing     bool        `json:"session_rollout_missing"`
 	RetiredSessionID          pgtype.Text `json:"retired_session_id"`
@@ -434,6 +434,25 @@ type Mission struct {
 	BudgetApprovedAt        pgtype.Timestamptz `json:"budget_approved_at"`
 }
 
+// Immutable Mission/Duty RolePolicySnapshot facts; application code appends rows and never mutates them.
+type MissionRolePolicySnapshot struct {
+	ID                 pgtype.UUID        `json:"id"`
+	WorkspaceID        pgtype.UUID        `json:"workspace_id"`
+	MissionID          pgtype.UUID        `json:"mission_id"`
+	Duty               string             `json:"duty"`
+	RoleProfileID      pgtype.UUID        `json:"role_profile_id"`
+	RoleProfileKey     string             `json:"role_profile_key"`
+	RoleProfileVersion int32              `json:"role_profile_version"`
+	ProfileName        string             `json:"profile_name"`
+	ProfileDescription string             `json:"profile_description"`
+	Config             []byte             `json:"config"`
+	AgentID            pgtype.UUID        `json:"agent_id"`
+	SchemaVersion      int32              `json:"schema_version"`
+	ContentHash        string             `json:"content_hash"`
+	FrozenBy           pgtype.UUID        `json:"frozen_by"`
+	FrozenAt           pgtype.Timestamptz `json:"frozen_at"`
+}
+
 type OrchestrationActivity struct {
 	ID             pgtype.UUID        `json:"id"`
 	WorkspaceID    pgtype.UUID        `json:"workspace_id"`
@@ -468,6 +487,52 @@ type OrchestrationAssignment struct {
 	CreatedBy    pgtype.UUID        `json:"created_by"`
 	CreatedAt    pgtype.Timestamptz `json:"created_at"`
 	EndedAt      pgtype.Timestamptz `json:"ended_at"`
+}
+
+type OrchestrationHumanGate struct {
+	ID               pgtype.UUID        `json:"id"`
+	WorkspaceID      pgtype.UUID        `json:"workspace_id"`
+	MissionID        pgtype.UUID        `json:"mission_id"`
+	TaskNodeID       pgtype.UUID        `json:"task_node_id"`
+	ArtifactID       pgtype.UUID        `json:"artifact_id"`
+	SourceRunID      pgtype.UUID        `json:"source_run_id"`
+	Kind             string             `json:"kind"`
+	Status           string             `json:"status"`
+	Reason           string             `json:"reason"`
+	Context          []byte             `json:"context"`
+	Revision         int64              `json:"revision"`
+	ResolvedBy       pgtype.UUID        `json:"resolved_by"`
+	Resolution       pgtype.Text        `json:"resolution"`
+	ResolutionReason pgtype.Text        `json:"resolution_reason"`
+	ResolvedAt       pgtype.Timestamptz `json:"resolved_at"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+}
+
+type OrchestrationMailboxMessage struct {
+	ID               pgtype.UUID        `json:"id"`
+	WorkspaceID      pgtype.UUID        `json:"workspace_id"`
+	MissionID        pgtype.UUID        `json:"mission_id"`
+	TaskNodeID       pgtype.UUID        `json:"task_node_id"`
+	RunID            pgtype.UUID        `json:"run_id"`
+	ArtifactID       pgtype.UUID        `json:"artifact_id"`
+	ReplyToMessageID pgtype.UUID        `json:"reply_to_message_id"`
+	SchemaVersion    int32              `json:"schema_version"`
+	Type             string             `json:"type"`
+	SenderType       string             `json:"sender_type"`
+	SenderID         pgtype.UUID        `json:"sender_id"`
+	RecipientType    string             `json:"recipient_type"`
+	RecipientID      pgtype.UUID        `json:"recipient_id"`
+	Status           string             `json:"status"`
+	DedupeKey        string             `json:"dedupe_key"`
+	Hops             int32              `json:"hops"`
+	PayloadVersion   int32              `json:"payload_version"`
+	Payload          []byte             `json:"payload"`
+	CommandID        pgtype.UUID        `json:"command_id"`
+	CreatedBy        pgtype.UUID        `json:"created_by"`
+	Revision         int64              `json:"revision"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+	ExpiresAt        pgtype.Timestamptz `json:"expires_at"`
+	StatusChangedAt  pgtype.Timestamptz `json:"status_changed_at"`
 }
 
 type OrchestrationRun struct {
@@ -559,6 +624,21 @@ type ReviewVerdict struct {
 	Evidence         []byte             `json:"evidence"`
 	RequestedChanges []byte             `json:"requested_changes"`
 	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+}
+
+// Append-only RoleProfile versions. Custom names and policy never create new orchestration duties or state-machine branches.
+type RoleProfile struct {
+	ID          pgtype.UUID        `json:"id"`
+	WorkspaceID pgtype.UUID        `json:"workspace_id"`
+	ProfileKey  string             `json:"profile_key"`
+	Version     int32              `json:"version"`
+	Duty        string             `json:"duty"`
+	Name        string             `json:"name"`
+	Description string             `json:"description"`
+	Config      []byte             `json:"config"`
+	CommandID   pgtype.UUID        `json:"command_id"`
+	CreatedBy   pgtype.UUID        `json:"created_by"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
 }
 
 type RuntimeProfile struct {

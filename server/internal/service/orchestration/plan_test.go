@@ -100,12 +100,12 @@ func TestValidatePlanRejectsDependencyDepthAboveCap(t *testing.T) {
 
 	plan := walkingSkeletonPlan()
 	plan.Nodes = []PlanNode{
-		planNode("A", RoleExecutor),
-		planNode("B", RoleExecutor, "A"),
-		planNode("C", RoleExecutor, "B"),
-		planNode("D", RoleExecutor, "C"),
-		planNode("E", RoleIntegrator, "D"),
-		planNode("F", RoleIntegrator, "E"),
+		planNode("A", DutyExecutor),
+		planNode("B", DutyExecutor, "A"),
+		planNode("C", DutyExecutor, "B"),
+		planNode("D", DutyExecutor, "C"),
+		planNode("E", DutyIntegrator, "D"),
+		planNode("F", DutyIntegrator, "E"),
 	}
 	errs := ValidatePlan(plan, "mission-1", DefaultPlanHardLimits())
 	if !hasValidationCode(errs, "dependency_depth_exceeded") {
@@ -162,23 +162,23 @@ func walkingSkeletonPlan() Plan {
 			MaxReworkCycles: 1,
 		},
 		Nodes: []PlanNode{
-			planNode("A", RoleExecutor),
-			planNode("B", RoleExecutor),
-			planNode("C", RoleIntegrator, "A", "B"),
+			planNode("A", DutyExecutor),
+			planNode("B", DutyExecutor),
+			planNode("C", DutyIntegrator, "A", "B"),
 		},
 	}
 }
 
-func planNode(key string, role Role, dependencies ...string) PlanNode {
+func planNode(key string, duty Duty, dependencies ...string) PlanNode {
 	kinds := []ArtifactKind{ArtifactKindCommit, ArtifactKindTestReceipt}
-	if role == RoleIntegrator {
+	if duty == DutyIntegrator {
 		kinds = []ArtifactKind{ArtifactKindFinalDelivery}
 	}
 	return PlanNode{
 		Key:                key,
 		Title:              "Task " + key,
 		Description:        "Deliver task " + key,
-		Role:               role,
+		Duty:               duty,
 		AcceptanceCriteria: []string{"Produces a verifiable result"},
 		ArtifactKinds:      kinds,
 		DependsOn:          dependencies,

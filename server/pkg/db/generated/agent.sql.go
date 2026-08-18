@@ -1284,11 +1284,15 @@ SELECT
     COALESCE($8::boolean, FALSE),
     $9,
     CASE
-        WHEN COALESCE($10::text, '') <> ''
-        THEN jsonb_build_object('head_sha', $10::text)
+        WHEN $10::jsonb IS NOT NULL
+             AND COALESCE($11::text, '') <> ''
+        THEN $10::jsonb || jsonb_build_object('head_sha', $11::text)
+        WHEN $10::jsonb IS NOT NULL
+        THEN $10::jsonb
+        WHEN COALESCE($11::text, '') <> ''
+        THEN jsonb_build_object('head_sha', $11::text)
         ELSE NULL
     END,
-    $11,
     $12,
     $13,
     $14,
@@ -1297,7 +1301,8 @@ SELECT
     $17,
     $18,
     $19,
-    $20
+    $20,
+    $21
 WHERE lock_task_owner_rows($1, $3, $2)
 RETURNING id, agent_id, issue_id, status, priority, dispatched_at, started_at, completed_at, result, error, created_at, context, runtime_id, session_id, work_dir, trigger_comment_id, attempt, max_attempts, parent_task_id, failure_reason, trigger_summary, force_fresh_session, wait_reason, initiator_user_id, handoff_note, prepare_lease_expires_at, runtime_mcp_overlay, escalation_for_task_id, fire_at, originator_user_id, runtime_connected_apps, coalesced_comment_ids, delivered_comment_ids, originator_source, delegated_from_task_id, retry_of_task_id, rerun_of_task_id, trigger_evidence_kind, trigger_evidence_ref_id, accountable_user_id, session_rollout_missing, retired_session_id, quick_actions_disabled, regenerate_quick_actions_for, branch_name, orchestration_run_id
 `
@@ -1312,6 +1317,7 @@ type CreateAgentTaskParams struct {
 	TriggerSummary       pgtype.Text   `json:"trigger_summary"`
 	ForceFreshSession    pgtype.Bool   `json:"force_fresh_session"`
 	HandoffNote          pgtype.Text   `json:"handoff_note"`
+	TaskContext          []byte        `json:"task_context"`
 	HeadSha              pgtype.Text   `json:"head_sha"`
 	OriginatorUserID     pgtype.UUID   `json:"originator_user_id"`
 	AccountableUserID    pgtype.UUID   `json:"accountable_user_id"`
@@ -1347,6 +1353,7 @@ func (q *Queries) CreateAgentTask(ctx context.Context, arg CreateAgentTaskParams
 		arg.TriggerSummary,
 		arg.ForceFreshSession,
 		arg.HandoffNote,
+		arg.TaskContext,
 		arg.HeadSha,
 		arg.OriginatorUserID,
 		arg.AccountableUserID,

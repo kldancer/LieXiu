@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"io"
 	"net/http"
@@ -42,6 +43,25 @@ const (
 
 func TestMain(m *testing.M) {
 	ctx := context.Background()
+	if configErr := os.Getenv("LIEXIU_REAL_ACCEPTANCE_CONFIG_ERROR"); configErr != "" {
+		fmt.Printf("Refusing invalid real acceptance configuration: %s\n", configErr)
+		os.Exit(2)
+	}
+	// A custom TestMain runs before the testing package parses command-line
+	// flags. The real-acceptance guard below must inspect the actual -test.run
+	// value, not its empty default, or every correctly targeted tagged binary
+	// is rejected before it can reach the dedicated database boundary.
+	if !flag.Parsed() {
+		flag.Parse()
+	}
+	realAcceptance := os.Getenv("LIEXIU_REAL_ACCEPTANCE_EXTERNAL_FIXTURE") == "1"
+	if realAcceptance {
+		runFlag := flag.Lookup("test.run")
+		if runFlag == nil || runFlag.Value.String() != "^TestMultiRuntimeRealAcceptance$" {
+			fmt.Println("Refusing real acceptance without the exact TestMultiRuntimeRealAcceptance -run filter")
+			os.Exit(2)
+		}
+	}
 	dbURL := os.Getenv("DATABASE_URL")
 	if dbURL == "" {
 		fmt.Println("Skipping integration tests: DATABASE_URL is not set")
@@ -50,13 +70,33 @@ func TestMain(m *testing.M) {
 
 	pool, err := pgxpool.New(ctx, dbURL)
 	if err != nil {
-		fmt.Printf("Skipping integration tests: could not connect to database: %v\n", err)
+		if realAcceptance {
+			fmt.Println("Could not initialize the dedicated real acceptance database connection")
+			os.Exit(1)
+		}
+		fmt.Printf("Could not connect to integration database: %v\n", err)
 		os.Exit(0)
 	}
 	if err := pool.Ping(ctx); err != nil {
-		fmt.Printf("Skipping integration tests: database not reachable: %v\n", err)
 		pool.Close()
+		if realAcceptance {
+			fmt.Println("Dedicated real acceptance database is not reachable")
+			os.Exit(1)
+		}
+		fmt.Printf("Integration database not reachable: %v\n", err)
 		os.Exit(0)
+	}
+
+	// A tagged real-acceptance run owns a unique fixture and router inside its
+	// target test. Do not create or delete the shared fixed-slug integration
+	// fixture in that mode: doing so would make concurrent acceptance runs
+	// race over integration-tests. The exact -run guard above also prevents an
+	// accidental tagged package-wide invocation from connecting to the pool.
+	if realAcceptance {
+		testPool = pool
+		code := m.Run()
+		pool.Close()
+		os.Exit(code)
 	}
 
 	testPool = pool
