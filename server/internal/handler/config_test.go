@@ -116,6 +116,44 @@ func TestGetConfigHonorsVCSIntegrationSwitch(t *testing.T) {
 	}
 }
 
+func TestGetConfigExposesOnlyPersonalModeCapability(t *testing.T) {
+	origCfg := testHandler.cfg
+	t.Cleanup(func() { testHandler.cfg = origCfg })
+
+	testHandler.cfg.AutoLogin = true
+	req := httptest.NewRequest(http.MethodGet, "/api/config", nil)
+	req.RemoteAddr = "127.0.0.1:44001"
+	req.Header.Set("Referer", "http://localhost:3000/")
+	w := httptest.NewRecorder()
+	testHandler.GetConfig(w, req)
+
+	var cfg map[string]json.RawMessage
+	if err := json.Unmarshal(w.Body.Bytes(), &cfg); err != nil {
+		t.Fatalf("decode config: %v", err)
+	}
+	if string(cfg["auto_login"]) != "true" {
+		t.Fatalf("auto_login: want true, got %s", cfg["auto_login"])
+	}
+	for _, forbidden := range []string{"owner", "workspace", "token", "secret"} {
+		if _, found := cfg[forbidden]; found {
+			t.Fatalf("public config leaked personal identity field %q", forbidden)
+		}
+	}
+
+	remoteReq := httptest.NewRequest(http.MethodGet, "/api/config", nil)
+	remoteReq.RemoteAddr = "127.0.0.1:44001"
+	remoteReq.Header.Set("Referer", "http://10.10.60.205:3000/")
+	remoteResponse := httptest.NewRecorder()
+	testHandler.GetConfig(remoteResponse, remoteReq)
+	var remoteCfg map[string]json.RawMessage
+	if err := json.Unmarshal(remoteResponse.Body.Bytes(), &remoteCfg); err != nil {
+		t.Fatalf("decode remote config: %v", err)
+	}
+	if _, found := remoteCfg["auto_login"]; found {
+		t.Fatal("auto_login must be omitted for a LAN browser behind the local proxy")
+	}
+}
+
 func TestGetConfigUsesAppURLForSameOriginDaemonSetup(t *testing.T) {
 	t.Setenv("LIEXIU_PUBLIC_URL", "")
 	t.Setenv("LIEXIU_APP_URL", "https://liexiu.internal.example/")

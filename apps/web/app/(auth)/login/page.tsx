@@ -49,6 +49,11 @@ function LoginPageContent() {
     if (canonical) router.push(paths.workspace(canonical.slug).issues());
   };
 
+  // Personal mode establishes its HttpOnly session during auth
+  // initialization. Keep the legacy bootstrap UI out of the first paint so
+  // users never see a login form flash before entering the workspace.
+  if (isLoading) return null;
+
   return (
     <LoginPage
       onSuccess={handleSuccess}

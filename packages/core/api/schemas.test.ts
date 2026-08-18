@@ -507,6 +507,12 @@ describe("dashboard + runtime usage schema drift", () => {
 });
 
 describe("AppConfigSchema cdn_signed drift", () => {
+  it("defaults malformed personal-mode metadata to disabled", () => {
+    expect(AppConfigSchema.parse({ auto_login: true }).auto_login).toBe(true);
+    expect(AppConfigSchema.parse({ auto_login: "true" }).auto_login).toBe(false);
+    expect(AppConfigSchema.parse({}).auto_login).toBe(false);
+  });
+
   it("defaults cdn_signed to false when the server omits it (pre-MUL-3254 servers)", () => {
     const parsed = AppConfigSchema.parse({ cdn_domain: "cdn.example.com" });
     expect(parsed.cdn_signed).toBe(false);

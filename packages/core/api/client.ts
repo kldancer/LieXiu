@@ -98,6 +98,7 @@ import type {
   BootstrapRequest,
   BootstrapResponse,
   BootstrapStatus,
+  LocalSessionResponse,
 } from "../types";
 import type {
   ActivityPage,
@@ -166,6 +167,7 @@ import {
   EMPTY_TIMELINE_ENTRIES,
   EMPTY_USER,
   BootstrapResponseSchema,
+  LocalSessionResponseSchema,
   BootstrapStatusSchema,
   EMPTY_BOOTSTRAP_STATUS,
   AppConfigSchema,
@@ -483,6 +485,22 @@ export class ApiClient {
     );
     if (!response || !response.token || !response.user.id || !response.workspace.id) {
       throw new Error("Invalid bootstrap response");
+    }
+    return response;
+  }
+
+  async startLocalSession(): Promise<LocalSessionResponse> {
+    const raw = await this.fetch<unknown>("/api/auth/local-session", {
+      method: "POST",
+    });
+    const response = parseWithFallback<LocalSessionResponse | null>(
+      raw,
+      LocalSessionResponseSchema,
+      null,
+      { endpoint: "POST /api/auth/local-session" },
+    );
+    if (!response || !response.user.id || !response.workspace.id) {
+      throw new Error("Invalid personal session response");
     }
     return response;
   }

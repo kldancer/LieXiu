@@ -195,6 +195,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 
 	instanceConfig := handler.Config{
 		OwnerBootstrapSecret:     strings.TrimSpace(os.Getenv("LIEXIU_OWNER_BOOTSTRAP_SECRET")),
+		AutoLogin:                personalAutoLoginEnabled(os.Getenv("APP_ENV"), os.Getenv("LIEXIU_AUTO_LOGIN")),
 		VCSIntegrationEnabled:    os.Getenv("LIEXIU_VCS_INTEGRATION_ENABLED") == "true",
 		PublicURL:                strings.TrimRight(strings.TrimSpace(os.Getenv("LIEXIU_PUBLIC_URL")), "/"),
 		TrustedProxies:           parseTrustedProxies(os.Getenv("LIEXIU_TRUSTED_PROXIES")),
@@ -406,6 +407,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 	r.Post("/auth/logout", h.Logout)
 	r.Get("/api/bootstrap/status", h.GetLocalBootstrapStatus)
 	r.With(authRL).Post("/api/bootstrap", h.BootstrapLocalOwner)
+	r.With(authRL).Post("/api/auth/local-session", h.StartLocalSession)
 
 	// Public API
 	r.Get("/api/config", h.GetConfig)
@@ -811,6 +813,11 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 	})
 
 	return r, h
+}
+
+func personalAutoLoginEnabled(appEnv, raw string) bool {
+	return !strings.EqualFold(strings.TrimSpace(appEnv), "production") &&
+		strings.EqualFold(strings.TrimSpace(raw), "true")
 }
 
 // membershipChecker implements realtime.MembershipChecker using database queries.

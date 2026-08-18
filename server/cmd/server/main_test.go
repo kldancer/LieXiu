@@ -188,6 +188,28 @@ func TestMainUsesRouterOwnedBackgroundServices(t *testing.T) {
 	}
 }
 
+func TestPersonalAutoLoginEnabled(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		appEnv string
+		raw    string
+		want   bool
+	}{
+		{name: "local explicit", raw: "true", want: true},
+		{name: "trimmed", appEnv: "development", raw: " TRUE ", want: true},
+		{name: "off by default", raw: "", want: false},
+		{name: "explicit false", raw: "false", want: false},
+		{name: "production forced off", appEnv: "production", raw: "true", want: false},
+		{name: "production case insensitive", appEnv: " Production ", raw: "TRUE", want: false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if got := personalAutoLoginEnabled(test.appEnv, test.raw); got != test.want {
+				t.Fatalf("personalAutoLoginEnabled(%q, %q) = %v, want %v", test.appEnv, test.raw, got, test.want)
+			}
+		})
+	}
+}
+
 func TestMainStartsRunReconcilerWithBackgroundLifecycle(t *testing.T) {
 	fset := token.NewFileSet()
 	file, err := parser.ParseFile(fset, mainSourceFile, nil, 0)

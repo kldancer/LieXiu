@@ -5,8 +5,10 @@ import (
 	"crypto/subtle"
 	"encoding/json"
 	"errors"
+	"net"
 	"net/http"
 	"net/mail"
+	"net/url"
 	"strings"
 	"time"
 
@@ -37,6 +39,20 @@ type LocalBootstrapResponse struct {
 	User        UserResponse      `json:"user"`
 	Workspace   WorkspaceResponse `json:"workspace"`
 	Provisioned bool              `json:"provisioned"`
+}
+
+type LocalSessionResponse struct {
+	User        UserResponse      `json:"user"`
+	Workspace   WorkspaceResponse `json:"workspace"`
+	Provisioned bool              `json:"provisioned"`
+}
+
+var personalBootstrapInput = localinstance.BootstrapInput{
+	OwnerName:     "LieXiu Owner",
+	OwnerEmail:    "owner@liexiu.local",
+	WorkspaceName: "LieXiu",
+	WorkspaceSlug: "liexiu",
+	IssuePrefix:   "LX",
 }
 
 func (h *Handler) GetLocalBootstrapStatus(w http.ResponseWriter, r *http.Request) {
@@ -93,19 +109,10 @@ func (h *Handler) BootstrapLocalOwner(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	token, err := h.issueJWT(result.Owner)
+	token, err := h.setLocalSessionCookies(w, result)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to generate session")
-		return
-	}
-	if err := auth.SetAuthCookies(w, token); err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to create session")
 		return
-	}
-	if h.CFSigner != nil {
-		for _, cookie := range h.CFSigner.SignedCookies(time.Now().Add(auth.AuthTokenTTL())) {
-			http.SetCookie(w, cookie)
-		}
 	}
 
 	writeJSON(w, http.StatusOK, LocalBootstrapResponse{
@@ -114,6 +121,86 @@ func (h *Handler) BootstrapLocalOwner(w http.ResponseWriter, r *http.Request) {
 		Workspace:   h.workspaceToResponse(result.Workspace),
 		Provisioned: result.Provisioned,
 	})
+}
+
+// StartLocalSession removes the login ceremony for a single-user development
+// instance without removing authentication. It is deliberately limited to a
+// loopback backend connection, a localhost browser origin, and a router
+// configuration that is disabled in production. Existing stores are selected
+// only when exactly one owner membership exists; ambiguous stores fail closed.
+func (h *Handler) StartLocalSession(w http.ResponseWriter, r *http.Request) {
+	if !h.cfg.AutoLogin || h.LocalInstance == nil {
+		writeError(w, http.StatusNotFound, "personal mode is unavailable")
+		return
+	}
+	if !isLocalBrowserRequest(r) {
+		writeError(w, http.StatusForbidden, "personal mode is limited to localhost")
+		return
+	}
+
+	result, err := h.LocalInstance.BootstrapPersonal(r.Context(), personalBootstrapInput)
+	if err != nil {
+		switch {
+		case errors.Is(err, localinstance.ErrSelectionRequired),
+			errors.Is(err, localinstance.ErrInvalidSelection),
+			errors.Is(err, localinstance.ErrIncompleteStore),
+			errors.Is(err, localinstance.ErrCorruptBinding):
+			writeError(w, http.StatusConflict, err.Error())
+		default:
+			writeError(w, http.StatusInternalServerError, "failed to initialize personal session")
+		}
+		return
+	}
+	if _, err := h.setLocalSessionCookies(w, result); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to create session")
+		return
+	}
+	writeJSON(w, http.StatusOK, LocalSessionResponse{
+		User:        h.userToResponse(result.Owner),
+		Workspace:   h.workspaceToResponse(result.Workspace),
+		Provisioned: result.Provisioned,
+	})
+}
+
+func (h *Handler) setLocalSessionCookies(w http.ResponseWriter, result localinstance.Result) (string, error) {
+	token, err := h.issueJWT(result.Owner)
+	if err != nil {
+		return "", err
+	}
+	if err := auth.SetAuthCookies(w, token); err != nil {
+		return "", err
+	}
+	if h.CFSigner != nil {
+		for _, cookie := range h.CFSigner.SignedCookies(time.Now().Add(auth.AuthTokenTTL())) {
+			http.SetCookie(w, cookie)
+		}
+	}
+	return token, nil
+}
+
+func isLoopbackRemote(remoteAddr string) bool {
+	host, _, err := net.SplitHostPort(strings.TrimSpace(remoteAddr))
+	if err != nil {
+		host = strings.Trim(strings.TrimSpace(remoteAddr), "[]")
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
+}
+
+func isLocalBrowserRequest(r *http.Request) bool {
+	if r == nil || !isLoopbackRemote(r.RemoteAddr) {
+		return false
+	}
+	referer, err := url.Parse(strings.TrimSpace(r.Referer()))
+	if err != nil || referer.Hostname() == "" {
+		return false
+	}
+	host := strings.Trim(strings.TrimSpace(referer.Hostname()), "[]")
+	if strings.EqualFold(host, "localhost") {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
 
 // GetCanonicalWorkspace resolves the singleton workspace for the authenticated

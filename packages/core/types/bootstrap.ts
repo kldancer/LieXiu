@@ -21,3 +21,9 @@ export interface BootstrapResponse {
   workspace: Workspace;
   provisioned: boolean;
 }
+
+export interface LocalSessionResponse {
+  user: User;
+  workspace: Workspace;
+  provisioned: boolean;
+}

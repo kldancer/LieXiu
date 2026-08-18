@@ -373,6 +373,47 @@ func TestRepositoryBootstrapBindsUniqueExistingOwner(t *testing.T) {
 	}
 }
 
+func TestRepositoryBootstrapAutoBindsOnlyExistingOwner(t *testing.T) {
+	pool, queries := newLocalInstancePool(t)
+	requireUnboundLocalInstance(t, pool)
+	fixture := seedIdentityFixture(t, pool, 1, "owner")
+
+	result, err := NewRepository(queries, pool).BootstrapPersonal(context.Background(), BootstrapInput{
+		OwnerName:     "LieXiu Owner",
+		OwnerEmail:    "owner@liexiu.local",
+		WorkspaceName: "LieXiu",
+		WorkspaceSlug: "liexiu",
+		IssuePrefix:   "LX",
+	})
+	if err != nil {
+		t.Fatalf("auto-bind unique existing owner: %v", err)
+	}
+	if result.Provisioned {
+		t.Fatal("auto-binding an existing owner must not provision a new identity")
+	}
+	if result.Owner.ID != fixture.userID || result.Workspace.ID != fixture.workspaceID[0] {
+		t.Fatalf("auto-bind selected (%v, %v), want (%v, %v)", result.Owner.ID, result.Workspace.ID, fixture.userID, fixture.workspaceID[0])
+	}
+}
+
+func TestRepositoryBootstrapAutoBindFailsClosedWhenOwnerIsAmbiguous(t *testing.T) {
+	pool, queries := newLocalInstancePool(t)
+	requireUnboundLocalInstance(t, pool)
+	seedIdentityFixture(t, pool, 2, "owner")
+
+	_, err := NewRepository(queries, pool).BootstrapPersonal(context.Background(), BootstrapInput{
+		OwnerName:     "LieXiu Owner",
+		OwnerEmail:    "owner@liexiu.local",
+		WorkspaceName: "LieXiu",
+		WorkspaceSlug: "liexiu",
+		IssuePrefix:   "LX",
+	})
+	if !errors.Is(err, ErrSelectionRequired) {
+		t.Fatalf("ambiguous auto-bind error = %v, want ErrSelectionRequired", err)
+	}
+	requireUnboundLocalInstance(t, pool)
+}
+
 func TestRepositoryBootstrapRequiresExplicitSelectionForMultipleOwners(t *testing.T) {
 	pool, queries := newLocalInstancePool(t)
 	requireUnboundLocalInstance(t, pool)

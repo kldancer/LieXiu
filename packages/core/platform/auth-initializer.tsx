@@ -34,8 +34,7 @@ export function AuthInitializer({
   useEffect(() => {
     const api = getApi();
 
-    // Fetch app config (CDN domain and runtime settings) in the background — non-blocking.
-    api
+    const configPromise = api
       .getConfig()
       .then((cfg) => {
         if (cfg.cdn_domain) {
@@ -55,9 +54,11 @@ export function AuthInitializer({
         });
         configStore.getState().setFeatureFlags(cfg.feature_flags);
         configStore.getState().setServerVersion(cfg.server_version);
+        return cfg;
       })
       .catch(() => {
         /* config is optional — legacy file card matching degrades gracefully */
+        return undefined;
       });
 
     const onAuthSuccess = (user: User) => {
@@ -71,22 +72,42 @@ export function AuthInitializer({
     };
 
     if (cookieAuth) {
-      // Cookie mode: the HttpOnly cookie is sent automatically by the browser.
-      // Call the API to check if the session is still valid.
+      // Cookie mode: personal localhost deployments establish their canonical
+      // session directly; other deployments validate the existing HttpOnly
+      // cookie through the normal authenticated endpoints.
       //
       // Seed the canonical workspace as the one-element internal cache shape
       // so the URL-driven layout can resolve the slug without a second fetch.
       // The active workspace itself is derived from the URL by
       // [workspaceSlug]/layout.tsx — no imperative selection here.
-      Promise.all([api.getMe(), api.listWorkspaces()])
-        .then(([user, wsList]) => {
+      const initializeCookieAuth = async () => {
+        const cfg = await configPromise;
+        if (cfg?.auto_login === true) {
+          try {
+            const response = await api.startLocalSession();
+            qc.setQueryData(workspaceKeys.list(), [response.workspace]);
+            onAuthSuccess(response.user);
+            return;
+          } catch (sessionError) {
+            logger.error("personal session init failed", sessionError);
+            onAuthFailure();
+            return;
+          }
+        }
+
+        try {
+          const [user, wsList] = await Promise.all([
+            api.getMe(),
+            api.listWorkspaces(),
+          ]);
           onAuthSuccess(user);
           qc.setQueryData(workspaceKeys.list(), wsList);
-        })
-        .catch((err) => {
-          logger.error("cookie auth init failed", err);
+        } catch (error) {
+          logger.error("cookie auth init failed", error);
           onAuthFailure();
-        });
+        }
+      };
+      void initializeCookieAuth();
       return;
     }
 

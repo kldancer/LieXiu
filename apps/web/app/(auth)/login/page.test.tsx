@@ -71,6 +71,12 @@ describe("single-owner web login", () => {
     expect(mockPush).toHaveBeenCalledWith("/local/issues");
   });
 
+  it("does not flash the bootstrap form while personal session initialization is pending", () => {
+    authState.isLoading = true;
+    render(<Page />, { wrapper: Wrapper });
+    expect(screen.queryByText("local-bootstrap")).not.toBeInTheDocument();
+  });
+
   it("restores an existing session through the canonical workspace query", async () => {
     authState.user = { id: "owner-1" };
     render(<Page />, { wrapper: Wrapper });

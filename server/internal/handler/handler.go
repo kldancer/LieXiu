@@ -58,6 +58,11 @@ type dbExecutor interface {
 
 type Config struct {
 	OwnerBootstrapSecret string
+	// AutoLogin enables LieXiu's localhost-only personal development mode.
+	// The router forces it off in production even when the environment asks
+	// for it. Authentication and the canonical owner identity remain intact;
+	// only the interactive login/bootstrap ceremony is removed.
+	AutoLogin bool
 	// VCSIntegrationEnabled gates the self-hosted Git provider integration
 	// (Forgejo / Gitea / GitLab) at the deployment level, independent of whether
 	// LIEXIU_VCS_SECRET_KEY is set. It is the product boundary: the feature is

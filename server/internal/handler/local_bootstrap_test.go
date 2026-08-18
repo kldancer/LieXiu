@@ -36,13 +36,135 @@ func prepareLocalBootstrapHandlerTest(t *testing.T) {
 
 	previousRepository := testHandler.LocalInstance
 	previousSecret := testHandler.cfg.OwnerBootstrapSecret
+	previousAutoLogin := testHandler.cfg.AutoLogin
 	testHandler.LocalInstance = localinstance.NewRepository(testHandler.Queries, testPool)
 	testHandler.cfg.OwnerBootstrapSecret = localBootstrapTestSecret
 	t.Cleanup(func() {
 		_, _ = testPool.Exec(context.Background(), `DELETE FROM local_instance WHERE owner_user_id = $1`, testUserID)
 		testHandler.LocalInstance = previousRepository
 		testHandler.cfg.OwnerBootstrapSecret = previousSecret
+		testHandler.cfg.AutoLogin = previousAutoLogin
 	})
+}
+
+func TestStartLocalSessionIsDisabledByDefault(t *testing.T) {
+	prepareLocalBootstrapHandlerTest(t)
+	testHandler.cfg.AutoLogin = false
+
+	req := newRequest(http.MethodPost, "/api/auth/local-session", nil)
+	req.RemoteAddr = "127.0.0.1:44001"
+	req.Header.Set("Referer", "http://localhost:3000/login")
+	response := httptest.NewRecorder()
+	testHandler.StartLocalSession(response, req)
+
+	if response.Code != http.StatusNotFound {
+		t.Fatalf("disabled personal mode status = %d, want 404: %s", response.Code, response.Body.String())
+	}
+	assertNoLocalInstanceRow(t)
+}
+
+func TestStartLocalSessionRejectsNonLoopback(t *testing.T) {
+	prepareLocalBootstrapHandlerTest(t)
+	testHandler.cfg.AutoLogin = true
+
+	req := newRequest(http.MethodPost, "/api/auth/local-session", nil)
+	req.RemoteAddr = "192.0.2.10:44001"
+	req.Header.Set("Referer", "http://localhost:3000/login")
+	response := httptest.NewRecorder()
+	testHandler.StartLocalSession(response, req)
+
+	if response.Code != http.StatusForbidden {
+		t.Fatalf("remote personal mode status = %d, want 403: %s", response.Code, response.Body.String())
+	}
+	assertNoLocalInstanceRow(t)
+}
+
+func TestStartLocalSessionSetsCookiesForBoundOwner(t *testing.T) {
+	prepareLocalBootstrapHandlerTest(t)
+	testHandler.cfg.AutoLogin = true
+	if _, err := testPool.Exec(context.Background(), `
+		INSERT INTO local_instance (singleton_key, owner_user_id, canonical_workspace_id, bootstrap_version)
+		VALUES (TRUE, $1, $2, 1)
+	`, testUserID, testWorkspaceID); err != nil {
+		t.Fatalf("seed local instance: %v", err)
+	}
+
+	req := newRequest(http.MethodPost, "/api/auth/local-session", nil)
+	req.RemoteAddr = "[::1]:44001"
+	req.Header.Set("Referer", "http://localhost:3000/login")
+	response := httptest.NewRecorder()
+	testHandler.StartLocalSession(response, req)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("personal session status = %d, want 200: %s", response.Code, response.Body.String())
+	}
+	var body LocalSessionResponse
+	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode personal session: %v", err)
+	}
+	if body.User.ID != testUserID || body.Workspace.ID != testWorkspaceID || body.Provisioned {
+		t.Fatalf("unexpected personal session: %+v", body)
+	}
+	if strings.Contains(response.Body.String(), "token") {
+		t.Fatalf("personal session response must not expose the JWT: %s", response.Body.String())
+	}
+
+	var authCookie, csrfCookie *http.Cookie
+	for _, cookie := range response.Result().Cookies() {
+		switch cookie.Name {
+		case auth.AuthCookieName:
+			authCookie = cookie
+		case auth.CSRFCookieName:
+			csrfCookie = cookie
+		}
+	}
+	if authCookie == nil || !authCookie.HttpOnly || csrfCookie == nil || csrfCookie.HttpOnly {
+		t.Fatalf("personal session cookies are incomplete: %v", response.Result().Cookies())
+	}
+}
+
+func TestIsLoopbackRemote(t *testing.T) {
+	for _, test := range []struct {
+		addr string
+		want bool
+	}{
+		{addr: "127.0.0.1:8080", want: true},
+		{addr: "[::1]:8080", want: true},
+		{addr: "127.0.0.1", want: true},
+		{addr: "192.0.2.1:8080", want: false},
+		{addr: "localhost:8080", want: false},
+		{addr: "", want: false},
+	} {
+		if got := isLoopbackRemote(test.addr); got != test.want {
+			t.Errorf("isLoopbackRemote(%q) = %v, want %v", test.addr, got, test.want)
+		}
+	}
+}
+
+func TestIsLocalBrowserRequestRejectsLANOriginBehindLoopbackProxy(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		remote  string
+		referer string
+		want    bool
+	}{
+		{name: "localhost through local proxy", remote: "127.0.0.1:8080", referer: "http://localhost:3000/login", want: true},
+		{name: "loopback IP through local proxy", remote: "[::1]:8080", referer: "http://127.0.0.1:3000/", want: true},
+		{name: "LAN browser behind local proxy", remote: "127.0.0.1:8080", referer: "http://10.10.60.205:3000/", want: false},
+		{name: "missing browser origin", remote: "127.0.0.1:8080", want: false},
+		{name: "remote backend connection", remote: "192.0.2.1:8080", referer: "http://localhost:3000/", want: false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodPost, "/api/auth/local-session", nil)
+			req.RemoteAddr = test.remote
+			if test.referer != "" {
+				req.Header.Set("Referer", test.referer)
+			}
+			if got := isLocalBrowserRequest(req); got != test.want {
+				t.Fatalf("isLocalBrowserRequest() = %v, want %v", got, test.want)
+			}
+		})
+	}
 }
 
 func TestBootstrapLocalOwnerRejectsWeakSecretWithoutWriting(t *testing.T) {

@@ -30,6 +30,27 @@ describe("ApiClient retained task and bootstrap APIs", () => {
     fetchMock.mockRestore();
   });
 
+  it("establishes a localhost personal session without returning a token", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({
+        user: { id: "owner-1" },
+        workspace: { id: "workspace-1", slug: "liexiu" },
+        provisioned: false,
+      }), { status: 200, headers: { "content-type": "application/json" } }),
+    );
+    const client = new ApiClient("https://api.example.test");
+
+    await expect(client.startLocalSession()).resolves.toMatchObject({
+      user: { id: "owner-1" },
+      workspace: { id: "workspace-1" },
+    });
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://api.example.test/api/auth/local-session",
+      expect.objectContaining({ method: "POST" }),
+    );
+    fetchMock.mockRestore();
+  });
+
   it("lists task transcript messages without restoring a Chat API", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
       new Response(JSON.stringify([{ task_id: "task-1", issue_id: "issue-1", seq: 1, type: "text" }]), {

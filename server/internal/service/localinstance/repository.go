@@ -109,6 +109,17 @@ func (r *Repository) Current(ctx context.Context) (Result, error) {
 }
 
 func (r *Repository) Bootstrap(ctx context.Context, input BootstrapInput) (Result, error) {
+	return r.bootstrap(ctx, input, false)
+}
+
+// BootstrapPersonal provisions defaults only for an empty store and otherwise
+// binds the sole owner membership without using those defaults as a selector.
+// It is intended for the separately gated localhost personal-mode handler.
+func (r *Repository) BootstrapPersonal(ctx context.Context, defaults BootstrapInput) (Result, error) {
+	return r.bootstrap(ctx, defaults, true)
+}
+
+func (r *Repository) bootstrap(ctx context.Context, input BootstrapInput, autoSelect bool) (Result, error) {
 	if r == nil || r.queries == nil || r.txStarter == nil {
 		return Result{}, fmt.Errorf("local instance repository is unavailable")
 	}
@@ -165,7 +176,11 @@ func (r *Repository) Bootstrap(ctx context.Context, input BootstrapInput) (Resul
 	case users == 0 || workspaces == 0:
 		err = ErrIncompleteStore
 	default:
-		result, err = bindExistingStore(ctx, qtx, input)
+		if autoSelect {
+			result, err = bindUniqueExistingStore(ctx, qtx)
+		} else {
+			result, err = bindExistingStore(ctx, qtx, input)
+		}
 	}
 	if err != nil {
 		return Result{}, err
@@ -185,6 +200,25 @@ func (r *Repository) Bootstrap(ctx context.Context, input BootstrapInput) (Resul
 		return Result{}, fmt.Errorf("commit local bootstrap: %w", err)
 	}
 	return result, nil
+}
+
+func bindUniqueExistingStore(ctx context.Context, q *db.Queries) (Result, error) {
+	candidates, err := q.ListLocalOwnerCandidates(ctx)
+	if err != nil {
+		return Result{}, fmt.Errorf("list local owner candidates: %w", err)
+	}
+	if len(candidates) != 1 {
+		return Result{}, ErrSelectionRequired
+	}
+	owner, err := q.GetUser(ctx, candidates[0].UserID)
+	if err != nil {
+		return Result{}, fmt.Errorf("load selected owner: %w", err)
+	}
+	workspace, err := q.GetWorkspace(ctx, candidates[0].WorkspaceID)
+	if err != nil {
+		return Result{}, fmt.Errorf("load selected workspace: %w", err)
+	}
+	return Result{Owner: owner, Workspace: workspace}, nil
 }
 
 func provisionEmptyStore(ctx context.Context, q *db.Queries, input BootstrapInput) (Result, error) {
@@ -215,12 +249,10 @@ func provisionEmptyStore(ctx context.Context, q *db.Queries, input BootstrapInpu
 }
 
 func bindExistingStore(ctx context.Context, q *db.Queries, input BootstrapInput) (Result, error) {
+	var ownerID, workspaceID pgtype.UUID
 	if input.OwnerEmail == "" {
 		return Result{}, ErrSelectionRequired
-	}
-
-	var ownerID, workspaceID pgtype.UUID
-	if input.WorkspaceID != "" {
+	} else if input.WorkspaceID != "" {
 		parsedWorkspaceID, err := parseUUID(input.WorkspaceID)
 		if err != nil {
 			return Result{}, ErrInvalidSelection

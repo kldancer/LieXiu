@@ -73,7 +73,7 @@ export type {
 } from "./agent";
 export { RUNTIME_PROFILE_PROTOCOL_FAMILIES } from "./agent";
 export type { Workspace, WorkspaceRepo, Member, MemberRole, User, MemberWithUser } from "./workspace";
-export type { BootstrapStatus, BootstrapRequest, BootstrapResponse } from "./bootstrap";
+export type { BootstrapStatus, BootstrapRequest, BootstrapResponse, LocalSessionResponse } from "./bootstrap";
 export type { Comment, CommentType, CommentAuthorType, CommentTriggerPreview, CommentTriggerPreviewAgent, CommentTriggerSource, CommentTriggerOutcome, CommentTriggerStatus } from "./comment";
 export type { Label, LabelResourceType, CreateLabelRequest, UpdateLabelRequest, ListLabelsResponse, IssueLabelsResponse, ResourceLabelsResponse } from "./label";
 export type {

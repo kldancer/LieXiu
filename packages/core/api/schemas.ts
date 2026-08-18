@@ -233,6 +233,8 @@ export const QuickActionRenderSchema = z.object({
 
 export interface AppConfigResponse {
   cdn_domain: string;
+  /** True only when the backend offers localhost personal auto-login. */
+  auto_login?: boolean;
   // True when the CDN domain serves private content via time-bounded signed
   // URLs (CloudFront signing) — raw storage URLs on that domain are NOT
   // publicly fetchable and must not be used as native media sources
@@ -377,6 +379,7 @@ const FeatureFlagsSchema = z.preprocess(
 
 export const AppConfigSchema = z.object({
   cdn_domain: z.string().default(""),
+  auto_login: BooleanWithDefaultSchema(false),
   cdn_signed: BooleanWithDefaultSchema(false),
   daemon_server_url: OptionalStringSchema,
   daemon_app_url: OptionalStringSchema,
@@ -387,6 +390,7 @@ export const AppConfigSchema = z.object({
 
 export const EMPTY_APP_CONFIG: AppConfigResponse = {
   cdn_domain: "",
+  auto_login: false,
   cdn_signed: false,
   daemon_server_url: "",
   daemon_app_url: "",
@@ -1156,6 +1160,14 @@ const BootstrapWorkspaceSchema = z
 export const BootstrapResponseSchema = z
   .object({
     token: z.string().min(1),
+    user: UserSchema,
+    workspace: BootstrapWorkspaceSchema,
+    provisioned: z.boolean().default(false),
+  })
+  .loose();
+
+export const LocalSessionResponseSchema = z
+  .object({
     user: UserSchema,
     workspace: BootstrapWorkspaceSchema,
     provisioned: z.boolean().default(false),

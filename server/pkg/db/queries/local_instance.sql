@@ -21,6 +21,13 @@ SELECT count(*)
 FROM member
 WHERE role = 'owner';
 
+-- name: ListLocalOwnerCandidates :many
+SELECT u.id AS user_id, w.id AS workspace_id
+FROM "user" u
+JOIN member m ON m.user_id = u.id AND m.role = 'owner'
+JOIN workspace w ON w.id = m.workspace_id
+ORDER BY u.id, w.id;
+
 -- name: ListLocalOwnerCandidatesByEmail :many
 SELECT u.id AS user_id, w.id AS workspace_id
 FROM "user" u

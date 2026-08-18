@@ -116,6 +116,39 @@ func (q *Queries) GetLocalOwnerCandidate(ctx context.Context, arg GetLocalOwnerC
 	return i, err
 }
 
+const listLocalOwnerCandidates = `-- name: ListLocalOwnerCandidates :many
+SELECT u.id AS user_id, w.id AS workspace_id
+FROM "user" u
+JOIN member m ON m.user_id = u.id AND m.role = 'owner'
+JOIN workspace w ON w.id = m.workspace_id
+ORDER BY u.id, w.id
+`
+
+type ListLocalOwnerCandidatesRow struct {
+	UserID      pgtype.UUID `json:"user_id"`
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+}
+
+func (q *Queries) ListLocalOwnerCandidates(ctx context.Context) ([]ListLocalOwnerCandidatesRow, error) {
+	rows, err := q.db.Query(ctx, listLocalOwnerCandidates)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListLocalOwnerCandidatesRow{}
+	for rows.Next() {
+		var i ListLocalOwnerCandidatesRow
+		if err := rows.Scan(&i.UserID, &i.WorkspaceID); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listLocalOwnerCandidatesByEmail = `-- name: ListLocalOwnerCandidatesByEmail :many
 SELECT u.id AS user_id, w.id AS workspace_id
 FROM "user" u
