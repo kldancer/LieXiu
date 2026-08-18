@@ -29,8 +29,8 @@ export async function reloadAppPage(page: Page) {
 
 /**
  * Log in as the default E2E user and ensure the workspace exists first.
- * Authenticates via API (send-code → DB read → verify-code), then injects
- * the token into localStorage so the browser session is authenticated.
+ * Replays the secret-gated personal Owner bootstrap, then injects the returned
+ * JWT into localStorage so the browser session is authenticated.
  *
  * Returns the E2E workspace slug so callers can build workspace-scoped URLs.
  */
@@ -81,8 +81,9 @@ export async function preferManualCreateMode(page: Page) {
 }
 
 export async function openWorkspaceMenu(page: Page) {
-  // Click the workspace switcher button (has ChevronDown icon)
-  const workspaceButton = page.getByRole("button", { name: /E2E Workspace/ }).first();
+  // Personal v1 has one canonical workspace, whose user-controlled name must
+  // not be pinned into the test selector.
+  const workspaceButton = page.locator('[data-slot="sidebar-header"] button').first();
   await expect(workspaceButton).toBeVisible({ timeout: 15000 });
   await workspaceButton.click();
   // Wait for dropdown to appear

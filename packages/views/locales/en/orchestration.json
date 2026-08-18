@@ -10,7 +10,8 @@
     "loading": "Loading mission projection",
     "error_title": "Mission view unavailable",
     "error_hint": "Check access to this workspace, then retry the projection.",
-    "retry": "Retry"
+    "retry": "Retry",
+    "back_to_project": "Back to project command center"
   },
   "board": {
     "title": "Project board",
@@ -43,7 +44,26 @@
     "walking": "walking",
     "working": "working",
     "reviewing": "reviewing",
-    "done": "done"
+    "done": "done",
+    "integration": "Integration forge",
+    "pause_motion": "Pause motion",
+    "resume_motion": "Resume motion",
+    "reduced_motion": "Motion is reduced",
+    "motion_enabled": "Motion is enabled",
+    "low_performance": "Low performance mode",
+    "full_performance": "Full performance mode",
+    "performance_degraded": "{{count}} visual items hidden by the performance budget",
+    "view_mode": "Mission view mode",
+    "view_world": "World",
+    "view_replay": "Replay",
+    "replay_play": "Play replay",
+    "replay_pause": "Pause replay",
+    "replay_sequence": "Activity sequence",
+    "replay_actor": "Actor",
+    "replay_task": "Task",
+    "replay_run": "Run",
+    "replay_all": "All",
+    "replay_events": "Visible replay events"
   },
   "collaboration": {
     "title": "Collaboration mailbox",

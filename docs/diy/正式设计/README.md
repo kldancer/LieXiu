@@ -14,6 +14,10 @@
 | [03-单Owner、自托管与研发环境](03-单Owner、自托管与研发环境.md) | 本地实例身份、唯一 Workspace、安全边界、本地/远端研发与部署合同 |
 | [04-三视图与像素世界](04-三视图与像素世界.md) | Command Center、Board、Run Detail、Phaser 世界、共享 Projection 和交互边界 |
 
+部署与发布命令不在正式设计中复制：快速安装和日常操作以仓库根目录
+[SELF_HOSTING](../../../SELF_HOSTING.md) 为入口，备份/恢复、升级/回退、健康检查、发布黄金清单和已知限制以
+[SELF_HOSTING_ADVANCED](../../../SELF_HOSTING_ADVANCED.md) 为权威操作手册；本目录的 `03` 只拥有稳定安全与交付合同。
+
 当前实施顺序和完成状态见：
 
 - [Wave 0–3 历史封板](../进度板/08-Wave%20实施路线与进度总览.md)

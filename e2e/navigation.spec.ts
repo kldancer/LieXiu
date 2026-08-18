@@ -10,9 +10,9 @@ test.describe("Navigation", () => {
   });
 
   test("sidebar navigation works", async ({ page }) => {
-    await page.getByRole("link", { name: "Inbox" }).click();
-    await expect(page).toHaveURL(/\/inbox/, { timeout: ROUTE_CHANGE_TIMEOUT });
-    await waitForPageText(page, "Inbox");
+    await page.getByRole("link", { name: "Projects" }).click();
+    await expect(page).toHaveURL(/\/projects/, { timeout: ROUTE_CHANGE_TIMEOUT });
+    await waitForPageText(page, "Projects");
 
     await page.getByRole("link", { name: "Agents" }).click();
     await expect(page).toHaveURL(/\/agents/, { timeout: ROUTE_CHANGE_TIMEOUT });
@@ -29,7 +29,7 @@ test.describe("Navigation", () => {
     await waitForPageText(page, "Settings");
 
     await expect(page.getByRole("tab", { name: "General" })).toBeVisible();
-    await expect(page.getByRole("tab", { name: "Members" })).toBeVisible();
+    await expect(page.getByRole("tab", { name: "Members" })).toHaveCount(0);
   });
 
   test("agents page shows agent list", async ({ page }) => {

@@ -2,16 +2,12 @@
 
 import { useEffect, useMemo, useState } from "react";
 import {
-  Activity,
   AlertTriangle,
+  ArrowLeft,
   Bot,
-  Box,
-  CheckCircle2,
   ClipboardList,
   Coins,
-  GitBranch,
   LoaderCircle,
-  MessageSquareText,
   Play,
   RefreshCw,
   RotateCcw,
@@ -20,6 +16,7 @@ import {
 } from "lucide-react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useWorkspaceId } from "@liexiu/core/hooks";
+import { useWorkspacePaths } from "@liexiu/core/paths";
 import {
   approveMissionBudgetMutationOptions,
   cancelMissionMutationOptions,
@@ -52,7 +49,6 @@ import { Badge } from "@liexiu/ui/components/ui/badge";
 import { Button } from "@liexiu/ui/components/ui/button";
 import {
   Card,
-  CardAction,
   CardContent,
   CardDescription,
   CardHeader,
@@ -65,23 +61,21 @@ import { Skeleton } from "@liexiu/ui/components/ui/skeleton";
 import { Textarea } from "@liexiu/ui/components/ui/textarea";
 import { cn } from "@liexiu/ui/lib/utils";
 import { useT } from "../i18n";
-import agentRoleAtlas from "./agent-role-atlas-v1.png";
-import {
-  BOARD_LANES,
-  WORLD_ZONES,
-  boardLaneForStatus,
-  buildDagLayout,
-  buildMailboxActivityViews,
-  buildPixelActors,
-  type BoardLane,
-  type MailboxActivityView,
-  type PixelActorState,
-  type WorldZone,
-} from "./view-model";
+import { useNavigation } from "../navigation";
+import { AgentWorld } from "./agent-world";
+import { MissionBoard } from "./mission-board";
+import { MissionReplay } from "./mission-replay";
+import { useMissionRunSelection } from "./mission-run-selection";
+import { useMissionViewMode, type MissionViewMode } from "./mission-view-mode";
+import { RunDetailPanel } from "./run-detail-panel";
+import type { VisualEvent } from "./world/visual-events";
 
 export function MissionPage({ missionId }: { missionId: string }) {
   const { t } = useT("orchestration");
   const workspaceId = useWorkspaceId();
+  const workspacePaths = useWorkspacePaths();
+  const navigation = useNavigation();
+  const sourceProjectId = navigation.searchParams.get("project") ?? "";
   const projectionQuery = useQuery(
     missionProjectionOptions(workspaceId, missionId),
   );
@@ -121,8 +115,6 @@ export function MissionPage({ missionId }: { missionId: string }) {
       void refetchProjection();
     }
   }, [activityQuery.data, projection, refetchProjection]);
-  const [preferredRunId, setPreferredRunId] = useState("");
-
   const availableRunIds = useMemo(
     () =>
       new Set(
@@ -132,9 +124,8 @@ export function MissionPage({ missionId }: { missionId: string }) {
       ),
     [projectionQuery.data],
   );
-  const selectedRunId = preferredRunId.length > 0
-    ? preferredRunId
-    : (availableRunIds.values().next().value ?? "");
+  const { selectedRunId, selectRun } = useMissionRunSelection(availableRunIds);
+  const { mode, setMode } = useMissionViewMode();
   const detailQuery = useQuery(
     missionRunDetailOptions(workspaceId, missionId, selectedRunId),
   );
@@ -180,10 +171,32 @@ export function MissionPage({ missionId }: { missionId: string }) {
   }
 
   return (
-    <MissionWorkspace
+    <div className="flex min-h-0 flex-1 flex-col">
+      {sourceProjectId ? (
+        <div className="shrink-0 border-b bg-background px-4 py-2 md:px-6">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              const params = new URLSearchParams();
+              if (navigation.searchParams.get("projectView") === "command-center") {
+                params.set("view", "command-center");
+              }
+              const query = params.toString();
+              navigation.push(`${workspacePaths.projectDetail(sourceProjectId)}${query ? `?${query}` : ""}`);
+            }}
+          >
+            <ArrowLeft className="size-4" />
+            {t(($) => $.page.back_to_project)}
+          </Button>
+        </div>
+      ) : null}
+      <MissionWorkspace
       projection={projectionQuery.data}
       selectedRunId={selectedRunId}
-      onSelectRun={setPreferredRunId}
+      onSelectRun={selectRun}
+      viewMode={mode}
+      onViewModeChange={setMode}
       onRefresh={() => void projectionQuery.refetch()}
       isRefreshing={projectionQuery.isFetching}
       onApproveBudget={async (request) => {
@@ -280,7 +293,8 @@ export function MissionPage({ missionId }: { missionId: string }) {
         error: agentsQuery.isError || runtimesQuery.isError || agentTasksQuery.isError,
         onRefresh: () => void Promise.all([agentsQuery.refetch(), runtimesQuery.refetch(), agentTasksQuery.refetch()]),
       }}
-    />
+      />
+    </div>
   );
 }
 
@@ -312,6 +326,8 @@ export interface MissionWorkspaceProps {
   proposalPending?: boolean;
   proposalError?: string;
   diagnostics?: AgentDiagnosticsProps;
+  viewMode?: MissionViewMode;
+  onViewModeChange?: (mode: MissionViewMode) => void;
 }
 
 export interface AgentDiagnosticsProps {
@@ -354,9 +370,17 @@ export function MissionWorkspace({
   proposalError,
   roleProfiles = [],
   diagnostics,
+  viewMode,
+  onViewModeChange,
 }: MissionWorkspaceProps) {
   const { t } = useT("orchestration");
   const { mission } = projection;
+  const [localMode, setLocalMode] = useState<MissionViewMode>("world");
+  const [replayVisualEvents, setReplayVisualEvents] = useState<readonly VisualEvent[]>([]);
+  const [worldMotionPaused, setWorldMotionPaused] = useState(false);
+  const [worldLowPerformance, setWorldLowPerformance] = useState(false);
+  const mode = viewMode ?? localMode;
+  const setMode = onViewModeChange ?? setLocalMode;
   const proposals = projection.planning.proposals;
   const planningInProgress = projection.planning.assignments.some((item) => item.status === "active");
   const [selectedProfiles, setSelectedProfiles] = useState<Record<string, string>>({});
@@ -393,7 +417,7 @@ export function MissionWorkspace({
     const frozen = projection.rolePolicySnapshots.some((snapshot) => snapshot.duty === duty);
     return <div className="space-y-1.5" key={duty}>
       <FieldLabel htmlFor={`mission-role-profile-${duty}`}>{t(($) => $.planning.duty_profile, { duty })}</FieldLabel>
-      <select id={`mission-role-profile-${duty}`} className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm" value={selectedProfiles[duty] ?? ""} onChange={(event) => updateProfile(duty, event.target.value)} disabled={frozen}>
+      <select id={`mission-role-profile-${duty}`} className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-body" value={selectedProfiles[duty] ?? ""} onChange={(event) => updateProfile(duty, event.target.value)} disabled={frozen}>
         <option value="">{t(($) => $.planning.select_profile)}</option>
         {matches.map((profile) => <option key={`${profile.profileKey}:${profile.version}`} value={`${profile.profileKey}:${profile.version}`}>{t(($) => $.planning.profile_option, { name: profile.name, key: profile.profileKey, version: profile.version })}</option>)}
       </select>
@@ -498,13 +522,51 @@ export function MissionWorkspace({
         <AgentRuntimeDiagnosticsPanel diagnostics={diagnostics} />
       </div>
 
+      <div className="flex shrink-0 gap-2 px-4 pt-4 md:px-6" aria-label={t(($) => $.world.view_mode)}>
+        <Button type="button" size="sm" variant={mode === "world" ? "default" : "outline"} aria-pressed={mode === "world"} onClick={() => setMode("world")}>
+          {t(($) => $.world.view_world)}
+        </Button>
+        <Button type="button" size="sm" variant={mode === "replay" ? "default" : "outline"} aria-pressed={mode === "replay"} onClick={() => setMode("replay")}>
+          {t(($) => $.world.view_replay)}
+        </Button>
+      </div>
+
       <div className="grid min-h-0 flex-1 gap-4 overflow-auto p-4 md:p-6 xl:grid-cols-[minmax(18rem,0.9fr)_minmax(26rem,1.35fr)_minmax(20rem,1fr)] xl:overflow-hidden">
         <MissionBoard
           projection={projection}
           selectedRunId={selectedRunId}
           onSelectRun={onSelectRun}
         />
-        <AgentWorld projection={projection} onSelectRun={onSelectRun} />
+        <div className="min-h-0 space-y-4 overflow-auto">
+          {mode === "replay" ? <MissionReplay
+            projection={projection}
+            onSelectRun={onSelectRun}
+            renderWorld={false}
+            onVisibleEventsChange={setReplayVisualEvents}
+            labels={{
+              play: t(($) => $.world.replay_play),
+              pause: t(($) => $.world.replay_pause),
+              sequence: t(($) => $.world.replay_sequence),
+              actor: t(($) => $.world.replay_actor),
+              task: t(($) => $.world.replay_task),
+              run: t(($) => $.world.replay_run),
+              all: t(($) => $.world.replay_all),
+              events: t(($) => $.world.replay_events),
+              rateLabels: { 0.5: "0.5×", 1: "1×", 2: "2×", 4: "4×" },
+            }}
+          /> : null}
+          <AgentWorld
+            key="mission-world-renderer"
+            projection={projection}
+            onSelectRun={onSelectRun}
+            visualEventsOverride={mode === "replay" ? replayVisualEvents : undefined}
+            compactActivity={mode === "replay"}
+            motionPaused={worldMotionPaused}
+            onMotionPausedChange={setWorldMotionPaused}
+            lowPerformance={worldLowPerformance}
+            onLowPerformanceChange={setWorldLowPerformance}
+          />
+        </div>
         <RunDetailPanel
           selectedRunId={selectedRunId}
           projection={projection}
@@ -719,7 +781,7 @@ function PlanningGate({
                 <FieldLabel htmlFor="mission-plan-version">{t(($) => $.planning.version)}</FieldLabel>
                 <select
                   id="mission-plan-version"
-                  className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                  className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-body shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
                   value={selected.id}
                   onChange={(event) => setSelectedID(event.target.value)}
                   disabled={pending}
@@ -735,7 +797,7 @@ function PlanningGate({
                 <FieldLabel htmlFor="mission-plan-compare">{t(($) => $.planning.compare)}</FieldLabel>
                 <select
                   id="mission-plan-compare"
-                  className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                  className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-body shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
                   value={compareID}
                   onChange={(event) => setCompareID(event.target.value)}
                   disabled={pending || proposals.length < 2}
@@ -930,623 +992,6 @@ function suggestedGrant(max: number | undefined, consumed: number, reserved: num
 
 function formatBudget(value: number) {
   return value.toLocaleString();
-}
-
-function MissionBoard({
-  projection,
-  selectedRunId,
-  onSelectRun,
-}: Pick<MissionWorkspaceProps, "projection" | "selectedRunId" | "onSelectRun">) {
-  const { t } = useT("orchestration");
-  const laneLabels: Record<BoardLane, string> = {
-    queued: t(($) => $.board.queued),
-    active: t(($) => $.board.active),
-    review: t(($) => $.board.review),
-    done: t(($) => $.board.done),
-    attention: t(($) => $.board.attention),
-  };
-  const grouped = useMemo(() => {
-    const lanes = new Map<BoardLane, TaskNodeProjection[]>(
-      BOARD_LANES.map((lane) => [lane, []]),
-    );
-    for (const node of projection.nodes) {
-      lanes.get(boardLaneForStatus(node.status))?.push(node);
-    }
-    return lanes;
-  }, [projection.nodes]);
-  const dag = useMemo(() => buildDagLayout(projection.nodes), [projection.nodes]);
-  const mailboxActivities = useMemo(
-    () => buildMailboxActivityViews(projection.activities.items),
-    [projection.activities.items],
-  );
-
-  return (
-    <Card className="min-h-[34rem] xl:min-h-0">
-      <CardHeader className="border-b">
-        <CardTitle className="flex items-center gap-2">
-          <ClipboardList className="size-4" />
-          {t(($) => $.board.title)}
-        </CardTitle>
-        <CardDescription>{t(($) => $.board.hint)}</CardDescription>
-      </CardHeader>
-      <CardContent className="min-h-0 flex-1 overflow-auto">
-        <div className="space-y-4">
-          <MissionDag columns={dag} />
-          <MailboxActivityList
-            items={mailboxActivities.slice(-5).reverse()}
-            onSelectRun={onSelectRun}
-          />
-          {BOARD_LANES.map((lane) => {
-            const nodes = grouped.get(lane) ?? [];
-            return (
-              <section key={lane} aria-labelledby={`lane-${lane}`}>
-                <div className="mb-2 flex items-center justify-between">
-                  <h2 id={`lane-${lane}`} className="text-caption font-semibold uppercase tracking-wide text-muted-foreground">
-                    {laneLabels[lane]}
-                  </h2>
-                  <Badge variant="outline">{nodes.length}</Badge>
-                </div>
-                {nodes.length === 0 ? (
-                  <div className="rounded-lg border border-dashed px-3 py-2 text-caption text-muted-foreground">
-                    {t(($) => $.board.empty)}
-                  </div>
-                ) : (
-                  <div className="space-y-2">
-                    {nodes.map((node) => {
-                      const runId = node.latestRun?.id ?? "";
-                      const selected = runId.length > 0 && runId === selectedRunId;
-                      return (
-                        <button
-                          key={node.id}
-                          type="button"
-                          disabled={!runId}
-                          aria-pressed={selected}
-                          aria-label={`${node.key} ${node.title}`}
-                          onClick={() => onSelectRun(runId)}
-                          className={cn(
-                            "w-full rounded-lg border p-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-default",
-                            selected
-                              ? "border-primary bg-primary/10 hover:border-primary hover:bg-primary/10"
-                              : "border-border bg-card hover:border-primary/50 hover:bg-accent/40",
-                          )}
-                        >
-                          <div className="flex items-start justify-between gap-2">
-                            <div className="min-w-0">
-                              <p className="truncate text-body font-medium">
-                                <span className="mr-1.5 font-mono text-caption text-muted-foreground">{node.key}</span>
-                                {node.title}
-                              </p>
-                              <p className="mt-1 line-clamp-2 text-caption text-muted-foreground">
-                                {node.description || node.duty}
-                              </p>
-                            </div>
-                            <Badge variant={node.status === "failed" ? "destructive" : "outline"}>
-                              {node.status}
-                            </Badge>
-                          </div>
-                          <div className="mt-2 flex flex-wrap items-center gap-2 text-caption text-muted-foreground">
-                            <span>{node.duty}</span>
-                            <span>·</span>
-                            <span>{t(($) => $.board.dependencies, { count: node.dependencyIds.length })}</span>
-                            <span>·</span>
-                            <span>{node.latestRun ? `Run #${node.latestRun.attempt}` : t(($) => $.board.no_run)}</span>
-                          </div>
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
-              </section>
-            );
-          })}
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
-
-function MissionDag({ columns }: { columns: ReturnType<typeof buildDagLayout> }) {
-  const { t } = useT("orchestration");
-  return (
-    <section className="rounded-lg border bg-muted/20 p-3" aria-labelledby="mission-dag-title">
-      <div className="mb-3">
-        <h2 id="mission-dag-title" className="flex items-center gap-2 text-caption font-semibold uppercase tracking-wide">
-          <GitBranch className="size-3.5" />
-          {t(($) => $.board.dag_title)}
-        </h2>
-        <p className="mt-1 text-caption text-muted-foreground">{t(($) => $.board.dag_hint)}</p>
-      </div>
-      {columns.length === 0 ? (
-        <p className="text-caption text-muted-foreground">{t(($) => $.board.empty)}</p>
-      ) : (
-        <div className="flex gap-3 overflow-x-auto pb-1" data-testid="mission-dag">
-          {columns.map((column, depth) => (
-            <div key={depth} className="flex min-w-32 flex-1 flex-col gap-2" data-dag-depth={depth}>
-              <span className="font-mono text-caption text-muted-foreground">{t(($) => $.board.dag_stage, { stage: depth + 1 })}</span>
-              {column.map((node) => (
-                <div key={node.id} className="rounded-md border bg-background p-2 text-caption" title={node.title}>
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="truncate font-mono font-medium">{node.key}</span>
-                    <span className="size-2 shrink-0 rounded-full bg-current opacity-60" data-status={node.status} />
-                  </div>
-                  <p className="mt-1 truncate text-muted-foreground">
-                    {node.dependencyKeys.length > 0
-                      ? `← ${node.dependencyKeys.join(", ")}`
-                      : t(($) => $.board.dag_root)}
-                  </p>
-                </div>
-              ))}
-            </div>
-          ))}
-        </div>
-      )}
-    </section>
-  );
-}
-
-function AgentWorld({ projection, onSelectRun }: { projection: MissionProjection; onSelectRun: (runId: string) => void }) {
-  const { t } = useT("orchestration");
-  const zoneLabels: Record<WorldZone, string> = {
-    lobby: t(($) => $.world.lobby),
-    workshop: t(($) => $.world.workshop),
-    reviewLab: t(($) => $.world.reviewLab),
-    delivery: t(($) => $.world.delivery),
-    blocked: t(($) => $.world.blocked),
-  };
-  const stateLabels: Record<PixelActorState, string> = {
-    idle: t(($) => $.world.idle),
-    walking: t(($) => $.world.walking),
-    working: t(($) => $.world.working),
-    reviewing: t(($) => $.world.reviewing),
-    blocked: t(($) => $.world.blocked),
-    done: t(($) => $.world.done),
-  };
-  const actors = useMemo(
-    () => buildPixelActors(
-      projection.team,
-      projection.nodes,
-      projection.mission.status,
-      projection.activities.items,
-    ),
-    [projection.activities.items, projection.mission.status, projection.nodes, projection.team],
-  );
-  const agentsByZone = useMemo(() => {
-    const zones = new Map<WorldZone, ReturnType<typeof buildPixelActors>>(
-      WORLD_ZONES.map((zone) => [zone, []]),
-    );
-    for (const actor of actors) {
-      zones.get(actor.zone)?.push(actor);
-    }
-    return zones;
-  }, [actors]);
-  const mailboxActivities = useMemo(
-    () => buildMailboxActivityViews(projection.activities.items),
-    [projection.activities.items],
-  );
-  const latestMailboxByAgent = useMemo(() => {
-    const result = new Map<string, MailboxActivityView>();
-    for (const activity of mailboxActivities) {
-      if (activity.actorType === "agent" && activity.actorId) result.set(activity.actorId, activity);
-      if (activity.recipientType === "agent") result.set(activity.recipientId, activity);
-    }
-    return result;
-  }, [mailboxActivities]);
-
-  return (
-    <Card className="min-h-[38rem] xl:min-h-0">
-      <CardHeader className="border-b">
-        <CardTitle className="flex items-center gap-2">
-          <Bot className="size-4" />
-          {t(($) => $.world.title)}
-        </CardTitle>
-        <CardDescription>{t(($) => $.world.hint)}</CardDescription>
-      </CardHeader>
-      <CardContent className="flex min-h-0 flex-1 flex-col gap-4 overflow-auto">
-        <div className="grid flex-1 auto-rows-fr gap-3 rounded-xl border bg-muted/20 p-3 [background-image:linear-gradient(to_right,var(--border)_1px,transparent_1px),linear-gradient(to_bottom,var(--border)_1px,transparent_1px)] [background-size:24px_24px] sm:grid-cols-2">
-          {WORLD_ZONES.map((zone) => {
-            const agents = agentsByZone.get(zone) ?? [];
-            return (
-              <section
-                key={zone}
-                data-world-zone={zone}
-                className={cn(
-                  "min-h-32 rounded-lg border border-dashed bg-background/90 p-3 backdrop-blur-sm",
-                  zone === "workshop" && "sm:row-span-2",
-                )}
-                aria-labelledby={`zone-${zone}`}
-              >
-                <div className="mb-3 flex items-center justify-between gap-2">
-                  <h2 id={`zone-${zone}`} className="text-caption font-semibold uppercase tracking-wide text-muted-foreground">
-                    {zoneLabels[zone]}
-                  </h2>
-                  <span className="font-mono text-caption text-muted-foreground">{agents.length}</span>
-                </div>
-                {agents.length === 0 ? (
-                  <p className="text-caption text-muted-foreground">{t(($) => $.world.empty)}</p>
-                ) : (
-                  <div className="flex flex-wrap gap-3">
-                    {agents.map(({ agent, node, state, slot, paletteIndex, action }) => {
-                      const mailbox = latestMailboxByAgent.get(agent.agentId);
-                      return (
-                        <div
-                          key={`${agent.agentId}-${agent.duty}`}
-                          className="group flex w-24 flex-col items-center text-center"
-                          data-agent-id={agent.agentId}
-                          data-world-slot={slot}
-                        >
-                          <PixelActor paletteIndex={paletteIndex} state={state} action={action} duty={agent.duty} />
-                          <p className="mt-1 w-full truncate text-caption font-medium">{agent.agentName}</p>
-                          <p className="w-full truncate font-mono text-caption text-muted-foreground">{agent.duty}</p>
-                          <p className="w-full truncate text-caption text-muted-foreground">{node?.key ?? stateLabels[state]}</p>
-                          {mailbox ? (
-                            <button
-                              type="button"
-                              className="mt-1 flex max-w-full items-center gap-1 rounded bg-muted px-1.5 py-0.5 text-caption text-muted-foreground hover:text-foreground disabled:cursor-default"
-                              disabled={!mailbox.runId}
-                              onClick={() => mailbox.runId && onSelectRun(mailbox.runId)}
-                              data-mailbox-message-id={mailbox.messageId}
-                            >
-                              <MessageSquareText className="size-3 shrink-0" />
-                              <span className="truncate">{mailbox.messageType}</span>
-                            </button>
-                          ) : null}
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </section>
-            );
-          })}
-        </div>
-        <MailboxActivityList
-          items={mailboxActivities.slice(-4).reverse()}
-          onSelectRun={onSelectRun}
-        />
-        <section className="shrink-0" aria-labelledby="recent-activity">
-          <h2 id="recent-activity" className="mb-2 flex items-center gap-2 text-caption font-semibold uppercase tracking-wide text-muted-foreground">
-            <Activity className="size-3.5" />
-            {t(($) => $.world.recent_activity)}
-          </h2>
-          {projection.activities.items.length === 0 ? (
-            <p className="text-caption text-muted-foreground">{t(($) => $.world.no_activity)}</p>
-          ) : (
-            <div className="grid gap-2 sm:grid-cols-2">
-              {projection.activities.items.slice(-4).reverse().map((item) => (
-                <div key={item.id} className="flex items-center gap-2 rounded-lg bg-muted/60 px-2.5 py-2 text-caption">
-                  <span className="font-mono text-muted-foreground">#{item.sequence}</span>
-                  <span className="truncate">{item.type}</span>
-                </div>
-              ))}
-            </div>
-          )}
-        </section>
-      </CardContent>
-    </Card>
-  );
-}
-
-function PixelActor({
-  paletteIndex,
-  state,
-  action,
-  duty,
-}: {
-  paletteIndex: number;
-  state: PixelActorState;
-  action: string;
-  duty: string;
-}) {
-  const atlasUrl = typeof agentRoleAtlas === "string" ? agentRoleAtlas : agentRoleAtlas.src;
-  const column = pixelDutyColumn(duty, paletteIndex);
-  const row = pixelStateRow(state);
-  return (
-    <div
-      data-actor-state={state}
-      data-actor-action={action}
-      data-actor-duty={duty}
-      className={cn(
-        "relative h-12 w-12 overflow-hidden rounded-md border border-foreground/20 bg-muted [image-rendering:pixelated]",
-        state === "walking" && "motion-safe:animate-bounce",
-        (state === "working" || state === "reviewing") && "motion-safe:animate-pulse",
-        action === "celebrate" && "motion-safe:animate-bounce",
-        action === "alert" && "ring-2 ring-destructive/70",
-        state === "blocked" && "opacity-60 grayscale",
-      )}
-      style={{
-        backgroundImage: `url(${atlasUrl})`,
-        backgroundSize: "400% 600%",
-        backgroundPosition: `${column * (100 / 3)}% ${row * 20}%`,
-        backgroundRepeat: "no-repeat",
-      }}
-    />
-  );
-}
-
-function pixelDutyColumn(duty: string, paletteIndex: number) {
-  const normalized = duty.trim().toLowerCase();
-  if (normalized.includes("plan")) return 0;
-  if (normalized.includes("execut") || normalized.includes("engineer") || normalized.includes("worker")) return 1;
-  if (normalized.includes("review") || normalized.includes("audit") || normalized.includes("inspect")) return 2;
-  if (normalized.includes("integrat") || normalized.includes("lead") || normalized.includes("coordinat")) return 3;
-  return paletteIndex % 4;
-}
-
-function pixelStateRow(state: PixelActorState) {
-  return ({ idle: 0, walking: 1, working: 2, reviewing: 3, blocked: 4, done: 5 } satisfies Record<PixelActorState, number>)[state];
-}
-
-function RunDetailPanel({
-  selectedRunId,
-  projection,
-  detail,
-  loading,
-  error,
-  onSelectRun,
-  onRetryTask,
-  lifecyclePending,
-}: {
-  selectedRunId: string;
-  projection: MissionProjection;
-  detail?: RunDetailProjection;
-  loading: boolean;
-  error: boolean;
-  onSelectRun: (runId: string) => void;
-  onRetryTask?: (node: TaskNodeProjection) => Promise<void>;
-  lifecyclePending: boolean;
-}) {
-  const { t } = useT("orchestration");
-  const selectedNode = projection.nodes.find((node) => node.latestRun?.id === selectedRunId);
-  const mailboxActivities = useMemo(
-    () => buildMailboxActivityViews(projection.activities.items).filter((activity) =>
-      activity.runId === selectedRunId || (!!selectedNode && activity.taskNodeId === selectedNode.id),
-    ),
-    [projection.activities.items, selectedNode, selectedRunId],
-  );
-
-  return (
-    <Card className="min-h-[34rem] xl:min-h-0">
-      <CardHeader className="border-b">
-        <CardTitle className="flex items-center gap-2">
-          <GitBranch className="size-4" />
-          {t(($) => $.detail.title)}
-        </CardTitle>
-        <CardDescription>{t(($) => $.detail.hint)}</CardDescription>
-        {detail?.run ?? selectedNode?.latestRun ? (
-          <CardAction>
-            <Badge variant="outline">{(detail?.run ?? selectedNode?.latestRun)?.status}</Badge>
-          </CardAction>
-        ) : null}
-      </CardHeader>
-      <CardContent className="min-h-0 flex-1 overflow-auto">
-        {!selectedRunId ? (
-          <EmptyDetail />
-        ) : loading ? (
-          <div className="space-y-3" aria-label={t(($) => $.detail.loading)}>
-            <Skeleton className="h-16 w-full" />
-            <Skeleton className="h-24 w-full" />
-            <Skeleton className="h-32 w-full" />
-          </div>
-        ) : error || !detail ? (
-          <div className="flex min-h-48 flex-col items-center justify-center gap-2 text-center">
-            <AlertTriangle className="size-6 text-destructive" />
-            <p className="text-body font-medium">{t(($) => $.detail.error)}</p>
-          </div>
-        ) : (
-          <div className="space-y-5">
-            <div>
-              <div className="flex items-center justify-between gap-2">
-                <h2 className="text-title-sm font-semibold">{detail.node.key} · {detail.node.title}</h2>
-                <Badge variant="secondary">{t(($) => $.detail.attempt, { attempt: detail.run.attempt })}</Badge>
-              </div>
-              <p className="mt-1 break-all font-mono text-caption text-muted-foreground">{detail.run.id}</p>
-              {(detail.node.status === "failed" || detail.node.status === "blocked") && onRetryTask && !projection.humanGates.some((gate) => gate.status === "pending" && gate.taskNodeId === detail.node.id) ? (
-                <Button className="mt-3" size="sm" variant="outline" disabled={lifecyclePending} onClick={() => void onRetryTask(detail.node)}>
-                  <RotateCcw className="size-4" />
-                  {t(($) => $.detail.retry)}
-                </Button>
-              ) : null}
-            </div>
-
-            <DetailSection icon={LoaderCircle} title={t(($) => $.detail.execution)}>
-              <KeyValue label={t(($) => $.detail.runtime)} value={detail.agent?.runtimeName ?? detail.assignment.runtimeId} />
-              <KeyValue label="agent" value={detail.agent?.agentName ?? detail.assignment.agentId} />
-              <KeyValue label="duty" value={detail.agent?.duty ?? detail.node.duty} />
-              <KeyValue label="provider / model" value={[detail.agent?.provider, detail.agent?.model].filter(Boolean).join(" / ") || "—"} />
-              <KeyValue label="status" value={detail.execution?.status ?? detail.run.status} />
-              {detail.run.failureMessage ? <KeyValue label={t(($) => $.detail.failure)} value={detail.run.failureMessage} danger /> : null}
-            </DetailSection>
-
-            <DetailSection icon={Box} title={t(($) => $.detail.artifacts)} count={detail.artifacts.length}>
-              {detail.artifacts.length === 0 ? <EmptyRow /> : detail.artifacts.map((artifact) => (
-                <div key={artifact.id} className="rounded-lg border p-2.5">
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="font-mono text-caption font-medium">{artifact.kind}</span>
-                    <Badge variant="outline">{t(($) => $.detail.version, { version: artifact.version })}</Badge>
-                  </div>
-                  {artifact.summary ? <p className="mt-1 text-caption text-muted-foreground">{artifact.summary}</p> : null}
-                  {isWebUrl(artifact.uri) ? (
-                    <a className="mt-1 block truncate text-caption text-primary underline-offset-4 hover:underline" href={artifact.uri} target="_blank" rel="noreferrer">
-                      {artifact.uri}
-                    </a>
-                  ) : artifact.uri ? (
-                    <p className="mt-1 break-all font-mono text-caption text-muted-foreground">{artifact.uri}</p>
-                  ) : null}
-                </div>
-              ))}
-            </DetailSection>
-
-            <DetailSection icon={CheckCircle2} title={t(($) => $.detail.reviews)} count={detail.reviews.length}>
-              {detail.reviews.length === 0 ? <EmptyRow /> : detail.reviews.map((review) => (
-                <div key={review.id} className="rounded-lg border p-2.5">
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="font-mono text-caption">{review.decision}</span>
-                    <span className="text-caption text-muted-foreground">{review.requestedChanges.length}</span>
-                  </div>
-                  {review.requestedChanges.length > 0 ? (
-                    <p className="mt-1 line-clamp-3 text-caption text-muted-foreground">{formatEvidence(review.requestedChanges)}</p>
-                  ) : null}
-                </div>
-              ))}
-            </DetailSection>
-
-            <DetailSection icon={GitBranch} title={t(($) => $.detail.lineage)}>
-              <div className="flex flex-wrap gap-2">
-                <Badge variant="outline">{t(($) => $.detail.assignments, { count: detail.lineage.assignments.length })}</Badge>
-                <Badge variant="outline">{t(($) => $.detail.runs, { count: detail.lineage.runs.length })}</Badge>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                {detail.lineage.runs.map((run) => (
-                  <Button
-                    key={run.id}
-                    type="button"
-                    size="sm"
-                    variant={run.id === selectedRunId ? "secondary" : "outline"}
-                    onClick={() => onSelectRun(run.id)}
-                    aria-pressed={run.id === selectedRunId}
-                  >
-                    #{run.attempt} · {run.status}
-                  </Button>
-                ))}
-              </div>
-            </DetailSection>
-
-            <DetailSection icon={MessageSquareText} title={t(($) => $.collaboration.title)} count={mailboxActivities.length}>
-              <MailboxActivityRows items={mailboxActivities.slice(-6).reverse()} onSelectRun={onSelectRun} />
-            </DetailSection>
-
-            <DetailSection icon={MessageSquareText} title={t(($) => $.detail.messages)} count={detail.messages.length}>
-              {detail.messages.length === 0 ? <EmptyRow /> : detail.messages.slice(-6).map((message) => (
-                <div key={`${message.sequence}-${message.createdAt}`} className="rounded-lg bg-muted/60 p-2.5 text-caption">
-                  <div className="flex items-center justify-between gap-2 font-mono text-muted-foreground">
-                    <span>#{message.sequence} · {message.type}</span>
-                    <span>{message.tool}</span>
-                  </div>
-                  {message.content ? <p className="mt-1 line-clamp-3 whitespace-pre-wrap">{message.content}</p> : null}
-                </div>
-              ))}
-            </DetailSection>
-
-            <DetailSection icon={Activity} title={t(($) => $.detail.usage)} count={detail.usage.length}>
-              {detail.usage.length === 0 ? <EmptyRow /> : detail.usage.map((usage) => (
-                <div key={`${usage.provider}-${usage.model}-${usage.createdAt}`} className="flex items-center justify-between gap-2 rounded-lg border p-2.5 text-caption">
-                  <span className="truncate">{usage.provider} / {usage.model}</span>
-                  <span className="shrink-0 tabular-nums text-muted-foreground">
-                    {t(($) => $.detail.tokens, { count: usage.inputTokens + usage.outputTokens })}
-                  </span>
-                </div>
-              ))}
-            </DetailSection>
-          </div>
-        )}
-      </CardContent>
-    </Card>
-  );
-}
-
-function isWebUrl(value: string) {
-  return /^https?:\/\//i.test(value);
-}
-
-function MailboxActivityList({ items, onSelectRun }: { items: MailboxActivityView[]; onSelectRun: (runId: string) => void }) {
-  const { t } = useT("orchestration");
-  return (
-    <section className="shrink-0 rounded-lg border bg-muted/20 p-3" aria-label={t(($) => $.collaboration.title)}>
-      <h2 className="flex items-center gap-2 text-caption font-semibold uppercase tracking-wide text-muted-foreground">
-        <MessageSquareText className="size-3.5" />
-        {t(($) => $.collaboration.title)}
-        <span className="ml-auto tabular-nums">{items.length}</span>
-      </h2>
-      <p className="mt-1 text-caption text-muted-foreground">{t(($) => $.collaboration.hint)}</p>
-      <div className="mt-2 space-y-2">
-        <MailboxActivityRows items={items} onSelectRun={onSelectRun} />
-      </div>
-    </section>
-  );
-}
-
-function MailboxActivityRows({ items, onSelectRun }: { items: MailboxActivityView[]; onSelectRun: (runId: string) => void }) {
-  const { t } = useT("orchestration");
-  if (items.length === 0) return <p className="text-caption text-muted-foreground">{t(($) => $.collaboration.empty)}</p>;
-  return items.map((item) => (
-    <button
-      key={`${item.sequence}-${item.id}`}
-      type="button"
-      disabled={!item.runId}
-      onClick={() => item.runId && onSelectRun(item.runId)}
-      aria-label={t(($) => $.collaboration.locate, { sequence: item.sequence })}
-      data-mailbox-message-id={item.messageId}
-      data-mailbox-status={item.status}
-      className="block w-full rounded-lg border bg-background p-2.5 text-left text-caption transition-colors hover:border-primary/50 disabled:cursor-default disabled:hover:border-border"
-    >
-      <span className="flex items-center gap-2">
-        <span className="font-mono text-muted-foreground">#{item.sequence}</span>
-        <span className="min-w-0 flex-1 truncate font-medium">{item.messageType}</span>
-        <Badge variant={mailboxStatusVariant(item.status)}>{item.status}</Badge>
-      </span>
-      <span className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-muted-foreground">
-        <span>{t(($) => $.collaboration.recipient)}: {item.recipientType}/{item.recipientId}</span>
-        <span>{t(($) => $.collaboration.hops)}: {item.hops}/8</span>
-        {item.hops >= 8 ? <span className="font-medium text-destructive">{t(($) => $.collaboration.hop_limit)}</span> : null}
-      </span>
-      <span className="mt-1 block truncate text-muted-foreground">
-        {t(($) => $.collaboration.expires)}: <time dateTime={item.expiresAt}>{item.expiresAt}</time>
-      </span>
-    </button>
-  ));
-}
-
-function mailboxStatusVariant(status: MailboxActivityView["status"]): "outline" | "secondary" | "destructive" {
-  if (status === "expired" || status === "cancelled") return "destructive";
-  if (status === "consumed") return "secondary";
-  return "outline";
-}
-
-function formatEvidence(value: unknown) {
-  if (typeof value === "string") return value;
-  try {
-    return JSON.stringify(value);
-  } catch {
-    return String(value);
-  }
-}
-
-function DetailSection({ icon: Icon, title, count, children }: { icon: typeof Activity; title: string; count?: number; children: React.ReactNode }) {
-  return (
-    <section>
-      <h3 className="mb-2 flex items-center gap-2 text-caption font-semibold uppercase tracking-wide text-muted-foreground">
-        <Icon className="size-3.5" />
-        {title}
-        {count !== undefined ? <span className="ml-auto tabular-nums">{count}</span> : null}
-      </h3>
-      <div className="space-y-2">{children}</div>
-    </section>
-  );
-}
-
-function KeyValue({ label, value, danger = false }: { label: string; value: string; danger?: boolean }) {
-  return (
-    <div className="flex items-start justify-between gap-3 text-caption">
-      <span className="text-muted-foreground">{label}</span>
-      <span className={cn("break-all text-right font-mono", danger && "text-destructive")}>{value}</span>
-    </div>
-  );
-}
-
-function EmptyRow() {
-  const { t } = useT("orchestration");
-  return <p className="rounded-lg border border-dashed p-2.5 text-caption text-muted-foreground">{t(($) => $.detail.none)}</p>;
-}
-
-function EmptyDetail() {
-  const { t } = useT("orchestration");
-  return (
-    <div className="flex min-h-72 flex-col items-center justify-center gap-2 text-center">
-      <GitBranch className="size-7 text-muted-foreground" />
-      <p className="text-body font-medium">{t(($) => $.detail.empty_title)}</p>
-      <p className="max-w-xs text-caption text-muted-foreground">{t(($) => $.detail.empty_hint)}</p>
-    </div>
-  );
 }
 
 function MissionPageSkeleton({ label }: { label: string }) {

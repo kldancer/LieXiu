@@ -1,37 +1,24 @@
 import { test, expect } from "@playwright/test";
-import { createTestApi, loginAsDefault, openWorkspaceMenu, waitForPageText } from "./helpers";
+import { loginAsDefault, openWorkspaceMenu, waitForPageText } from "./helpers";
 
 test.describe("Authentication", () => {
-  test("login page renders correctly", async ({ page }) => {
+  test("personal mode enters the canonical workspace from /login", async ({ page }) => {
     await page.goto("/login", { waitUntil: "domcontentloaded" });
-    await waitForPageText(page, "Sign in to LieXiu");
+    await waitForPageText(page, "New Issue");
 
-    await expect(page.getByText("Sign in to LieXiu")).toBeVisible();
-    await expect(page.getByRole("textbox", { name: "Email" })).toBeVisible();
-    await expect(page.getByPlaceholder("you@example.com")).toBeVisible();
-    await expect(page.getByRole("button", { name: "Continue" })).toBeDisabled();
+    await expect(page).toHaveURL(/\/issues$/);
+    await expect(page.getByRole("button", { name: "New Issue" })).toBeVisible();
+    await expect(page.getByRole("textbox", { name: "Email" })).toHaveCount(0);
   });
 
-  test("login and redirect to /issues", async ({ page }) => {
+  test("owner bootstrap token opens the canonical workspace", async ({ page }) => {
     const workspaceSlug = await loginAsDefault(page);
 
     await expect(page).toHaveURL(new RegExp(`/${workspaceSlug}/issues$`));
     await expect(page.getByRole("button", { name: "New Issue" })).toBeVisible();
   });
 
-  test("unauthenticated user is redirected to /login", async ({ page }) => {
-    const api = await createTestApi();
-    const [workspace] = await api.getWorkspaces();
-    if (!workspace) {
-      throw new Error("E2E workspace was not created");
-    }
-
-    await page.goto(`/${workspace.slug}/issues`, { waitUntil: "domcontentloaded" });
-    await page.waitForURL("**/login", { timeout: 10000, waitUntil: "domcontentloaded" });
-    await waitForPageText(page, "Sign in to LieXiu");
-  });
-
-  test("logout redirects to /login", async ({ page }) => {
+  test("explicit logout clears the session and shows the bootstrap-secret gate", async ({ page }) => {
     await loginAsDefault(page);
 
     // Open the workspace dropdown menu
@@ -39,8 +26,8 @@ test.describe("Authentication", () => {
 
     await page.getByRole("menuitem", { name: "Log out" }).click();
 
-    await page.waitForURL("**/login", { timeout: 10000, waitUntil: "domcontentloaded" });
-    await waitForPageText(page, "Sign in to LieXiu");
-    await expect(page).toHaveURL(/\/login/);
+    await waitForPageText(page, "Bootstrap secret");
+    await expect(page).toHaveURL(/\/login$/);
+    await expect(page.getByRole("textbox", { name: "Bootstrap secret" })).toBeVisible();
   });
 });

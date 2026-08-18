@@ -219,8 +219,8 @@ func TestInjectRuntimeConfigKeepsTriggerCommentOutOfBrief(t *testing.T) {
 		"do not change the issue status",
 		"`Turn mode: Reply.`",
 		"`Turn mode: Ownership.`",
-		"Use the `--parent` value the per-turn user message gives you for this turn",
-		"do NOT reuse a `--parent` from an earlier turn in this session",
+		"it brings the triggering comment's id and your `--parent` value",
+		"take its id from the user message, never from this file or from an earlier turn",
 	} {
 		if !strings.Contains(s, want) {
 			t.Errorf("CLAUDE.md missing %q\n---\n%s", want, s)

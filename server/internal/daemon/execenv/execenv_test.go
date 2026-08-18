@@ -4877,7 +4877,7 @@ func TestInjectRuntimeConfigMentionLoopHardening(t *testing.T) {
 		// work", "pure acknowledgment / thanks / sign-off", "do NOT reply",
 		// "Silence is a valid and preferred way".
 		for _, want := range []string{
-			"Posting your reply as a comment is mandatory",
+			"Post your final results as a comment — this step is mandatory",
 			"Do any requested work first",
 			"Never @mention the agent you are replying to as a thank-you or sign-off",
 		} {

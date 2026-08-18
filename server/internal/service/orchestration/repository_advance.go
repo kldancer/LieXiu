@@ -470,7 +470,7 @@ func (r *Repository) AdvanceMission(ctx context.Context, params AdvanceMissionPa
 		targetMission = MissionStatusCompleted
 	} else if anyNodeHasStatus(nodes, TaskStatusFailed) {
 		targetMission = MissionStatusFailed
-	} else if activeRuns == 0 && anyNodeHasStatus(nodes, TaskStatusBlocked) && !anyNodeHasStatus(nodes, TaskStatusReady, TaskStatusPending, TaskStatusRework, TaskStatusReview) {
+	} else if activeRuns == 0 && anyNodeHasStatus(nodes, TaskStatusBlocked) && !anyNodeHasStatus(nodes, TaskStatusReady, TaskStatusRework, TaskStatusReview) {
 		targetMission = MissionStatusBlocked
 	} else if changed && targetMission == MissionStatusBlocked {
 		targetMission = MissionStatusRunning

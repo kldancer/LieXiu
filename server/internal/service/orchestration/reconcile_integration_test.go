@@ -78,7 +78,7 @@ func TestRepositoryReconcileRunTerminalFactsAreAtomicAndIdempotent(t *testing.T)
 			t.Fatalf("changed results = %d, want 1", changed)
 		}
 		assertReconciledState(t, ctx, pool, item, RunStatusSucceeded, TaskStatusReview, "")
-		assertActivityTypes(t, ctx, pool, item.runID, []string{activityRunSucceeded, activityTaskReviewRequested})
+		assertActivityTypes(t, ctx, pool, item.runID, []string{activityRunSucceeded, activityTaskReviewRequested, activityArtifactCreated})
 		replayed, err := repository.ReconcileRun(ctx, ReconcileRunParams{
 			WorkspaceID: fixture.workspaceID, RunID: item.runID, ObservedAt: now.Add(time.Minute),
 		})
@@ -345,13 +345,17 @@ func (f *reconcileIntegrationFixture) createRun(t *testing.T, ctx context.Contex
 	if spec.failureMessage != "" {
 		failureMessage = spec.failureMessage
 	}
+	var taskResult any
+	if spec.taskStatus == "completed" {
+		taskResult = []byte(`{"output":"{\"schema_version\":1,\"artifact\":{\"kind\":\"commit\",\"uri\":\"agent-task://reconcile-integration/commit\",\"content_hash\":\"sha256:reconcile-integration\",\"summary\":\"completed fixture\",\"metadata\":{}}}"}`)
+	}
 	if err := pool.QueryRow(ctx, `
 		INSERT INTO agent_task_queue (
 			agent_id, issue_id, status, runtime_id, started_at, completed_at,
-			failure_reason, error, orchestration_run_id
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+			failure_reason, error, orchestration_run_id, result
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 		RETURNING id
-	`, f.agentID, item.taskNodeID, spec.taskStatus, f.runtimeID, startedAt, completedAt, failureReason, failureMessage, item.runID).Scan(&item.agentTaskID); err != nil {
+	`, f.agentID, item.taskNodeID, spec.taskStatus, f.runtimeID, startedAt, completedAt, failureReason, failureMessage, item.runID, taskResult).Scan(&item.agentTaskID); err != nil {
 		t.Fatal(err)
 	}
 	return item

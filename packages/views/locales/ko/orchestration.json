@@ -10,7 +10,8 @@
     "loading": "미션 프로젝션 불러오는 중",
     "error_title": "미션 보기를 사용할 수 없습니다",
     "error_hint": "워크스페이스 접근 권한을 확인한 후 다시 시도하세요.",
-    "retry": "다시 시도"
+    "retry": "다시 시도",
+    "back_to_project": "프로젝트 커맨드 센터로 돌아가기"
   },
   "board": {
     "title": "프로젝트 보드",
@@ -43,7 +44,26 @@
     "walking": "이동 중",
     "working": "작업 중",
     "reviewing": "검토 중",
-    "done": "완료"
+    "done": "완료",
+    "integration": "통합 포지",
+    "pause_motion": "모션 일시 중지",
+    "resume_motion": "모션 다시 시작",
+    "reduced_motion": "모션이 축소되었습니다",
+    "motion_enabled": "모션이 활성화되었습니다",
+    "low_performance": "저성능 모드",
+    "full_performance": "전체 성능 모드",
+    "performance_degraded": "성능 예산으로 시각 항목 {{count}}개가 숨겨졌습니다",
+    "view_mode": "미션 보기 모드",
+    "view_world": "월드",
+    "view_replay": "리플레이",
+    "replay_play": "리플레이 재생",
+    "replay_pause": "리플레이 일시 중지",
+    "replay_sequence": "활동 시퀀스",
+    "replay_actor": "액터",
+    "replay_task": "작업",
+    "replay_run": "실행",
+    "replay_all": "전체",
+    "replay_events": "표시 중인 리플레이 이벤트"
   },
   "collaboration": {
     "title": "협업 메일함",

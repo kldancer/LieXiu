@@ -1,2 +1,95 @@
 export { MissionPage, MissionWorkspace, type MissionWorkspaceProps } from "./mission-page";
+export { MissionReplay, type MissionReplayLabels, type MissionReplayProps } from "./mission-replay";
+export { MISSION_VIEW_MODES, useMissionViewMode, type MissionViewMode } from "./mission-view-mode";
 export * from "./view-model";
+export {
+  buildWorldModel,
+  worldModelFromProjection,
+  WORLD_ZONES as WORLD_MODEL_ZONES,
+  type WorldModel,
+  type WorldActorModel,
+  type WorldActorStatus,
+  type WorldArtifactModel,
+  type WorldArtifactStatus,
+  type WorldDuty,
+  type WorldSignalKind,
+  type WorldSignalModel,
+  type WorldSignalSeverity,
+  type WorldZone as WorldModelZone,
+  type WorldZoneModel,
+} from "./world/world-model";
+export {
+  activitiesToVisualEvents,
+  activityToVisualEvent,
+  projectActivitiesToVisualEvents,
+  visualEventKey,
+  VISUAL_EVENT_KINDS,
+  type VisualEvent,
+  type VisualEventKind,
+  type VisualEventPriority,
+  type VisualEventTarget,
+  type VisualTargetType,
+} from "./world/visual-events";
+export {
+  createWorldMapDebugOverlay,
+  loadWorldMap,
+  validateWorldMap,
+  type MapAnchorKind,
+  type MapBounds,
+  type MapPoint,
+  type WorldMapAnchor,
+  type WorldMapDebugOverlay,
+  type WorldMapDefinition,
+  type WorldMapZone,
+} from "./world/map-loader";
+export {
+  AvatarController,
+  AVATAR_ANIMATIONS,
+  AVATAR_ANIMATION_ROWS,
+  createAvatarController,
+  DUTY_ATLAS_COLUMNS,
+  type AvatarAnimation,
+  type AvatarControllerOptions,
+  type AvatarFrameAvailability,
+  type AvatarTransitionHandle,
+  type AvatarVisualState,
+} from "./world/avatar-controller";
+export {
+  advanceReplay,
+  createReplayModel,
+  pauseReplay,
+  playReplay,
+  reduceReplay,
+  replayEvents,
+  seekReplay,
+  setReplayFilter,
+  setReplayRate,
+  visibleReplayEvents,
+  type ReplayAction,
+  type ReplayFilter,
+  type ReplayModel,
+  type ReplayState,
+  type ReplayStatus,
+} from "./world/replay-model";
+export {
+  applyWorldPerformanceBudget,
+  budgetWorld,
+  WORLD_PERFORMANCE_BUDGETS,
+  type WorldPerformanceBudget,
+  type WorldPerformanceInput,
+  type WorldPerformanceMode,
+  type WorldPerformanceResult,
+} from "./world/world-performance";
+export {
+  ASSET_MANIFEST_STATUSES,
+  ASSET_MANIFEST_TYPES,
+  ASSET_LICENSES,
+  ASSET_PROVENANCE_KINDS,
+  validateAssetManifest,
+  type AssetManifest,
+  type AssetManifestEntry,
+  type AssetLicense,
+  type AssetManifestStatus,
+  type AssetManifestType,
+  type AssetProvenanceKind,
+} from "./world/asset-manifest";

@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "assets": [
+    {
+      "key": "liexiu.world.mission.v1",
+      "replacementKey": "world-map-mission-v1",
+      "type": "tiled-map",
+      "status": "current",
+      "version": "v1",
+      "path": "packages/views/orchestration/world/maps/mission-world-v1.tmj",
+      "provenance": {
+        "kind": "project-internal-original",
+        "license": "repository-multica-license",
+        "evidence": "Created from geometric primitives in the Wave 5 working set without third-party source material; governed by the repository LICENSE."
+      }
+    },
+    {
+      "key": "liexiu.world.agent-role-atlas.v1",
+      "replacementKey": "agent-role-atlas-v1",
+      "type": "sprite-atlas",
+      "status": "current",
+      "version": "v1",
+      "path": "packages/views/orchestration/agent-role-atlas-v1.png",
+      "provenance": {
+        "kind": "project-internal-original",
+        "license": "repository-multica-license",
+        "evidence": "Introduced as a project asset by baseline commit 68dc63fc3568c8b33eb9e0768f2f7af6d8a98f1e without third-party attribution; governed by the repository LICENSE."
+      }
+    }
+  ]
+}

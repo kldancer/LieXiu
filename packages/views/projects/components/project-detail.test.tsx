@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { Project } from "@liexiu/core/types";
+import type { ProjectCommandCenterProjection } from "@liexiu/core/orchestration";
 import { renderWithI18n } from "../../test/i18n";
 import { NavigationProvider, type NavigationAdapter } from "../../navigation";
 import { ProjectDetail } from "./project-detail";
@@ -11,6 +12,8 @@ const mocks = vi.hoisted(() => ({
   role: "admin",
   deleteProject: vi.fn(),
   push: vi.fn(),
+  replace: vi.fn(),
+  search: "",
   toastSuccess: vi.fn(),
 }));
 
@@ -26,6 +29,14 @@ vi.mock("@tanstack/react-query", () => ({
         };
       case "agents":
         return { data: [], isLoading: false };
+      case "project-command-center":
+        return {
+          data: COMMAND_PROJECTION,
+          isLoading: false,
+          isError: false,
+          isFetching: false,
+          refetch: vi.fn(),
+        };
       default:
         return { data: undefined, isLoading: false };
     }
@@ -34,6 +45,7 @@ vi.mock("@tanstack/react-query", () => ({
 
 vi.mock("@liexiu/core/projects/queries", () => ({
   projectDetailOptions: () => ({ queryKey: ["project-detail"] }),
+  projectCommandCenterOptions: () => ({ queryKey: ["project-command-center"] }),
 }));
 
 vi.mock("@liexiu/core/projects/mutations", () => ({
@@ -59,6 +71,8 @@ vi.mock("@liexiu/core/auth", () => ({
 vi.mock("@liexiu/core/paths", () => ({
   useWorkspacePaths: () => ({
     projects: () => "/test-workspace/projects",
+    projectDetail: (id: string) => `/test-workspace/projects/${id}`,
+    missionDetail: (id: string) => `/test-workspace/missions/${id}`,
   }),
 }));
 
@@ -255,13 +269,67 @@ const PROJECT: Project = {
   resource_count: 0,
 };
 
+const COMMAND_PROJECTION: ProjectCommandCenterProjection = {
+  project: {
+    id: PROJECT.id,
+    title: PROJECT.title,
+    status: "in_progress",
+    updatedAt: PROJECT.updated_at,
+  },
+  generatedAt: PROJECT.updated_at,
+  truncated: false,
+  missions: [{
+    id: "mission-1",
+    title: "Mission one",
+    status: "running",
+    currentPhase: "executing",
+    progress: { completed: 1, total: 2, percent: 50 },
+    budget: {
+      status: "ok",
+      consumedTokens: 10,
+      reservedTokens: 5,
+      consumedCostUsdTicks: 1,
+      reservedCostUsdTicks: 1,
+      grantTokens: 0,
+      grantCostUsdTicks: 0,
+    },
+    revision: 2,
+    lastSequence: 3,
+    updatedAt: PROJECT.updated_at,
+    pendingHumanGates: 0,
+    pendingReviews: 0,
+    pendingPlanProposals: 0,
+    offlineAgents: 0,
+    activeRuns: 1,
+    queuedRuns: 0,
+  }],
+  attention: [],
+  capacity: { agents: [], runtimes: [] },
+  totals: {
+    missionCount: 1,
+    activeMissions: 1,
+    blockedMissions: 0,
+    completedMissions: 0,
+    attentionCount: 0,
+    activeRuns: 1,
+    queuedRuns: 0,
+    offlineAgents: 0,
+    pendingHumanGates: 0,
+    pendingReviews: 0,
+    consumedTokens: 10,
+    reservedTokens: 5,
+    consumedCostUsdTicks: 1,
+    reservedCostUsdTicks: 1,
+  },
+};
+
 function renderProjectDetail() {
   const adapter: NavigationAdapter = {
     push: mocks.push,
-    replace: vi.fn(),
+    replace: mocks.replace,
     back: vi.fn(),
     pathname: "/test-workspace/projects/project-1",
-    searchParams: new URLSearchParams(),
+    searchParams: new URLSearchParams(mocks.search),
     getShareableUrl: (path) => path,
   };
 
@@ -276,7 +344,32 @@ beforeEach(() => {
   mocks.role = "admin";
   mocks.deleteProject.mockReset();
   mocks.push.mockReset();
+  mocks.replace.mockReset();
+  mocks.search = "";
   mocks.toastSuccess.mockReset();
+});
+
+describe("ProjectDetail Command Center navigation", () => {
+  it("switches to the URL-addressable project command view", async () => {
+    renderProjectDetail();
+
+    await userEvent.click(screen.getByRole("button", { name: "Command center" }));
+
+    expect(mocks.replace).toHaveBeenCalledWith(
+      "/test-workspace/projects/project-1?view=command-center",
+    );
+  });
+
+  it("drills from a project Mission back to the canonical Mission workspace", async () => {
+    mocks.search = "view=command-center";
+    renderProjectDetail();
+
+    await userEvent.click(screen.getByRole("button", { name: /Mission one/ }));
+
+    expect(mocks.push).toHaveBeenCalledWith(
+      "/test-workspace/missions/mission-1?project=project-1&projectView=command-center&view=world",
+    );
+  });
 });
 
 describe("ProjectDetail project deletion", () => {

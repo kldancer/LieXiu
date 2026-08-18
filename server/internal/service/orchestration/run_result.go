@@ -80,6 +80,9 @@ func decodeExecutionReviewReceipt(raw []byte) (executionReviewReceipt, error) {
 	if receipt.Evidence == nil {
 		receipt.Evidence = map[string]any{}
 	}
+	if receipt.RequestedChanges == nil {
+		receipt.RequestedChanges = []string{}
+	}
 	if len(receipt.Evidence) > maxReceiptItems {
 		return receipt, fmt.Errorf("review receipt evidence has too many fields")
 	}

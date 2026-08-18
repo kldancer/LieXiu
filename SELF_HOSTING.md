@@ -229,13 +229,24 @@ liexiu daemon stop
 
 ## Upgrading
 
+Do not upgrade an important instance from `latest`. Pin `LIEXIU_IMAGE_TAG` in `.env` to an exact,
+immutable release tag, stop the local daemon and user writes, and create restorable PostgreSQL and
+upload backups before the backend starts its forward migrations. Then pull and start that exact
+version:
+
 ```bash
+liexiu daemon stop
 docker compose -f docker-compose.selfhost.yml pull
 docker compose -f docker-compose.selfhost.yml up -d
+curl --fail http://localhost:8080/readyz
 ```
 
-Pin `LIEXIU_IMAGE_TAG` in `.env` to an exact version like `v0.2.4` if you want to stay on a specific release. Migrations run automatically on backend startup.
-If the selected GHCR tag has not been published yet, fall back to `make selfhost-build` or `docker compose -f docker-compose.selfhost.yml -f docker-compose.selfhost.build.yml up -d --build`.
+An application-only rollback is safe only when the previous application supports the migrated
+schema. Otherwise restore the pre-upgrade database and uploads together in an isolated, verified
+deployment. See [Advanced Configuration — Backup, Restore, Upgrade, and Release Gate](SELF_HOSTING_ADVANCED.md#backup-restore-upgrade-and-release-gate)
+for the authoritative maintenance sequence, recovery rules, golden checks, and known limitations.
+If the selected GHCR tag has not been published, validate a fixed Git commit with `make selfhost-build`;
+do not silently substitute a different image.
 
 > **Upgrading from `v0.3.4` to `v0.3.5+` fails with `refusing to drop legacy daily rollups: ...`?** That's migration `103`'s fail-closed guard: it requires `task_usage_hourly` to be seeded before the legacy daily rollups are dropped. As of MUL-2957 `migrate up` runs that backfill automatically right before applying `103`, so the upgrade completes in a single invocation. If you are still on a pre-MUL-2957 binary or the auto-hook fails, run `backfill_task_usage_hourly` manually first, then re-run the upgrade. Full instructions in [Advanced Configuration → Usage Dashboard Rollup](SELF_HOSTING_ADVANCED.md#usage-dashboard-rollup).
 

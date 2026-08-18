@@ -30,8 +30,9 @@ One PostgreSQL-backed execution truth is projected through three complementary s
 - **Pixel world** — a spatial, game-like view of agent activity and collaboration.
 - **Agent detail** — prompts, tool calls, transcripts, artifacts, reviews, cost, and failures.
 
-The board and execution control plane are the current implementation focus. The pixel world is a
-planned projection of the same event stream, not a second source of truth.
+The Project Command Center, Mission board, pixel world, Replay, and Inspector are implemented as
+complementary projections of the same execution facts. The pixel world is never a second source
+of truth.
 
 ## Architecture
 
@@ -47,10 +48,12 @@ product's control plane. Core orchestration and visualization remain owned by Li
 
 ## Current status
 
-The personal-product subtraction waves and the orchestration/data foundation through Wave 3 are
-complete. The next gates are real Planner integration, multi-provider runtime collaboration, and
-the pixel-world projection. This is an active personal development baseline, not a published cloud
-service.
+The personal-product subtraction, orchestration foundation, real Planner, deterministic role and
+Runtime routing, structured collaboration mailbox, formal pixel world, Replay, Project Command
+Center, and heterogeneous Runtime acceptance through Wave 6B are complete. The current release
+gate covers repeatable self-host upgrades, restart/long-run recovery, security boundaries, and
+operator documentation. This remains a personal self-host development baseline, not a published
+cloud service.
 
 See the [Wave board](docs/diy/进度板/14-Wave%204-6实施路线与进度总览.md)
 for the authoritative scope and progress.

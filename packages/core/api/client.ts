@@ -114,6 +114,7 @@ import type {
   RolePolicyBinding, RoleProfile, StartMissionRequest,
   ResolveHumanGateRequest, ResolveHumanGateResponse,
 } from "../orchestration/types";
+import type { ProjectCommandCenterProjection } from "../orchestration/project-center";
 import { z } from "zod";
 import {
   ActivityPageSchema,
@@ -129,6 +130,7 @@ import {
   RoleProfilesResponseSchema,
   ResolveHumanGateResponseSchema,
 } from "../orchestration/schemas";
+import { parseProjectCommandCenterProjection } from "../orchestration/project-center";
 import type {
   CloudRuntimeNode,
   CreateCloudRuntimeNodeRequest,
@@ -1960,6 +1962,17 @@ export class ApiClient {
 
   async getProject(id: string): Promise<Project> {
     return this.fetch(`/api/projects/${id}`);
+  }
+
+  async getProjectCommandCenter(id: string): Promise<ProjectCommandCenterProjection> {
+    const raw = await this.fetch<unknown>(
+      `/api/projects/${encodeURIComponent(id)}/command-center`,
+    );
+    const projection = parseProjectCommandCenterProjection(raw);
+    if (!projection) {
+      throw new Error("Invalid Project Command Center response");
+    }
+    return projection;
   }
 
   async createProject(data: CreateProjectRequest): Promise<Project> {

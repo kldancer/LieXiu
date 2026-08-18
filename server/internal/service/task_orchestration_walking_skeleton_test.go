@@ -77,7 +77,7 @@ func TestOrchestrationWalkingSkeletonRetryReworkAndIntegration(t *testing.T) {
 
 	a1 := latestRunForNodePurpose(t, ctx, queries, fixture.workspaceID, missionID, nodes["A"].IssueID, "execute")
 	b1 := latestRunForNodePurpose(t, ctx, queries, fixture.workspaceID, missionID, nodes["B"].IssueID, "execute")
-	finishExecutionTask(t, ctx, pool, repository, fixture.workspaceID, a1, "completed", "")
+	artifactA1 := finishWalkingArtifactTask(t, ctx, pool, repository, orchestrator, fixture.workspaceID, a1, orchestration.ArtifactKindCommit, "repo://A/v1")
 	finishExecutionTask(t, ctx, pool, repository, fixture.workspaceID, b1, "failed", "runtime_offline")
 	retry, err := orchestrator.AdvanceMission(ctx, orchestration.AdvanceMissionCommand{WorkspaceID: fixture.workspaceID, MissionID: missionID, CorrelationID: walkingUUID()})
 	if err != nil {
@@ -87,16 +87,11 @@ func TestOrchestrationWalkingSkeletonRetryReworkAndIntegration(t *testing.T) {
 		t.Fatalf("technical retry lost lineage: %#v", retry.CreatedRuns)
 	}
 	b2 := retry.CreatedRuns[0]
-	finishExecutionTask(t, ctx, pool, repository, fixture.workspaceID, b2, "completed", "")
-
-	artifactA1 := recordWorkArtifact(t, ctx, orchestrator, queries, fixture, missionID, nodes["A"], a1, orchestration.ArtifactKindCommit, "repo://A/v1")
-	artifactB := recordWorkArtifact(t, ctx, orchestrator, queries, fixture, missionID, nodes["B"], b2, orchestration.ArtifactKindCommit, "repo://B/v1")
+	artifactB := finishWalkingArtifactTask(t, ctx, pool, repository, orchestrator, fixture.workspaceID, b2, orchestration.ArtifactKindCommit, "repo://B/v1")
 	reviewA1 := latestRunForNodePurpose(t, ctx, queries, fixture.workspaceID, missionID, nodes["A"].IssueID, "review")
 	reviewB := latestRunForNodePurpose(t, ctx, queries, fixture.workspaceID, missionID, nodes["B"].IssueID, "review")
-	finishExecutionTask(t, ctx, pool, repository, fixture.workspaceID, reviewB, "completed", "")
-	recordVerdict(t, ctx, orchestrator, queries, fixture, missionID, nodes["B"], reviewB, artifactB, orchestration.ReviewDecisionApproved, nil)
-	finishExecutionTask(t, ctx, pool, repository, fixture.workspaceID, reviewA1, "completed", "")
-	rework := recordVerdict(t, ctx, orchestrator, queries, fixture, missionID, nodes["A"], reviewA1, artifactA1, orchestration.ReviewDecisionChangesRequested, []string{"add regression evidence"})
+	finishWalkingReviewTask(t, ctx, pool, repository, orchestrator, fixture.workspaceID, reviewB, orchestration.ReviewDecisionApproved, nil)
+	rework := finishWalkingReviewTask(t, ctx, pool, repository, orchestrator, fixture.workspaceID, reviewA1, orchestration.ReviewDecisionChangesRequested, []string{"add regression evidence"})
 	if rework.TaskNode.Status != string(orchestration.TaskStatusRework) || rework.TaskNode.ReworkCount != 1 {
 		t.Fatalf("unexpected rework state: %#v", rework.TaskNode)
 	}
@@ -106,24 +101,23 @@ func TestOrchestrationWalkingSkeletonRetryReworkAndIntegration(t *testing.T) {
 	if a2.ID == a1.ID || a2.Attempt != 1 || a2.AssignmentID == a1.AssignmentID || a2.RetryOfID.Valid {
 		t.Fatalf("business rework reused technical retry lineage: %#v", a2)
 	}
-	finishExecutionTask(t, ctx, pool, repository, fixture.workspaceID, a2, "completed", "")
-	artifactA2 := recordWorkArtifact(t, ctx, orchestrator, queries, fixture, missionID, nodes["A"], a2, orchestration.ArtifactKindCommit, "repo://A/v2")
+	artifactA2 := finishWalkingArtifactTask(t, ctx, pool, repository, orchestrator, fixture.workspaceID, a2, orchestration.ArtifactKindCommit, "repo://A/v2")
 	if artifactA2.Version != 2 {
 		t.Fatalf("A artifact version=%d, want 2", artifactA2.Version)
 	}
 	reviewA2 := latestRunForNodePurpose(t, ctx, queries, fixture.workspaceID, missionID, nodes["A"].IssueID, "review")
-	finishExecutionTask(t, ctx, pool, repository, fixture.workspaceID, reviewA2, "completed", "")
-	approvedA := recordVerdict(t, ctx, orchestrator, queries, fixture, missionID, nodes["A"], reviewA2, artifactA2, orchestration.ReviewDecisionApproved, nil)
+	approvedA := finishWalkingReviewTask(t, ctx, pool, repository, orchestrator, fixture.workspaceID, reviewA2, orchestration.ReviewDecisionApproved, nil)
 	if approvedA.TaskNode.Status != string(orchestration.TaskStatusCompleted) {
 		t.Fatalf("A not completed: %#v", approvedA.TaskNode)
 	}
 	cRun := latestRunForNodePurpose(t, ctx, queries, fixture.workspaceID, missionID, nodes["C"].IssueID, "integrate")
 	assertIntegratorInput(t, cRun, []pgtype.UUID{artifactA2.ID, artifactB.ID}, artifactA1.ID)
-	finishExecutionTask(t, ctx, pool, repository, fixture.workspaceID, cRun, "completed", "")
-	artifactC := recordWorkArtifact(t, ctx, orchestrator, queries, fixture, missionID, nodes["C"], cRun, orchestration.ArtifactKindFinalDelivery, "repo://delivery/final")
+	artifactC := finishWalkingArtifactTask(t, ctx, pool, repository, orchestrator, fixture.workspaceID, cRun, orchestration.ArtifactKindFinalDelivery, "repo://delivery/final")
+	if artifactC.Kind != string(orchestration.ArtifactKindFinalDelivery) {
+		t.Fatalf("C artifact kind=%q, want final_delivery", artifactC.Kind)
+	}
 	reviewC := latestRunForNodePurpose(t, ctx, queries, fixture.workspaceID, missionID, nodes["C"].IssueID, "review")
-	finishExecutionTask(t, ctx, pool, repository, fixture.workspaceID, reviewC, "completed", "")
-	final := recordVerdict(t, ctx, orchestrator, queries, fixture, missionID, nodes["C"], reviewC, artifactC, orchestration.ReviewDecisionApproved, nil)
+	final := finishWalkingReviewTask(t, ctx, pool, repository, orchestrator, fixture.workspaceID, reviewC, orchestration.ReviewDecisionApproved, nil)
 	if final.Advance.Mission.Status != string(orchestration.MissionStatusCompleted) {
 		t.Fatalf("mission status=%s, want completed", final.Advance.Mission.Status)
 	}
@@ -249,6 +243,9 @@ func assertNoRunsForNode(t *testing.T, ctx context.Context, q *db.Queries, works
 }
 func finishExecutionTask(t *testing.T, ctx context.Context, pool *pgxpool.Pool, repository *orchestration.Repository, workspaceID pgtype.UUID, run db.OrchestrationRun, status, failure string) {
 	t.Helper()
+	if status == "completed" {
+		t.Fatal("completed orchestration tasks require a structured output receipt")
+	}
 	if _, err := pool.Exec(ctx, `UPDATE agent_task_queue SET status=$2, started_at=COALESCE(started_at,now()-interval '1 second'), completed_at=now(), failure_reason=NULLIF($3,''), error=NULLIF($3,'') WHERE orchestration_run_id=$1`, run.ID, status, failure); err != nil {
 		t.Fatal(err)
 	}
@@ -256,39 +253,67 @@ func finishExecutionTask(t *testing.T, ctx context.Context, pool *pgxpool.Pool, 
 		t.Fatal(err)
 	}
 }
-func recordWorkArtifact(t *testing.T, ctx context.Context, orchestrator *orchestration.Service, q *db.Queries, f walkingSkeletonFixture, missionID pgtype.UUID, node db.TaskNode, run db.OrchestrationRun, kind orchestration.ArtifactKind, uri string) db.Artifact {
+
+func finishWalkingArtifactTask(t *testing.T, ctx context.Context, pool *pgxpool.Pool, repository *orchestration.Repository, orchestrator *orchestration.Service, workspaceID pgtype.UUID, run db.OrchestrationRun, kind orchestration.ArtifactKind, uri string) db.Artifact {
 	t.Helper()
-	assignment, err := q.GetOrchestrationAssignmentInWorkspace(ctx, db.GetOrchestrationAssignmentInWorkspaceParams{AssignmentID: run.AssignmentID, WorkspaceID: f.workspaceID})
+	receipt, err := json.Marshal(map[string]any{"schema_version": 1, "artifact": map[string]any{"kind": kind, "uri": uri, "content_hash": "", "summary": "walking skeleton", "metadata": map[string]any{"walking_skeleton": true}}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	command := orchestration.RecordArtifactCommand{WorkspaceID: f.workspaceID, MissionID: missionID, TaskNodeID: node.IssueID, RunID: run.ID, CommandID: walkingUUID(), ActorID: assignment.AgentID, Kind: kind, URI: uri, Metadata: []byte(`{}`)}
-	result, err := orchestrator.RecordArtifact(ctx, command)
+	envelope, err := json.Marshal(map[string]any{"output": string(receipt)})
 	if err != nil {
 		t.Fatal(err)
 	}
-	replayed, err := orchestrator.RecordArtifact(ctx, command)
-	if err != nil || !replayed.Idempotent || replayed.Artifact.ID != result.Artifact.ID {
+	completedAt := time.Now().UTC()
+	if _, err := pool.Exec(ctx, `UPDATE agent_task_queue SET status='completed', started_at=COALESCE(started_at,$2::timestamptz-interval '1 second'), completed_at=$2, result=$3 WHERE orchestration_run_id=$1`, run.ID, completedAt, envelope); err != nil {
+		t.Fatal(err)
+	}
+	result, err := repository.ReconcileRun(ctx, orchestration.ReconcileRunParams{WorkspaceID: workspaceID, RunID: run.ID, ObservedAt: completedAt})
+	if err != nil || result.Artifact == nil {
+		t.Fatalf("reconcile artifact: run=%#v task=%#v artifact=%#v err=%v", result.Run, result.TaskNode, result.Artifact, err)
+	}
+	replayed, err := repository.ReconcileRun(ctx, orchestration.ReconcileRunParams{WorkspaceID: workspaceID, RunID: run.ID, ObservedAt: completedAt.Add(time.Second)})
+	if err != nil || replayed.Artifact == nil || replayed.Artifact.ID != result.Artifact.ID || replayed.Changed {
 		t.Fatalf("artifact replay changed result: first=%#v replay=%#v error=%v", result.Artifact, replayed.Artifact, err)
 	}
-	return result.Artifact
+	if _, err := orchestrator.AdvanceMission(ctx, orchestration.AdvanceMissionCommand{WorkspaceID: workspaceID, MissionID: run.MissionID, CorrelationID: run.ID}); err != nil {
+		t.Fatal(err)
+	}
+	return *result.Artifact
 }
-func recordVerdict(t *testing.T, ctx context.Context, orchestrator *orchestration.Service, q *db.Queries, f walkingSkeletonFixture, missionID pgtype.UUID, node db.TaskNode, run db.OrchestrationRun, artifact db.Artifact, decision orchestration.ReviewDecision, changes []string) orchestration.RecordReviewVerdictResult {
+
+type walkingReviewResult struct {
+	TaskNode db.TaskNode
+	Advance  orchestration.AdvanceMissionResult
+}
+
+func finishWalkingReviewTask(t *testing.T, ctx context.Context, pool *pgxpool.Pool, repository *orchestration.Repository, orchestrator *orchestration.Service, workspaceID pgtype.UUID, run db.OrchestrationRun, decision orchestration.ReviewDecision, changes []string) walkingReviewResult {
 	t.Helper()
-	assignment, err := q.GetOrchestrationAssignmentInWorkspace(ctx, db.GetOrchestrationAssignmentInWorkspaceParams{AssignmentID: run.AssignmentID, WorkspaceID: f.workspaceID})
+	receipt, err := json.Marshal(map[string]any{"schema_version": 1, "decision": decision, "evidence": map[string]any{"walking_skeleton": true}, "requested_changes": changes})
 	if err != nil {
 		t.Fatal(err)
 	}
-	command := orchestration.RecordReviewVerdictCommand{WorkspaceID: f.workspaceID, MissionID: missionID, TaskNodeID: node.IssueID, ReviewRunID: run.ID, ArtifactID: artifact.ID, CommandID: walkingUUID(), ActorID: assignment.AgentID, Decision: decision, Evidence: []byte(`{"checked":true}`), RequestedChanges: changes}
-	result, err := orchestrator.RecordReviewVerdict(ctx, command)
+	envelope, err := json.Marshal(map[string]any{"output": string(receipt)})
 	if err != nil {
 		t.Fatal(err)
 	}
-	replayed, err := orchestrator.RecordReviewVerdict(ctx, command)
-	if err != nil || !replayed.Idempotent || replayed.Verdict.ID != result.Verdict.ID {
-		t.Fatalf("review replay changed result: first=%#v replay=%#v error=%v", result.Verdict, replayed.Verdict, err)
+	completedAt := time.Now().UTC()
+	if _, err := pool.Exec(ctx, `UPDATE agent_task_queue SET status='completed', started_at=COALESCE(started_at,$2::timestamptz-interval '1 second'), completed_at=$2, result=$3 WHERE orchestration_run_id=$1`, run.ID, completedAt, envelope); err != nil {
+		t.Fatal(err)
 	}
-	return result
+	result, err := repository.ReconcileRun(ctx, orchestration.ReconcileRunParams{WorkspaceID: workspaceID, RunID: run.ID, ObservedAt: completedAt})
+	if err != nil || result.ReviewVerdict == nil || result.ReviewVerdict.Decision != string(decision) {
+		t.Fatalf("reconcile review: verdict=%#v err=%v", result.ReviewVerdict, err)
+	}
+	replayed, err := repository.ReconcileRun(ctx, orchestration.ReconcileRunParams{WorkspaceID: workspaceID, RunID: run.ID, ObservedAt: completedAt.Add(time.Second)})
+	if err != nil || replayed.ReviewVerdict == nil || replayed.ReviewVerdict.ID != result.ReviewVerdict.ID || replayed.Changed {
+		t.Fatalf("review replay changed result: first=%#v replay=%#v error=%v", result.ReviewVerdict, replayed.ReviewVerdict, err)
+	}
+	advanced, err := orchestrator.AdvanceMission(ctx, orchestration.AdvanceMissionCommand{WorkspaceID: workspaceID, MissionID: run.MissionID, CorrelationID: run.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return walkingReviewResult{TaskNode: result.TaskNode, Advance: advanced}
 }
 func assertWalkingSkeletonHistory(t *testing.T, ctx context.Context, pool *pgxpool.Pool, missionID, aID pgtype.UUID) {
 	t.Helper()

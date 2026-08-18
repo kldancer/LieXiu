@@ -65,20 +65,7 @@ func TestHumanGateIntegration(t *testing.T) {
 	if err := p.QueryRow(ctx, `SELECT issue_id,workspace_id,mission_id,node_key,role,acceptance_criteria,artifact_kinds,priority,status,block_reason,rework_count,revision,created_at,updated_at,budget_estimate_tokens,budget_estimate_cost_usd_ticks FROM task_node WHERE mission_id=$1 AND role='executor' LIMIT 1`, created.MissionID).Scan(&node.IssueID, &node.WorkspaceID, &node.MissionID, &node.NodeKey, &node.Role, &node.AcceptanceCriteria, &node.ArtifactKinds, &node.Priority, &node.Status, &node.BlockReason, &node.ReworkCount, &node.Revision, &node.CreatedAt, &node.UpdatedAt, &node.BudgetEstimateTokens, &node.BudgetEstimateCostUsdTicks); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := p.Exec(ctx, `UPDATE orchestration_run SET status='succeeded', finished_at=now() WHERE id=$1`, workRun.ID); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := p.Exec(ctx, `UPDATE task_node SET status='review', revision=revision+1, updated_at=now() WHERE issue_id=$1`, node.IssueID); err != nil {
-		t.Fatal(err)
-	}
-	recorded, err := s.RecordArtifact(ctx, RecordArtifactCommand{WorkspaceID: f.workspaceID, MissionID: created.MissionID, TaskNodeID: node.IssueID, RunID: workRun.ID, CommandID: newTestUUID(), ActorID: f.agentID, Kind: ArtifactKindFile, URI: "repo://human-gate", Metadata: []byte(`{}`)})
-	if err != nil {
-		t.Fatal(err)
-	}
-	blocked, err := r.AdvanceMission(ctx, AdvanceMissionParams{WorkspaceID: f.workspaceID, MissionID: created.MissionID, CorrelationID: newTestUUID(), ObservedAt: time.Now().UTC(), DispatchWindow: time.Minute, RunTimeout: time.Minute})
-	if err != nil {
-		t.Fatal(err)
-	}
+	_, blocked := completeHumanGateArtifactTask(t, ctx, p, r, s, f.workspaceID, workRun, ArtifactKindFile, "repo://human-gate")
 	gate := pendingGate(t, ctx, p, created.MissionID)
 	if gate.Kind != string(HumanGateReviewerUnavailable) || blocked.Mission.Status != string(MissionStatusBlocked) {
 		t.Fatalf("gate=%#v mission=%s", gate, blocked.Mission.Status)
@@ -87,7 +74,7 @@ func TestHumanGateIntegration(t *testing.T) {
 	if err != nil || len(projection.HumanGates) != 1 || projection.HumanGates[0].Status != "pending" {
 		t.Fatalf("projection gates=%#v err=%v", projection.HumanGates, err)
 	}
-	for _, activity := range recorded.Advance.Activities {
+	for _, activity := range blocked.Activities {
 		if activity.Type != activityTaskBlocked && activity.Type != activityHumanGateRequired {
 			continue
 		}
@@ -245,17 +232,11 @@ func TestReviewReworkLimitCreatesHumanGateIntegration(t *testing.T) {
 		t.Fatalf("create work run: runs=%#v err=%v", advanced.CreatedRuns, err)
 	}
 	workRun := advanced.CreatedRuns[0]
-	if _, err := p.Exec(ctx, `UPDATE orchestration_run SET status='succeeded', finished_at=now() WHERE id=$1`, workRun.ID); err != nil {
-		t.Fatal(err)
+	reconciledWork, workAdvance := completeHumanGateArtifactTask(t, ctx, p, r, s, f.workspaceID, workRun, ArtifactKindFile, "repo://rework-limit")
+	if len(workAdvance.CreatedRuns) != 1 {
+		t.Fatalf("record artifact/reviewer advance: runs=%#v", workAdvance.CreatedRuns)
 	}
-	if _, err := p.Exec(ctx, `UPDATE task_node SET status='review', revision=revision+1, updated_at=now() WHERE issue_id=$1`, workRun.TaskNodeID); err != nil {
-		t.Fatal(err)
-	}
-	recorded, err := s.RecordArtifact(ctx, RecordArtifactCommand{WorkspaceID: f.workspaceID, MissionID: created.MissionID, TaskNodeID: workRun.TaskNodeID, RunID: workRun.ID, CommandID: newTestUUID(), ActorID: f.agentID, Kind: ArtifactKindFile, URI: "repo://rework-limit", Metadata: []byte(`{}`)})
-	if err != nil || len(recorded.Advance.CreatedRuns) != 1 {
-		t.Fatalf("record artifact/reviewer advance: runs=%#v err=%v", recorded.Advance.CreatedRuns, err)
-	}
-	reviewRun := recorded.Advance.CreatedRuns[0]
+	reviewRun := workAdvance.CreatedRuns[0]
 	if reviewRun.Purpose != "review" {
 		t.Fatalf("run purpose=%q, want review", reviewRun.Purpose)
 	}
@@ -266,27 +247,14 @@ func TestReviewReworkLimitCreatesHumanGateIntegration(t *testing.T) {
 	if assignedReviewer != reviewerAgent {
 		t.Fatalf("reviewer=%v, want independent %v", assignedReviewer, reviewerAgent)
 	}
-	if _, err := p.Exec(ctx, `UPDATE orchestration_run SET status='succeeded', finished_at=now() WHERE id=$1`, reviewRun.ID); err != nil {
-		t.Fatal(err)
-	}
 	if _, err := p.Exec(ctx, `UPDATE task_node SET rework_count=1 WHERE issue_id=$1`, workRun.TaskNodeID); err != nil {
 		t.Fatal(err)
 	}
-	var artifactID pgtype.UUID
-	if err := p.QueryRow(ctx, `SELECT id FROM artifact WHERE run_id=$1 ORDER BY version DESC LIMIT 1`, workRun.ID).Scan(&artifactID); err != nil {
-		t.Fatal(err)
-	}
-	verdict, err := s.RecordReviewVerdict(ctx, RecordReviewVerdictCommand{
-		WorkspaceID: f.workspaceID, MissionID: created.MissionID, TaskNodeID: workRun.TaskNodeID,
-		ReviewRunID: reviewRun.ID, ArtifactID: artifactID, CommandID: newTestUUID(), ActorID: assignedReviewer,
-		Decision: ReviewDecisionChangesRequested, RequestedChanges: []string{"address the remaining gap"}, Evidence: []byte(`{}`),
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	verdict, _ := completeHumanGateReviewTask(t, ctx, p, r, s, f.workspaceID, reviewRun, ReviewDecisionChangesRequested, []string{"address the remaining gap"})
 	if TaskStatus(verdict.TaskNode.Status) != TaskStatusBlocked {
 		t.Fatalf("task status=%s, want blocked", verdict.TaskNode.Status)
 	}
+	artifactID := reconciledWork.Artifact.ID
 	gate := pendingGate(t, ctx, p, created.MissionID)
 	if HumanGateKind(gate.Kind) != HumanGateReworkLimitExceeded || gate.ArtifactID != artifactID || gate.SourceRunID != reviewRun.ID {
 		t.Fatalf("rework gate=%#v", gate)
@@ -294,6 +262,72 @@ func TestReviewReworkLimitCreatesHumanGateIntegration(t *testing.T) {
 	projection, err := s.GetMissionProjection(ctx, f.workspaceID, created.MissionID)
 	if err != nil || len(projection.HumanGates) != 1 || projection.HumanGates[0].Kind != HumanGateReworkLimitExceeded {
 		t.Fatalf("projection gates=%#v err=%v", projection.HumanGates, err)
+	}
+}
+
+func completeHumanGateArtifactTask(t *testing.T, ctx context.Context, p *pgxpool.Pool, r *Repository, s *Service, workspaceID pgtype.UUID, run db.OrchestrationRun, kind ArtifactKind, uri string) (ReconcileRunResult, AdvanceMissionResult) {
+	t.Helper()
+	ensureHumanGateAgentTask(t, ctx, p, run.ID)
+	receipt, err := json.Marshal(map[string]any{"schema_version": 1, "artifact": map[string]any{"kind": kind, "uri": uri, "content_hash": "", "summary": "human gate integration", "metadata": map[string]any{}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	envelope, err := json.Marshal(map[string]any{"output": string(receipt)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	completedAt := time.Now().UTC()
+	if _, err := p.Exec(ctx, `UPDATE agent_task_queue SET status='completed', started_at=COALESCE(started_at,$2::timestamptz-interval '1 second'), completed_at=$2, result=$3 WHERE orchestration_run_id=$1`, run.ID, completedAt, envelope); err != nil {
+		t.Fatal(err)
+	}
+	reconciled, err := r.ReconcileRun(ctx, ReconcileRunParams{WorkspaceID: workspaceID, RunID: run.ID, ObservedAt: completedAt})
+	if err != nil || reconciled.Artifact == nil {
+		t.Fatalf("reconcile artifact: run=%#v task=%#v artifact=%#v err=%v", reconciled.Run, reconciled.TaskNode, reconciled.Artifact, err)
+	}
+	advanced, err := s.AdvanceMission(ctx, AdvanceMissionCommand{WorkspaceID: workspaceID, MissionID: run.MissionID, CorrelationID: run.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return reconciled, advanced
+}
+
+func completeHumanGateReviewTask(t *testing.T, ctx context.Context, p *pgxpool.Pool, r *Repository, s *Service, workspaceID pgtype.UUID, run db.OrchestrationRun, decision ReviewDecision, changes []string) (ReconcileRunResult, AdvanceMissionResult) {
+	t.Helper()
+	ensureHumanGateAgentTask(t, ctx, p, run.ID)
+	receipt, err := json.Marshal(map[string]any{"schema_version": 1, "decision": decision, "evidence": map[string]any{"human_gate": true}, "requested_changes": changes})
+	if err != nil {
+		t.Fatal(err)
+	}
+	envelope, err := json.Marshal(map[string]any{"output": string(receipt)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	completedAt := time.Now().UTC()
+	if _, err := p.Exec(ctx, `UPDATE agent_task_queue SET status='completed', started_at=COALESCE(started_at,$2::timestamptz-interval '1 second'), completed_at=$2, result=$3 WHERE orchestration_run_id=$1`, run.ID, completedAt, envelope); err != nil {
+		t.Fatal(err)
+	}
+	reconciled, err := r.ReconcileRun(ctx, ReconcileRunParams{WorkspaceID: workspaceID, RunID: run.ID, ObservedAt: completedAt})
+	if err != nil || reconciled.ReviewVerdict == nil {
+		t.Fatalf("reconcile review: result=%#v err=%v", reconciled.ReviewVerdict, err)
+	}
+	advanced, err := s.AdvanceMission(ctx, AdvanceMissionCommand{WorkspaceID: workspaceID, MissionID: run.MissionID, CorrelationID: run.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return reconciled, advanced
+}
+
+func ensureHumanGateAgentTask(t *testing.T, ctx context.Context, p *pgxpool.Pool, runID pgtype.UUID) {
+	t.Helper()
+	if _, err := p.Exec(ctx, `
+		INSERT INTO agent_task_queue (agent_id, runtime_id, issue_id, status, orchestration_run_id)
+		SELECT assignment.agent_id, assignment.runtime_id, run.task_node_id, 'queued', run.id
+		FROM orchestration_run run
+		JOIN orchestration_assignment assignment ON assignment.id=run.assignment_id
+		WHERE run.id=$1
+		  AND NOT EXISTS (SELECT 1 FROM agent_task_queue task WHERE task.orchestration_run_id=run.id)
+	`, runID); err != nil {
+		t.Fatal(err)
 	}
 }
 

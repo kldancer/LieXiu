@@ -13,6 +13,20 @@ WHERE id = $1;
 SELECT * FROM project
 WHERE id = $1 AND workspace_id = $2;
 
+-- name: ListProjectMissionIDs :many
+-- Project Command Center owns no Mission detail state. It resolves the
+-- canonical Mission roots through their existing Issue project relation and
+-- lets the orchestration Projection service summarize those facts.
+SELECT mission.issue_id
+FROM mission
+JOIN issue
+  ON issue.id = mission.issue_id
+ AND issue.workspace_id = mission.workspace_id
+WHERE mission.workspace_id = sqlc.arg('workspace_id')
+  AND issue.project_id = sqlc.arg('project_id')
+ORDER BY mission.updated_at DESC, mission.issue_id ASC
+LIMIT sqlc.arg('page_size');
+
 -- name: LockProjectForDelete :one
 -- Serializes project deletion with concurrent project updates.
 SELECT id FROM project

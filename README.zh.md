@@ -29,7 +29,8 @@ LieXiu 是以上游 Multica v0.4.26 为执行基线、面向个人自用进行�
 - **像素世界：** 以游戏化空间表现 Agent 的活动、等待、通信与协作；
 - **角色执行详情：** prompt、工具调用、transcript、Artifact、Review、成本与失败原因。
 
-当前优先完成看板和执行控制面。像素世界是同一事件流的后续可视化投影，不会成为第二套业务状态。
+项目指挥中心、Mission 看板、像素世界、Replay 和 Inspector 已作为同一执行事实的互补投影实现；像素世界不会成为
+第二套业务状态。
 
 ## 技术架构
 
@@ -45,8 +46,9 @@ DeepSeek Harness 被定位为 LieXiu 内部的一种强 Runtime 和插件生态�
 
 ## 当前进度
 
-个人版产品减法、Orchestration 基础和物理 schema 压缩已经推进到 Wave 3 完成。下一阶段是接入真实 Planner、
-验证多厂商 Runtime 协作，并实现像素世界投影。当前仓库是持续研发中的个人基线，不代表已经发布线上云服务。
+个人版产品减法、Orchestration 基础、真实 Planner、确定性角色/Runtime 路由、结构化协作 Mailbox、正式像素世界、
+Replay、项目指挥中心和异构 Runtime 验收已推进到 Wave 6B 完成。当前发布 Gate 收敛可重复的自托管升级、重启/长时
+恢复、安全边界和运维文档。当前仓库仍是个人自托管研发基线，不代表已经发布线上云服务。
 
 稳定合同维护在[正式设计](docs/diy/正式设计/README.md)，当前范围与进度统一维护在
 [Wave 进度板](docs/diy/进度板/14-Wave%204-6实施路线与进度总览.md)。

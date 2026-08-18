@@ -13,6 +13,40 @@ import pg from "pg";
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || `http://localhost:${process.env.PORT || "8080"}`;
 const DATABASE_URL = process.env.DATABASE_URL ?? "postgres://liexiu:liexiu@localhost:5432/liexiu?sslmode=disable";
 
+interface PersonalBootstrapSession {
+  token: string;
+  user: { id: string; email: string; name: string };
+  workspace: TestWorkspace;
+}
+
+let personalBootstrapSession: Promise<PersonalBootstrapSession> | null = null;
+
+async function getPersonalBootstrapSession(): Promise<PersonalBootstrapSession> {
+  if (personalBootstrapSession) return personalBootstrapSession;
+
+  personalBootstrapSession = (async () => {
+    const secret = process.env.LIEXIU_OWNER_BOOTSTRAP_SECRET?.trim();
+    if (!secret) {
+      throw new Error("LIEXIU_OWNER_BOOTSTRAP_SECRET is required for personal-mode E2E");
+    }
+    const response = await fetch(`${API_BASE}/api/bootstrap`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ secret }),
+    });
+    if (!response.ok) {
+      throw new Error(`personal bootstrap failed: ${response.status}`);
+    }
+    const session = (await response.json()) as PersonalBootstrapSession;
+    if (!session.token || !session.user?.email || !session.workspace?.id) {
+      throw new Error("personal bootstrap returned an incomplete session");
+    }
+    return session;
+  })();
+
+  return personalBootstrapSession;
+}
+
 interface TestWorkspace {
   id: string;
   name: string;
@@ -53,69 +87,24 @@ export class TestApiClient {
   private createdIssueIds: string[] = [];
   private seededIssueIds: string[] = [];
 
-  async login(email: string, name: string) {
-    const client = new pg.Client(DATABASE_URL);
-    await client.connect();
-    try {
-      // Keep each E2E login isolated so previous test runs do not trip the
-      // per-email send-code rate limit.
-      await client.query("DELETE FROM verification_code WHERE email = $1", [email]);
-
-      // Step 1: Send verification code
-      const sendRes = await fetch(`${API_BASE}/auth/send-code`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email }),
-      });
-      if (!sendRes.ok) {
-        throw new Error(`send-code failed: ${sendRes.status}`);
-      }
-
-      // Step 2: Read code from database
-      const result = await client.query(
-        "SELECT code FROM verification_code WHERE email = $1 AND used = FALSE AND expires_at > now() ORDER BY created_at DESC LIMIT 1",
-        [email],
-      );
-      if (result.rows.length === 0) {
-        throw new Error(`No verification code found for ${email}`);
-      }
-
-      const configuredDevCode = process.env.LIEXIU_DEV_VERIFICATION_CODE?.trim();
-      const code = configuredDevCode || result.rows[0].code;
-
-      // Step 3: Verify code to get JWT
-      const verifyRes = await fetch(`${API_BASE}/auth/verify-code`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, code }),
-      });
-      if (!verifyRes.ok) {
-        throw new Error(`verify-code failed: ${verifyRes.status}`);
-      }
-      const data = await verifyRes.json();
-
-      this.token = data.token;
-      this.email = email;
-
-      // Update user name if needed
-      if (name && data.user?.name !== name) {
-        await this.authedFetch("/api/me", {
-          method: "PATCH",
-          body: JSON.stringify({ name }),
-        });
-      }
-
-      await client.query("DELETE FROM verification_code WHERE email = $1", [email]);
-
-      return data;
-    } finally {
-      await client.end();
-    }
+  async login(_email?: string, _name?: string) {
+    // Personal v1 has no public registration or email-code login. Replay the
+    // secret-gated owner bootstrap once per worker to obtain a JWT for API
+    // fixtures while preserving the canonical Owner and Workspace.
+    const data = await getPersonalBootstrapSession();
+    this.token = data.token;
+    this.email = data.user.email;
+    this.workspaceId = data.workspace.id;
+    this.workspaceSlug = data.workspace.slug;
+    return data;
   }
 
   async getWorkspaces(): Promise<TestWorkspace[]> {
-    const res = await this.authedFetch("/api/workspaces");
-    return res.json();
+    const res = await this.authedFetch("/api/workspaces/canonical");
+    if (!res.ok) {
+      throw new Error(`canonical workspace failed: ${res.status}`);
+    }
+    return [(await res.json()) as TestWorkspace];
   }
 
   setWorkspaceId(id: string) {
@@ -134,27 +123,7 @@ export class TestApiClient {
       this.workspaceSlug = workspace.slug;
       return workspace;
     }
-
-    const res = await this.authedFetch("/api/workspaces", {
-      method: "POST",
-      body: JSON.stringify({ name, slug }),
-    });
-    if (res.ok) {
-      const created = (await res.json()) as TestWorkspace;
-      this.workspaceId = created.id;
-      this.workspaceSlug = created.slug;
-      return created;
-    }
-
-    const refreshed = await this.getWorkspaces();
-    const created = refreshed.find((item) => item.slug === slug) ?? refreshed[0];
-    if (created) {
-      this.workspaceId = created.id;
-      this.workspaceSlug = created.slug;
-      return created;
-    }
-
-    throw new Error(`Failed to ensure workspace ${slug}: ${res.status} ${res.statusText}`);
+    throw new Error(`Personal instance has no canonical workspace (${name}, ${slug})`);
   }
 
   async markUserOnboarded() {

@@ -10,7 +10,8 @@
     "loading": "ミッション投影を読み込み中",
     "error_title": "ミッションビューを表示できません",
     "error_hint": "ワークスペースへのアクセスを確認して再試行してください。",
-    "retry": "再試行"
+    "retry": "再試行",
+    "back_to_project": "プロジェクトのコマンドセンターに戻る"
   },
   "board": {
     "title": "プロジェクトボード",
@@ -43,7 +44,26 @@
     "walking": "移動中",
     "working": "作業中",
     "reviewing": "レビュー中",
-    "done": "完了"
+    "done": "完了",
+    "integration": "統合フォージ",
+    "pause_motion": "動きを一時停止",
+    "resume_motion": "動きを再開",
+    "reduced_motion": "動きを抑えています",
+    "motion_enabled": "動きが有効です",
+    "low_performance": "低パフォーマンスモード",
+    "full_performance": "フルパフォーマンスモード",
+    "performance_degraded": "パフォーマンス予算により {{count}} 件を非表示",
+    "view_mode": "ミッション表示モード",
+    "view_world": "ワールド",
+    "view_replay": "リプレイ",
+    "replay_play": "リプレイを再生",
+    "replay_pause": "リプレイを一時停止",
+    "replay_sequence": "アクティビティシーケンス",
+    "replay_actor": "アクター",
+    "replay_task": "タスク",
+    "replay_run": "ラン",
+    "replay_all": "すべて",
+    "replay_events": "表示中のリプレイイベント"
   },
   "collaboration": {
     "title": "コラボレーションメールボックス",

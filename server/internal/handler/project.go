@@ -196,6 +196,32 @@ func (h *Handler) GetProject(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, resp)
 }
 
+func (h *Handler) GetProjectCommandCenter(w http.ResponseWriter, r *http.Request) {
+	projectID, ok := parseUUIDOrBadRequest(w, chi.URLParam(r, "id"), "project id")
+	if !ok {
+		return
+	}
+	workspaceID, ok := parseUUIDOrBadRequest(w, h.resolveWorkspaceID(r), "workspace id")
+	if !ok {
+		return
+	}
+	if h.Orchestration == nil {
+		writeError(w, http.StatusServiceUnavailable, "orchestration service is unavailable")
+		return
+	}
+	projection, err := h.Orchestration.GetProjectCommandCenterProjection(r.Context(), workspaceID, projectID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		writeError(w, http.StatusNotFound, "project not found")
+		return
+	}
+	if err != nil {
+		slog.Error("get project command center failed", append(logger.RequestAttrs(r), "error", err)...)
+		writeError(w, http.StatusInternalServerError, "failed to load project command center")
+		return
+	}
+	writeJSON(w, http.StatusOK, projection)
+}
+
 // validProjectStatuses / validProjectPriorities mirror the CHECK constraints on
 // the project table (migrations 034, 035). CreateProject / UpdateProject
 // pre-validate against these so an unknown enum value returns a clean 400 with

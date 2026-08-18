@@ -74,3 +74,19 @@ Workspace 数据边界。该模式同时要求后端连接来自 loopback、浏�
 - Mission/Run 重启恢复、预算、取消和 Human Gate 通过黄金场景；
 - Web 可从 Snapshot + Activity sequence 恢复，不依赖内存或 WebSocket 恰好在线；
 - 升级前可以停止新派发，升级失败可以回到已知应用版本而不回写破坏性数据。
+
+## 8. 发布、升级与回退合同
+
+- 生产安装和升级必须固定 Git commit 或不可变镜像 tag；`latest` 只适合首次试用，不是可审计发布输入；
+- 升级前停止 daemon 和用户写入，等待在途 Run 到达可识别终态或显式取消，再备份 PostgreSQL、上传对象和部署 secret；
+- migration 只能向前执行。应用版本回退仅在目标旧版本兼容当前 schema 时成立；若 migration 不兼容，必须连同升级前
+  数据备份恢复到隔离验证过的旧版本组合，不能在活动库上临时手写 down SQL；
+- 恢复演练必须在独立数据库/卷中验证，而不是覆盖活动实例；成功标准包括 migration 版本、Owner/Workspace、Mission
+  Projection、Artifact/Review lineage 和上传对象一致；
+- 发布后先验证 liveness/readiness、Web/API/WS、daemon/Runtime，再执行不调用真实厂商的 fixture 黄金场景；真实多
+  Runtime 收据只有在 profile、版本和输入未变化时才可复用；
+- 每次发布保留固定版本、备份可恢复性、健康检查、黄金场景和已知限制结论；动态命令、ID、耗时和备份位置只进入 `.work`。
+
+个人版 v1 的稳定限制是单 Owner/单 canonical Workspace；无多租户、云计费、公开注册、插件市场或全局黑盒自动调度。
+像素世界和 Replay 是可重建投影，不保存世界坐标；dsh 保持通用 Runtime Adapter，不发布专属领域 bridge。具体操作以
+仓库根目录 `SELF_HOSTING.md` 和 `SELF_HOSTING_ADVANCED.md` 为准。

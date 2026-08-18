@@ -34,6 +34,7 @@ catalog:
   rehype-katex: "^7.0.1"
   remark-math: "^6.0.0"
   mermaid: "^11.14.0"
+  phaser: "^4.2.1"
 
   # Icons
   lucide-react: "^1.0.1"

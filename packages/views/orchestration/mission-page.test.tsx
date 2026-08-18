@@ -14,6 +14,14 @@ import type { AgentRuntimeDiagnostic } from "@liexiu/core/agents";
 import { renderWithI18n } from "../test/i18n";
 import { MissionWorkspace } from "./mission-page";
 
+vi.mock("./world/phaser-scene", () => ({
+  createWorldRenderer: () => ({
+    mount: async () => undefined,
+    update: () => undefined,
+    destroy: () => undefined,
+  }),
+}));
+
 const previousRun = makeRun("run-0", "node-1", "assignment-1", "succeeded");
 const firstRun = { ...makeRun("run-1", "node-1", "assignment-1", "running"), attempt: 2 };
 const secondRun = makeRun("run-2", "node-2", "assignment-2", "succeeded");

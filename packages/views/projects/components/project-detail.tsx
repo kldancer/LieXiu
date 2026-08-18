@@ -2,14 +2,14 @@
 
 import { useMemo, useState, useCallback, useRef, useEffect } from "react";
 import { useDefaultLayout, usePanelRef } from "react-resizable-panels";
-import { Check, ChevronRight, Link2, MoreHorizontal, PanelRight, Trash2, UserMinus } from "lucide-react";
+import { Check, ChevronRight, LayoutDashboard, Link2, ListTodo, MoreHorizontal, PanelRight, Trash2, UserMinus } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { cn } from "@liexiu/ui/lib/utils";
 import { copyText } from "@liexiu/ui/lib/clipboard";
 import { toast } from "sonner";
 import type { ProjectStatus, ProjectPriority } from "@liexiu/core/types";
 import { useAuthStore } from "@liexiu/core/auth";
-import { projectDetailOptions } from "@liexiu/core/projects/queries";
+import { projectCommandCenterOptions, projectDetailOptions } from "@liexiu/core/projects/queries";
 import { useUpdateProject, useDeleteProject } from "@liexiu/core/projects/mutations";
 import { memberListOptions, agentListOptions } from "@liexiu/core/workspace/queries";
 import { useWorkspaceId } from "@liexiu/core/hooks";
@@ -25,6 +25,11 @@ import { PriorityIcon } from "../../issues/components/priority-icon";
 import { ProjectResourcesSection } from "./project-resources-section";
 import { ProjectStartDatePicker } from "./project-start-date-picker";
 import { ProjectDueDatePicker } from "./project-due-date-picker";
+import {
+  ProjectCommandCenter,
+  type ProjectCommandCenterLabels,
+  type ProjectCommandCenterOpenTarget,
+} from "./project-command-center";
 import { IssueSurface } from "../../issues/surface/issue-surface";
 import { Skeleton } from "@liexiu/ui/components/ui/skeleton";
 import { Button } from "@liexiu/ui/components/ui/button";
@@ -102,8 +107,12 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
   const wsId = useWorkspaceId();
   const wsPaths = useWorkspacePaths();
   const router = useNavigation();
+  const commandCenterActive = router.searchParams.get("view") === "command-center";
   const userId = useAuthStore((s) => s.user?.id);
   const { data: project, isLoading } = useQuery(projectDetailOptions(wsId, projectId));
+  const commandCenterQuery = useQuery(
+    projectCommandCenterOptions(wsId, projectId, commandCenterActive),
+  );
   const issueTab = useIssuesScope(`project:${projectId}`);
   const issueScope = useMemo(
     () => ({ type: "project" as const, projectId, actorKind: issueTab }),
@@ -196,6 +205,108 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
       },
     });
   }, [project, deleteProject, router, wsPaths, t]);
+
+  const setDetailView = useCallback((view: "work" | "command-center") => {
+    const params = new URLSearchParams(router.searchParams);
+    if (view === "command-center") params.set("view", "command-center");
+    else params.delete("view");
+    const query = params.toString();
+    router.replace(`${wsPaths.projectDetail(projectId)}${query ? `?${query}` : ""}`);
+  }, [projectId, router, wsPaths]);
+
+  const openCommandCenterTarget = useCallback((target: ProjectCommandCenterOpenTarget) => {
+    const params = new URLSearchParams({
+      project: projectId,
+      projectView: "command-center",
+      view: "world",
+    });
+    if (target.taskNodeId) params.set("task", target.taskNodeId);
+    if (target.runId) params.set("run", target.runId);
+    if (target.artifactId) params.set("artifact", target.artifactId);
+    if (target.gateId) params.set("gate", target.gateId);
+    if (target.actionKind) params.set("action", target.actionKind);
+    router.push(`${wsPaths.missionDetail(target.missionId)}?${params}`);
+  }, [projectId, router, wsPaths]);
+
+  const commandCenterLabels = useMemo<ProjectCommandCenterLabels>(() => ({
+    project: t(($) => $.command_center.project),
+    missionPortfolio: t(($) => $.command_center.portfolio_title),
+    attentionQueue: t(($) => $.command_center.attention_title),
+    ownerActions: t(($) => $.command_center.owner_actions),
+    capacity: t(($) => $.command_center.capacity_title),
+    agents: t(($) => $.command_center.agents_title),
+    runtimes: t(($) => $.command_center.runtimes_title),
+    capacityEmpty: t(($) => $.command_center.capacity_empty),
+    missionCount: t(($) => $.command_center.summary_missions),
+    activeMissions: t(($) => $.command_center.summary_active),
+    blockedMissions: t(($) => $.command_center.summary_blocked),
+    completedMissions: t(($) => $.command_center.summary_completed),
+    attentionCount: t(($) => $.command_center.summary_attention),
+    tokens: t(($) => $.command_center.summary_tokens),
+    cost: t(($) => $.command_center.summary_cost),
+    status: t(($) => $.command_center.status),
+    filter: t(($) => $.command_center.filter),
+    kindFilter: t(($) => $.command_center.kind_filter),
+    severityFilter: t(($) => $.command_center.severity_filter),
+    all: t(($) => $.command_center.all),
+    sort: t(($) => $.command_center.sort),
+    updated: t(($) => $.command_center.sort_updated),
+    risk: t(($) => $.command_center.sort_risk),
+    progress: t(($) => $.command_center.sort_progress),
+    noMissions: t(($) => $.command_center.portfolio_empty),
+    noAttention: t(($) => $.command_center.attention_empty),
+    evidence: t(($) => $.command_center.evidence),
+    revisions: t(($) => $.command_center.revisions),
+    requiredPermission: t(($) => $.command_center.permission),
+    riskLabel: t(($) => $.command_center.risk),
+    reason: t(($) => $.command_center.reason),
+    openMission: t(($) => $.command_center.open_mission),
+    disabled: t(($) => $.command_center.disabled),
+    duties: t(($) => $.command_center.duties),
+    activeMissionsLabel: t(($) => $.command_center.active_missions),
+    activeQueued: t(($) => $.command_center.active_queued),
+    refresh: t(($) => $.command_center.refresh),
+    refreshing: t(($) => $.command_center.refreshing),
+    truncated: t(($) => $.command_center.truncated),
+    actionLabels: {
+      inspect: t(($) => $.command_center.action_inspect),
+      approve_budget: t(($) => $.command_center.action_approve_budget),
+      approve_plan: t(($) => $.command_center.action_approve_plan),
+      reject_plan: t(($) => $.command_center.action_reject_plan),
+      retry_task: t(($) => $.command_center.action_retry_task),
+      resolve_human_gate: t(($) => $.command_center.action_resolve_human_gate),
+      reassign_task: t(($) => $.command_center.action_reassign_task),
+      cancel_mission: t(($) => $.command_center.action_cancel_mission),
+    },
+    statusLabels: {
+      all: t(($) => $.command_center.all_statuses),
+      draft: t(($) => $.command_center.status_draft),
+      ready: t(($) => $.command_center.status_ready),
+      running: t(($) => $.command_center.status_running),
+      blocked: t(($) => $.command_center.status_blocked),
+      completed: t(($) => $.command_center.status_completed),
+      failed: t(($) => $.command_center.status_failed),
+      cancelled: t(($) => $.command_center.status_cancelled),
+    },
+    severityLabels: {
+      all: t(($) => $.command_center.all_severities),
+      critical: t(($) => $.command_center.severity_critical),
+      high: t(($) => $.command_center.severity_high),
+      attention: t(($) => $.command_center.severity_attention),
+    },
+    kindLabels: {
+      mission_blocked: t(($) => $.command_center.kind_mission_blocked),
+      budget_approval: t(($) => $.command_center.kind_budget_approval),
+      budget_exceeded: t(($) => $.command_center.kind_budget_exceeded),
+      review_pending: t(($) => $.command_center.kind_review_pending),
+      run_failed: t(($) => $.command_center.kind_run_failed),
+      dispatch_timeout: t(($) => $.command_center.kind_dispatch_timeout),
+      run_timeout: t(($) => $.command_center.kind_run_timeout),
+      plan_proposal_pending: t(($) => $.command_center.kind_plan_proposal_pending),
+      human_gate: t(($) => $.command_center.kind_human_gate),
+      runtime_offline: t(($) => $.command_center.kind_runtime_offline),
+    },
+  }), [t]);
 
   if (isLoading) {
     return (
@@ -456,6 +567,22 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
             leaf={<span className="truncate font-medium text-foreground">{project.title}</span>}
             actions={
               <>
+              <Button
+                variant={commandCenterActive ? "ghost" : "secondary"}
+                size="sm"
+                onClick={() => setDetailView("work")}
+              >
+                <ListTodo />
+                {t(($) => $.command_center.view_work)}
+              </Button>
+              <Button
+                variant={commandCenterActive ? "secondary" : "ghost"}
+                size="sm"
+                onClick={() => setDetailView("command-center")}
+              >
+                <LayoutDashboard />
+                {t(($) => $.command_center.view_command_center)}
+              </Button>
               <DropdownMenu>
                 <DropdownMenuTrigger
                   render={
@@ -506,10 +633,38 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
             }
           />
 
-          <IssueSurface
-            scope={issueScope}
-            modes={["board", "list", "table", "swimlane", "gantt"]}
-          />
+          {commandCenterActive ? (
+            <div className="min-h-0 flex-1 overflow-y-auto p-4 md:p-6">
+              {commandCenterQuery.isLoading ? (
+                <div className="space-y-3" aria-label={t(($) => $.command_center.loading)}>
+                  <Skeleton className="h-8 w-64" />
+                  <Skeleton className="h-24 w-full" />
+                  <Skeleton className="h-64 w-full" />
+                </div>
+              ) : commandCenterQuery.isError || !commandCenterQuery.data ? (
+                <div className="flex min-h-64 flex-col items-center justify-center gap-3 text-center">
+                  <h2 className="text-title-sm font-semibold">{t(($) => $.command_center.error_title)}</h2>
+                  <p className="text-body text-muted-foreground">{t(($) => $.command_center.error_hint)}</p>
+                  <Button variant="outline" onClick={() => void commandCenterQuery.refetch()}>
+                    {t(($) => $.command_center.retry)}
+                  </Button>
+                </div>
+              ) : (
+                <ProjectCommandCenter
+                  projection={commandCenterQuery.data}
+                  labels={commandCenterLabels}
+                  onOpenMission={openCommandCenterTarget}
+                  isRefreshing={commandCenterQuery.isFetching}
+                  onRefresh={() => void commandCenterQuery.refetch()}
+                />
+              )}
+            </div>
+          ) : (
+            <IssueSurface
+              scope={issueScope}
+              modes={["board", "list", "table", "swimlane", "gantt"]}
+            />
+          )}
           </div>
         </ResizablePanel>
         {!isMobile && <ResizableHandle />}

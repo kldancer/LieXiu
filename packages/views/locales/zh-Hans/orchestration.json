@@ -10,7 +10,8 @@
     "loading": "正在加载任务投影",
     "error_title": "任务视图暂不可用",
     "error_hint": "请确认当前工作区访问权限，然后重试投影视图。",
-    "retry": "重试"
+    "retry": "重试",
+    "back_to_project": "返回项目指挥中心"
   },
   "board": {
     "title": "项目总看板",
@@ -43,7 +44,26 @@
     "walking": "移动中",
     "working": "工作中",
     "reviewing": "审查中",
-    "done": "已完成"
+    "done": "已完成",
+    "integration": "集成锻造台",
+    "pause_motion": "暂停动画",
+    "resume_motion": "恢复动画",
+    "reduced_motion": "动画已减少",
+    "motion_enabled": "动画已启用",
+    "low_performance": "低性能模式",
+    "full_performance": "完整性能模式",
+    "performance_degraded": "性能预算已隐藏 {{count}} 个视觉对象",
+    "view_mode": "任务视图模式",
+    "view_world": "像素世界",
+    "view_replay": "活动回放",
+    "replay_play": "播放回放",
+    "replay_pause": "暂停回放",
+    "replay_sequence": "活动序号",
+    "replay_actor": "角色",
+    "replay_task": "任务",
+    "replay_run": "运行",
+    "replay_all": "全部",
+    "replay_events": "当前回放事件"
   },
   "collaboration": {
     "title": "协作邮箱",

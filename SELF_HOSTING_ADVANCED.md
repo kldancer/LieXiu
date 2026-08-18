@@ -507,12 +507,72 @@ networking, allowlists, NetworkPolicy, or proxy authentication. If you bind
 trusted network, for example a host-local mapping such as
 `127.0.0.1:9090:9090`.
 
-## Upgrading
+## Backup, Restore, Upgrade, and Release Gate
 
-```bash
-docker compose -f docker-compose.selfhost.yml pull
-docker compose -f docker-compose.selfhost.yml up -d
-```
+### Freeze an exact release input
 
-Pin `LIEXIU_IMAGE_TAG` in `.env` to an exact release like `v0.2.4` if you want to stay on a specific version. Migrations run automatically on backend startup. They are idempotent — running them multiple times has no effect.
-If the selected GHCR tag has not been published yet, fall back to `docker compose -f docker-compose.selfhost.yml -f docker-compose.selfhost.build.yml up -d --build`.
+Set `LIEXIU_IMAGE_TAG` to an immutable release tag. For a source build, check out a fixed Git commit
+and record it before building. Never promote an unrecorded working tree or let a missing image tag
+fall through to another version.
+
+### Backup before every migration
+
+Plan a maintenance window. Stop every daemon so it cannot claim more work, stop creating or starting
+Missions, and wait for running tasks to finish or cancel them explicitly. Quiesce the Web and backend
+while leaving PostgreSQL available, then create all three parts of the recovery set:
+
+1. a custom-format `pg_dump` of the configured database;
+2. a snapshot or archive of the `backend_uploads` volume (and any external object store prefix);
+3. an encrypted copy of `.env` and external secret references, stored separately from the data backup.
+
+Use your deployment's resolved Compose project, database name, and credentials rather than copying
+example values blindly. Validate the dump with `pg_restore --list` and validate each archive checksum.
+A database dump without uploads can leave Artifact and attachment references broken; uploads without
+the database lose ownership and lineage.
+
+### Prove restore without touching the live instance
+
+Restore into a new database and new upload volume under a distinct Compose project or host. Never run
+a restore drill over the active volume. Start the exact application version paired with the backup,
+then verify:
+
+- `/readyz` reports both `db` and `migrations` as `ok`;
+- the canonical Owner and Workspace resolve without another bootstrap;
+- a retained Mission Projection has the expected Task, Run, Artifact, Review, Gate, and sequence facts;
+- referenced uploads can be opened and no secret appears in logs or API responses.
+
+The backup is accepted only after this isolated restore succeeds.
+
+### Upgrade and rollback boundary
+
+After the backup drill, pull/build the fixed target version and start PostgreSQL, backend, and Web.
+Backend startup applies forward migrations. Verify `/health`, `/readyz`, Web login, API reads, WebSocket
+reconnect, and daemon registration before allowing new work.
+
+Do not improvise reverse migrations on the live database. Rolling back only the application is valid
+when the previous version is documented and tested against the new schema. If it is not, stop the
+failed target and restore the pre-upgrade database, uploads, secrets, and previous application version
+as one recovery set. Preserve the failed database separately for diagnosis.
+
+### Personal v1 release golden checklist
+
+- clean backend, CLI/migrate, Web, and Desktop builds originate from the same fixed commit;
+- fresh install and upgrade from the supported previous version reach the same migration head;
+- `/health`, `/readyz`, `/healthz`, API, WebSocket, Web, and daemon/Runtime health pass;
+- the fixture Mission covers Plan, parallel work, independent Review, rework, integration,
+  `final_delivery`, budget, cancellation, Human Gate, restart, and Projection/Replay convergence;
+- Project Command Center, Mission Board, World, Replay, and Inspector resolve the same domain IDs;
+- CSRF/session, PAT/daemon authentication, Owner/Runtime visibility, secret redaction, worktree path
+  boundaries, Artifact/Review lineage, and budget fail-closed checks pass;
+- a backup is restored in isolation and the previous application/data combination remains recoverable;
+- real-provider acceptance is opt-in. Existing evidence may be reused only when its fixed Runtime
+  profile, model, permission, adapter, and protocol inputs have not changed.
+
+### Known limitations
+
+- Personal v1 supports one canonical Owner and one canonical Workspace; it is not a multi-tenant cloud service.
+- There is no public signup, invitations, cloud billing, plugin marketplace, or global opaque auto-scheduler.
+- World and Replay are read projections; coordinates and animation progress are intentionally not durable facts.
+- `reassign_task` is not exposed from Project Command Center and fails closed until a revision-safe Mission command exists.
+- DeepSeek Harness remains a generic Runtime Adapter. LieXiu does not ship a dsh-specific orchestration bridge.
+- A migration with no proven backward-compatible application path requires restoring the full pre-upgrade recovery set.

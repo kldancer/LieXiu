@@ -1,0 +1,60 @@
+{
+  "version": "1.10",
+  "tiledversion": "1.11.0",
+  "type": "map",
+  "orientation": "orthogonal",
+  "renderorder": "right-down",
+  "width": 48,
+  "height": 24,
+  "tilewidth": 16,
+  "tileheight": 16,
+  "infinite": false,
+  "nextlayerid": 3,
+  "nextobjectid": 31,
+  "layers": [
+    {
+      "id": 1,
+      "name": "zones",
+      "type": "objectgroup",
+      "objects": [
+        { "id": 1, "name": "planning-observatory", "type": "zone", "x": 0, "y": 0, "width": 256, "height": 192, "properties": [{ "name": "zoneId", "type": "string", "value": "planning_observatory" }, { "name": "labelX", "type": "float", "value": 128 }, { "name": "labelY", "type": "float", "value": 24 }] },
+        { "id": 2, "name": "execution-workshop", "type": "zone", "x": 256, "y": 0, "width": 256, "height": 192, "properties": [{ "name": "zoneId", "type": "string", "value": "execution_workshop" }, { "name": "labelX", "type": "float", "value": 384 }, { "name": "labelY", "type": "float", "value": 24 }] },
+        { "id": 3, "name": "review-archive", "type": "zone", "x": 512, "y": 0, "width": 256, "height": 192, "properties": [{ "name": "zoneId", "type": "string", "value": "review_archive" }, { "name": "labelX", "type": "float", "value": 640 }, { "name": "labelY", "type": "float", "value": 24 }] },
+        { "id": 4, "name": "integration-forge", "type": "zone", "x": 0, "y": 192, "width": 256, "height": 192, "properties": [{ "name": "zoneId", "type": "string", "value": "integration_forge" }, { "name": "labelX", "type": "float", "value": 128 }, { "name": "labelY", "type": "float", "value": 216 }] },
+        { "id": 5, "name": "blocked-corner", "type": "zone", "x": 256, "y": 192, "width": 256, "height": 192, "properties": [{ "name": "zoneId", "type": "string", "value": "blocked_corner" }, { "name": "labelX", "type": "float", "value": 384 }, { "name": "labelY", "type": "float", "value": 216 }] },
+        { "id": 6, "name": "delivery-plaza", "type": "zone", "x": 512, "y": 192, "width": 256, "height": 192, "properties": [{ "name": "zoneId", "type": "string", "value": "delivery_plaza" }, { "name": "labelX", "type": "float", "value": 640 }, { "name": "labelY", "type": "float", "value": 216 }] }
+      ]
+    },
+    {
+      "id": 2,
+      "name": "anchors",
+      "type": "objectgroup",
+      "objects": [
+        { "id": 7, "name": "planning-observatory-spawn-0", "type": "anchor", "x": 48, "y": 80, "width": 0, "height": 0, "properties": [{ "name": "zoneId", "type": "string", "value": "planning_observatory" }, { "name": "anchorKind", "type": "string", "value": "spawn" }, { "name": "order", "type": "int", "value": 0 }] },
+        { "id": 8, "name": "planning-observatory-work-1", "type": "anchor", "x": 112, "y": 80, "width": 0, "height": 0, "properties": [{ "name": "zoneId", "type": "string", "value": "planning_observatory" }, { "name": "anchorKind", "type": "string", "value": "work" }, { "name": "order", "type": "int", "value": 1 }] },
+        { "id": 9, "name": "planning-observatory-work-2", "type": "anchor", "x": 176, "y": 80, "width": 0, "height": 0, "properties": [{ "name": "zoneId", "type": "string", "value": "planning_observatory" }, { "name": "anchorKind", "type": "string", "value": "work" }, { "name": "order", "type": "int", "value": 2 }] },
+        { "id": 10, "name": "planning-observatory-spawn-3", "type": "anchor", "x": 80, "y": 144, "width": 0, "height": 0, "properties": [{ "name": "zoneId", "type": "string", "value": "planning_observatory" }, { "name": "anchorKind", "type": "string", "value": "spawn" }, { "name": "order", "type": "int", "value": 3 }] },
+        { "id": 11, "name": "execution-workshop-spawn-0", "type": "anchor", "x": 304, "y": 80, "width": 0, "height": 0, "properties": [{ "name": "zoneId", "type": "string", "value": "execution_workshop" }, { "name": "anchorKind", "type": "string", "value": "spawn" }, { "name": "order", "type": "int", "value": 0 }] },
+        { "id": 12, "name": "execution-workshop-work-1", "type": "anchor", "x": 368, "y": 80, "width": 0, "height": 0, "properties": [{ "name": "zoneId", "type": "string", "value": "execution_workshop" }, { "name": "anchorKind", "type": "string", "value": "work" }, { "name": "order", "type": "int", "value": 1 }] },
+        { "id": 13, "name": "execution-workshop-work-2", "type": "anchor", "x": 432, "y": 80, "width": 0, "height": 0, "properties": [{ "name": "zoneId", "type": "string", "value": "execution_workshop" }, { "name": "anchorKind", "type": "string", "value": "work" }, { "name": "order", "type": "int", "value": 2 }] },
+        { "id": 14, "name": "execution-workshop-spawn-3", "type": "anchor", "x": 336, "y": 144, "width": 0, "height": 0, "properties": [{ "name": "zoneId", "type": "string", "value": "execution_workshop" }, { "name": "anchorKind", "type": "string", "value": "spawn" }, { "name": "order", "type": "int", "value": 3 }] },
+        { "id": 15, "name": "review-archive-spawn-0", "type": "anchor", "x": 560, "y": 80, "width": 0, "height": 0, "properties": [{ "name": "zoneId", "type": "string", "value": "review_archive" }, { "name": "anchorKind", "type": "string", "value": "spawn" }, { "name": "order", "type": "int", "value": 0 }] },
+        { "id": 16, "name": "review-archive-work-1", "type": "anchor", "x": 624, "y": 80, "width": 0, "height": 0, "properties": [{ "name": "zoneId", "type": "string", "value": "review_archive" }, { "name": "anchorKind", "type": "string", "value": "work" }, { "name": "order", "type": "int", "value": 1 }] },
+        { "id": 17, "name": "review-archive-work-2", "type": "anchor", "x": 688, "y": 80, "width": 0, "height": 0, "properties": [{ "name": "zoneId", "type": "string", "value": "review_archive" }, { "name": "anchorKind", "type": "string", "value": "work" }, { "name": "order", "type": "int", "value": 2 }] },
+        { "id": 18, "name": "review-archive-spawn-3", "type": "anchor", "x": 592, "y": 144, "width": 0, "height": 0, "properties": [{ "name": "zoneId", "type": "string", "value": "review_archive" }, { "name": "anchorKind", "type": "string", "value": "spawn" }, { "name": "order", "type": "int", "value": 3 }] },
+        { "id": 19, "name": "integration-forge-spawn-0", "type": "anchor", "x": 48, "y": 272, "width": 0, "height": 0, "properties": [{ "name": "zoneId", "type": "string", "value": "integration_forge" }, { "name": "anchorKind", "type": "string", "value": "spawn" }, { "name": "order", "type": "int", "value": 0 }] },
+        { "id": 20, "name": "integration-forge-work-1", "type": "anchor", "x": 112, "y": 272, "width": 0, "height": 0, "properties": [{ "name": "zoneId", "type": "string", "value": "integration_forge" }, { "name": "anchorKind", "type": "string", "value": "work" }, { "name": "order", "type": "int", "value": 1 }] },
+        { "id": 21, "name": "integration-forge-work-2", "type": "anchor", "x": 176, "y": 272, "width": 0, "height": 0, "properties": [{ "name": "zoneId", "type": "string", "value": "integration_forge" }, { "name": "anchorKind", "type": "string", "value": "work" }, { "name": "order", "type": "int", "value": 2 }] },
+        { "id": 22, "name": "integration-forge-spawn-3", "type": "anchor", "x": 80, "y": 336, "width": 0, "height": 0, "properties": [{ "name": "zoneId", "type": "string", "value": "integration_forge" }, { "name": "anchorKind", "type": "string", "value": "spawn" }, { "name": "order", "type": "int", "value": 3 }] },
+        { "id": 23, "name": "blocked-corner-spawn-0", "type": "anchor", "x": 304, "y": 272, "width": 0, "height": 0, "properties": [{ "name": "zoneId", "type": "string", "value": "blocked_corner" }, { "name": "anchorKind", "type": "string", "value": "spawn" }, { "name": "order", "type": "int", "value": 0 }] },
+        { "id": 24, "name": "blocked-corner-work-1", "type": "anchor", "x": 368, "y": 272, "width": 0, "height": 0, "properties": [{ "name": "zoneId", "type": "string", "value": "blocked_corner" }, { "name": "anchorKind", "type": "string", "value": "work" }, { "name": "order", "type": "int", "value": 1 }] },
+        { "id": 25, "name": "blocked-corner-work-2", "type": "anchor", "x": 432, "y": 272, "width": 0, "height": 0, "properties": [{ "name": "zoneId", "type": "string", "value": "blocked_corner" }, { "name": "anchorKind", "type": "string", "value": "work" }, { "name": "order", "type": "int", "value": 2 }] },
+        { "id": 26, "name": "blocked-corner-spawn-3", "type": "anchor", "x": 336, "y": 336, "width": 0, "height": 0, "properties": [{ "name": "zoneId", "type": "string", "value": "blocked_corner" }, { "name": "anchorKind", "type": "string", "value": "spawn" }, { "name": "order", "type": "int", "value": 3 }] },
+        { "id": 27, "name": "delivery-plaza-spawn-0", "type": "anchor", "x": 560, "y": 272, "width": 0, "height": 0, "properties": [{ "name": "zoneId", "type": "string", "value": "delivery_plaza" }, { "name": "anchorKind", "type": "string", "value": "spawn" }, { "name": "order", "type": "int", "value": 0 }] },
+        { "id": 28, "name": "delivery-plaza-work-1", "type": "anchor", "x": 624, "y": 272, "width": 0, "height": 0, "properties": [{ "name": "zoneId", "type": "string", "value": "delivery_plaza" }, { "name": "anchorKind", "type": "string", "value": "work" }, { "name": "order", "type": "int", "value": 1 }] },
+        { "id": 29, "name": "delivery-plaza-work-2", "type": "anchor", "x": 688, "y": 272, "width": 0, "height": 0, "properties": [{ "name": "zoneId", "type": "string", "value": "delivery_plaza" }, { "name": "anchorKind", "type": "string", "value": "work" }, { "name": "order", "type": "int", "value": 2 }] },
+        { "id": 30, "name": "delivery-plaza-spawn-3", "type": "anchor", "x": 592, "y": 336, "width": 0, "height": 0, "properties": [{ "name": "zoneId", "type": "string", "value": "delivery_plaza" }, { "name": "anchorKind", "type": "string", "value": "spawn" }, { "name": "order", "type": "int", "value": 3 }] }
+      ]
+    }
+  ]
+}

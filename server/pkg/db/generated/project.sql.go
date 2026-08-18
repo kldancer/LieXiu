@@ -184,6 +184,47 @@ func (q *Queries) GetProjectIssueStats(ctx context.Context, projectIds []pgtype.
 	return items, nil
 }
 
+const listProjectMissionIDs = `-- name: ListProjectMissionIDs :many
+SELECT mission.issue_id
+FROM mission
+JOIN issue
+  ON issue.id = mission.issue_id
+ AND issue.workspace_id = mission.workspace_id
+WHERE mission.workspace_id = $1
+  AND issue.project_id = $2
+ORDER BY mission.updated_at DESC, mission.issue_id ASC
+LIMIT $3
+`
+
+type ListProjectMissionIDsParams struct {
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+	ProjectID   pgtype.UUID `json:"project_id"`
+	PageSize    int32       `json:"page_size"`
+}
+
+// Project Command Center owns no Mission detail state. It resolves the
+// canonical Mission roots through their existing Issue project relation and
+// lets the orchestration Projection service summarize those facts.
+func (q *Queries) ListProjectMissionIDs(ctx context.Context, arg ListProjectMissionIDsParams) ([]pgtype.UUID, error) {
+	rows, err := q.db.Query(ctx, listProjectMissionIDs, arg.WorkspaceID, arg.ProjectID, arg.PageSize)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []pgtype.UUID{}
+	for rows.Next() {
+		var issue_id pgtype.UUID
+		if err := rows.Scan(&issue_id); err != nil {
+			return nil, err
+		}
+		items = append(items, issue_id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listProjects = `-- name: ListProjects :many
 SELECT id, workspace_id, title, description, icon, status, lead_type, lead_id, created_at, updated_at, priority, start_date, due_date FROM project
 WHERE workspace_id = $1

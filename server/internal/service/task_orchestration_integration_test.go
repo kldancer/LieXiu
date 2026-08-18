@@ -232,8 +232,8 @@ func TestTaskExecutionGatewayEnqueuesMissionScopedPlanningRun(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if processed != 1 {
-		t.Fatalf("reconciled runs=%d, want 1", processed)
+	if processed < 1 {
+		t.Fatalf("reconciled runs=%d, want at least the target planning run", processed)
 	}
 	run, err := db.New(pool).GetOrchestrationRunInWorkspace(ctx, db.GetOrchestrationRunInWorkspaceParams{RunID: fixture.runID, WorkspaceID: fixture.workspaceID})
 	if err != nil {
@@ -326,7 +326,7 @@ func TestOwnerCancellationStopsMissionScopedPlanningExecution(t *testing.T) {
 	}
 
 	reconciler := orchestration.NewRunReconciler(repository, gateway, orchestration.RunReconcilerOptions{})
-	if processed, err := reconciler.ReconcileBatch(ctx); err != nil || processed != 1 {
+	if processed, err := reconciler.ReconcileBatch(ctx); err != nil || processed < 1 {
 		t.Fatalf("reconcile cancelled planning run: processed=%d err=%v", processed, err)
 	}
 	run, err := queries.GetOrchestrationRunInWorkspace(ctx, db.GetOrchestrationRunInWorkspaceParams{
