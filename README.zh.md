@@ -10,7 +10,7 @@
 
 **本地优先、可视化、厂商中立的多 AI Agent 团队控制面。**
 
-[English](README.md) · [架构结论](docs/diy/02-%E5%8F%AF%E8%A7%86%E5%8C%96%E5%A4%9A%E6%99%BA%E8%83%BD%E4%BD%93%E9%A1%B9%E7%9B%AE%E7%AE%A1%E7%90%86%E5%B7%A5%E5%85%B7%20DIY%E7%BB%93%E8%AE%BA%E4%B8%8E%E6%9E%B6%E6%9E%84%E5%9F%BA%E7%BA%BF.md) · [Wave 进度](docs/diy/08-Wave%20%E5%AE%9E%E6%96%BD%E8%B7%AF%E7%BA%BF%E4%B8%8E%E8%BF%9B%E5%BA%A6%E6%80%BB%E8%A7%88.md) · [自部署](SELF_HOSTING.md)
+[English](README.md) · [正式设计](docs/diy/正式设计/README.md) · [Wave 进度](docs/diy/进度板/14-Wave%204-6实施路线与进度总览.md) · [自部署](SELF_HOSTING.md)
 
 </div>
 
@@ -48,7 +48,8 @@ DeepSeek Harness 被定位为 LieXiu 内部的一种强 Runtime 和插件生态�
 个人版产品减法、Orchestration 基础和物理 schema 压缩已经推进到 Wave 3 完成。下一阶段是接入真实 Planner、
 验证多厂商 Runtime 协作，并实现像素世界投影。当前仓库是持续研发中的个人基线，不代表已经发布线上云服务。
 
-权威范围与进度统一维护在 [Wave 进度版](docs/diy/08-Wave%20%E5%AE%9E%E6%96%BD%E8%B7%AF%E7%BA%BF%E4%B8%8E%E8%BF%9B%E5%BA%A6%E6%80%BB%E8%A7%88.md)。
+稳定合同维护在[正式设计](docs/diy/正式设计/README.md)，当前范围与进度统一维护在
+[Wave 进度板](docs/diy/进度板/14-Wave%204-6实施路线与进度总览.md)。
 
 ## 本地开发
 

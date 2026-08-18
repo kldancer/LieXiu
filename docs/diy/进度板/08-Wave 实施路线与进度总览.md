@@ -1,19 +1,18 @@
-# Wave 实施路线与进度总览
+# Wave 0–3 实施路线与进度总览（已封板）
 
 ## 1. 文档定位
 
-本文是 LieXiu DIY 改造的唯一 Wave 进度入口，用于回答三个问题：
+本文是 LieXiu Wave 0–3 的历史封板，用于回答三个问题：
 
 1. 当前处于哪个 Wave；
 2. 已完成、正在推进和尚未开始的工作分别是什么；
 3. 进入下一 Wave 前还缺哪些硬门槛。
 
-产品目标和事实所有权以 02 为准，功能保留/改造/删除边界以 03 为准，排序理由以 04 为准，研发环境以 05
-为准，现有执行链保护以 06 为准，MVP v0.1 实现合同以 07 为准，多会话协同机制以 09 为准，Wave 1C 删除闭包以 10 为准，
-本地实例身份以 11 为准，单 owner 产品闭包以 12 为准。本文只维护执行顺序、状态和证据链接，
-不重复定义领域字段、状态机或删除合同。
+稳定产品和技术合同已经收敛到[正式设计](../正式设计/README.md)。Wave 4–6 的当前状态维护在
+[14-Wave 4-6 实施路线与进度总览](14-Wave%204-6实施路线与进度总览.md)。本文只保留已完成阶段的执行顺序、
+退出结论和证据链接，不再维护领域合同或未来进度。
 
-命令、日志、临时 ID、动态测试输出和一次性问题进入 `.work/tasks/`，不复制到本文。
+命令、日志、临时 ID、动态测试输出和一次性问题进入 `../../../.work/tasks`，不复制到本文。
 
 ## 2. 状态口径
 
@@ -53,7 +52,7 @@ flowchart LR
 | Wave 2：三种正式视图 | ✅ | 5 / 5 | 三面、生命周期、恢复合同及 Saved View/Property 全栈减法均已验收 |
 | Wave 3：内部清理与品牌 | ✅ | 5 / 5 | 旧域消费者、query/generated、配置与数据库对象已收敛；个人版 schema 在隔离库和黄金场景验收通过 |
 
-**Wave 1B、Wave 1C、Wave 2、Wave 3 已完成。下一阶段进入真实 Planner/多厂商 Runtime 的独立扩展 Gate；继续保留 Mission/Run 的 TaskMessage、执行 transcript、Artifact、Review、Human Gate、AgentTeam/RolePolicy 与显式 Command。用户 `liexiu` 库已应用 migration 336–339。**
+**Wave 1B、Wave 1C、Wave 2、Wave 3 已完成并封板。下一阶段进入真实 Planner、Role/Runtime 精确路由、结构化协作和 Phaser 像素世界，状态统一见新进度板。**
 
 ## 5. Wave 0：基线、保护面和合同
 
@@ -72,15 +71,15 @@ Wave 0 完成只表示“可以安全开始最小编排实现”，不授权直�
 | 编号 | 工作项 | 状态 | 证据/退出条件 |
 | --- | --- | --- | --- |
 | 1A.1 | 新增 Mission、TaskNode、Assignment、Run、Artifact、Review、Activity schema | ✅ | migration 314–329 已建立 additive schema 和独立 concurrent indexes |
-| 1A.2 | 实现 Plan v1 校验、DAG 就绪计算和纯状态机 | ✅ | `server/internal/service/orchestration` 的目标测试 |
+| 1A.2 | 实现 Plan v1 校验、DAG 就绪计算和纯状态机 | ✅ | `../../../server/internal/service/orchestration` 的目标测试 |
 | 1A.3 | 完成 sqlc 生成、编排 queries 和 repository 事务入口 | ✅ | sqlc v1.31.1 固定；CreateMission/SubmitPlan、Activity、sequence、幂等和失败回滚通过本地 PostgreSQL 目标测试 |
 | 1A.4 | 实现 CreateMission、SubmitPlan、StartMission、CancelMission | ✅ | owner 权限、完整 Plan 校验、陈旧 revision、首批 ready 计算和取消状态通过目标测试 |
 | 1A.5 | 实现关系状态与 Activity 同事务写入 | ✅ | 四个 Command 串行/并发重放不重复写；Mission Activity sequence 连续单调 |
 | 1A.6 | 建立 ExecutionGateway 和 Run→AgentTask 唯一桥接 | ✅ | 8 路并发及提交结果重放只产生一个 AgentTask；取消重放通过 TaskService 完整取消链 |
 | 1A.7 | 实现 RunReconciler 和启动恢复 | ✅ | Mission 行锁下 success/fail/cancel/timeout/offline 幂等归一化；启动立即扫描、周期游标恢复和超时取消重试通过目标测试 |
-| 1A.8 | 跑通 Artifact、Review、返工和 A/B→C 三节点闭环 | ✅ | 确定性 fake execution fixture 完成并行、一次技术重试、一次审查返工、批准依赖放行和最终集成；见 `.work/tasks/wave1a-walking-skeleton/receipt.md` |
-| 1A.9 | 暴露 MissionProjection 和最小 HTTP API | ✅ | workspace-scoped snapshot、Activity 增量和 Run 详情共用同一读模型；刷新、漏事件和超前游标均可恢复；见 `.work/tasks/wave1a-projection-api/receipt.md` |
-| 1A.10 | 建立三面占位 Web 页并通过八个关键场景 | ✅ | 看板、方块角色世界、Run 详情共用一个 Projection；见 `.work/tasks/wave1a-three-view-web/receipt.md` |
+| 1A.8 | 跑通 Artifact、Review、返工和 A/B→C 三节点闭环 | ✅ | 确定性 fake execution fixture 完成并行、一次技术重试、一次审查返工、批准依赖放行和最终集成；见 `../../../.work/tasks/wave1a-walking-skeleton/receipt.md` |
+| 1A.9 | 暴露 MissionProjection 和最小 HTTP API | ✅ | workspace-scoped snapshot、Activity 增量和 Run 详情共用同一读模型；刷新、漏事件和超前游标均可恢复；见 `../../../.work/tasks/wave1a-projection-api/receipt.md` |
+| 1A.10 | 建立三面占位 Web 页并通过八个关键场景 | ✅ | 看板、方块角色世界、Run 详情共用一个 Projection；见 `../../../.work/tasks/wave1a-three-view-web/receipt.md` |
 
 ### Wave 1A 退出门槛
 
@@ -97,11 +96,11 @@ Wave 0 完成只表示“可以安全开始最小编排实现”，不授权直�
 | 编号 | 工作项 | 状态 | 退出条件 |
 | --- | --- | --- | --- |
 | 1B.1 | 固定所有 AgentTask 创建入口和允许调用白名单 | ✅ | 静态边界测试能发现新旁路和已消失入口 |
-| 1B.2 | 将 Issue assignee 自动启动迁移为 Orchestrator Command | ✅ | 普通 Issue 的 agent assignee 只保留所有权元数据，create/update/batch/handoff 均不能直接产生执行；显式 Mission Command 是替代入口；见 `.work/tasks/wave1b-issue-assignment/receipt.md` |
-| 1B.3 | 将 Quick Create 迁移为 CreateMission/SubmitPlan | ✅ | Web/Slack Quick Create 只幂等建立 ready Mission 与固定计划，不创建 Run/AgentTask；见 `.work/tasks/wave1b-quick-create/receipt.md` |
-| 1B.4 | 将 retry/rerun policy 归还 Orchestrator | ✅ | TaskService 排除编排 Run；failure_kind、自动技术重试和 owner 手工解除 blocked 由 Orchestrator 决定；见 `.work/tasks/wave1b-retry-policy/receipt.md` |
-| 1B.5 | 用 Role + Assignment 替代 Squad leader 自动分派 | ✅ | Issue/Squad/handoff/comment/child-done 只保留元数据与业务事实，不再创建 AgentTask；见 `.work/tasks/wave1b-producer-cutover/receipt.md` |
-| 1B.6 | 停止 Autopilot/Channel 后台生产者并收缩白名单 | ✅ | Autopilot/Chat/Channel/Onboarding 入口与后台启动已停产，边界和全包回归通过；见 `.work/tasks/wave1b-producer-cutover/receipt.md` |
+| 1B.2 | 将 Issue assignee 自动启动迁移为 Orchestrator Command | ✅ | 普通 Issue 的 agent assignee 只保留所有权元数据，create/update/batch/handoff 均不能直接产生执行；显式 Mission Command 是替代入口；见 `../../../.work/tasks/wave1b-issue-assignment/receipt.md` |
+| 1B.3 | 将 Quick Create 迁移为 CreateMission/SubmitPlan | ✅ | Web/Slack Quick Create 只幂等建立 ready Mission 与固定计划，不创建 Run/AgentTask；见 `../../../.work/tasks/wave1b-quick-create/receipt.md` |
+| 1B.4 | 将 retry/rerun policy 归还 Orchestrator | ✅ | TaskService 排除编排 Run；failure_kind、自动技术重试和 owner 手工解除 blocked 由 Orchestrator 决定；见 `../../../.work/tasks/wave1b-retry-policy/receipt.md` |
+| 1B.5 | 用 Role + Assignment 替代 Squad leader 自动分派 | ✅ | Issue/Squad/handoff/comment/child-done 只保留元数据与业务事实，不再创建 AgentTask；见 `../../../.work/tasks/wave1b-producer-cutover/receipt.md` |
+| 1B.6 | 停止 Autopilot/Channel 后台生产者并收缩白名单 | ✅ | Autopilot/Chat/Channel/Onboarding 入口与后台启动已停产，边界和全包回归通过；见 `../../../.work/tasks/wave1b-producer-cutover/receipt.md` |
 
 Wave 1B 完成前不删除旧生产者代码；先停止入口和后台写入，确认无活跃读写后再进入 Wave 1C 删除闭包。
 
@@ -150,10 +149,10 @@ Wave 1B 的退出判定按真实生产链而非页面或产品域名称计算。
 停止注册路由不算删除完成。
 
 1C.9 的冻结合同见 11，生成、数据库、HTTP、真实 router、Daemon、前端和部署安全验证见
-`.work/tasks/wave1c-local-owner-bootstrap/receipt.md`。1C.10 采用非破坏性迁移：先停止公开身份和邀请/成员/Workspace
+`../../../.work/tasks/wave1c-local-owner-bootstrap/receipt.md`。1C.10 采用非破坏性迁移：先停止公开身份和邀请/成员/Workspace
 产品生产者，再删除消费者；历史表和已有 Workspace/Mission/Run 数据不在本波物理删除。实现与验证收据见
-`.work/tasks/wave1c-single-owner-cleanup/receipt.md`。1C.11 与 1C.13 的产品入口、隐式派发和共享 UI/Core/server 闭包见
-`.work/tasks/wave1c-chat-cleanup/receipt.md` 与 `.work/tasks/wave1c-squad-inbox-cleanup/receipt.md`；历史兼容表、query/generated
+`../../../.work/tasks/wave1c-single-owner-cleanup/receipt.md`。1C.11 与 1C.13 的产品入口、隐式派发和共享 UI/Core/server 闭包见
+`../../../.work/tasks/wave1c-chat-cleanup/receipt.md` 与 `../../../.work/tasks/wave1c-squad-inbox-cleanup/receipt.md`；历史兼容表、query/generated
 和 teardown 统一转入 Wave 3 的非破坏治理 Gate。
 
 ## 9. Wave 2：三种正式视图
@@ -169,7 +168,7 @@ Wave 1B 的退出判定按真实生产链而非页面或产品域名称计算。
 Wave 1A 的方块角色页面只是 Projection 纵切证明，不等于 Wave 2 的正式游戏化产品完成。
 
 Wave 2 的统一恢复、生命周期 HTTP、Quick Create 导航、DAG/Run/像素状态、Saved View/Property 全栈删除及任务产品
-UI 减法证据见 `.work/tasks/wave2-visual-surfaces/receipt.md`。
+UI 减法证据见 `../../../.work/tasks/wave2-visual-surfaces/receipt.md`。
 
 ## 10. Wave 3：内部清理、数据库和品牌
 
@@ -182,27 +181,26 @@ UI 减法证据见 `.work/tasks/wave2-visual-surfaces/receipt.md`。
 | 3.5 | 修改自有品牌、名称和正式像素美术 | ✅ |
 
 3.4 已完成数据分类、两阶段授权清理、fail-closed migration 337–339、SQLC 幂等重生、隔离库 up/down/runner
-验证与黄金场景回归，证据见 `.work/tasks/wave3-data-schema/receipt.md`。用户 `liexiu` 库已在完整快照后由正式
-runner 应用 336–339，并通过物理 schema 核验。品牌层采用可配置产品名，默认工作名为 `Agent Studio`；内部包名、
-Go module、CLI 和桌面升级身份暂时保留兼容标识，不与用户可见品牌绑死。
+验证与黄金场景回归，证据见 `../../../.work/tasks/wave3-data-schema/receipt.md`。用户 `liexiu` 库已在完整快照后由正式
+runner 应用 336–339，并通过物理 schema 核验。活跃产品、包、CLI、Desktop、Compose 和数据库身份已统一为
+“列宿 · LieXiu”；历史来源和不可变 migration 保留 Multica 名称。
 
-## 11. 延后能力
+## 11. 后续能力移交
 
-以下能力不计入当前关键路径，在 Wave 1A/2 的领域和 Projection 合同稳定后单独进入扩展 Gate：
+以下能力已经从本历史板移交给 Wave 4–6 新进度板：
 
-| 能力 | 状态 | 进入条件 |
-| --- | --- | --- |
-| 真实 LLM Planner | ⏸ | 确定性 Plan v1 和拒绝路径稳定 |
-| 多厂商 runtime 组合验收 | ⏸ | ExecutionGateway/Run 归一化稳定 |
-| DeepSeek Harness 插件 | ⏸ | 证明现有 Runtime Adapter 无法直接满足某项真实能力 |
-| 长期记忆、A2A、外部 Agent 服务 | ⏸ | MVP 黄金场景完成并出现明确消费者 |
-| 高级像素玩法和地图编辑器 | ⏸ | Wave 2 的状态映射和可用性验证完成 |
+| 能力 | 新归属 |
+| --- | --- |
+| 真实 LLM Planner | Wave 4A |
+| RoleProfile 与多 Runtime 路由 | Wave 4B |
+| 结构化 Agent 协作 | Wave 4C |
+| Phaser 像素世界与回放 | Wave 5 |
+| 项目指挥中心和个人版 v1 | Wave 6 |
+| 长期记忆、A2A、地图编辑器等扩展 | 新进度板“明确延后与止损线” |
 
 ## 12. 维护规则
 
-1. 本文是唯一进度状态源；03、04、06、07 不再分别维护“当前完成到哪里”。
-2. 工作开始时标记 🚧；只有实现合同、目标测试和适用运行事实齐全后标记 ✅。
-3. 单次命令、重试、耗时和临时阻塞写入 `.work/tasks/<task>/receipt.md`，本文只链接稳定证据。
-4. 删除域必须满足 03 的完整依赖闭包，不能按目录或页面数量计算完成。
-5. Wave 边界或工作包稳定变化时同步更新总表、对应明细和 03 第 9 节，不复制一套平行路线。
-6. 每次继续推进默认从“当前关键路径”的首个未完成项开始，除非用户明确调整优先级。
+1. 本文已封板，不再追加新工作项或动态状态。
+2. 发现历史结论与实现不一致时，只做事实校准，不把未来路线重新写回本文。
+3. 稳定合同维护在 `../正式设计`，当前进度维护在 `14-Wave 4-6实施路线与进度总览.md`。
+4. 单次命令、重试、耗时和临时阻塞继续写入 `.work/tasks/<task>/receipt.md`。

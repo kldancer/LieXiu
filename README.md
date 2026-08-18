@@ -10,7 +10,7 @@
 
 **A local-first, visual control plane for teams of heterogeneous AI agents.**
 
-[中文](README.zh.md) · [Architecture](docs/diy/02-%E5%8F%AF%E8%A7%86%E5%8C%96%E5%A4%9A%E6%99%BA%E8%83%BD%E4%BD%93%E9%A1%B9%E7%9B%AE%E7%AE%A1%E7%90%86%E5%B7%A5%E5%85%B7%20DIY%E7%BB%93%E8%AE%BA%E4%B8%8E%E6%9E%B6%E6%9E%84%E5%9F%BA%E7%BA%BF.md) · [Wave progress](docs/diy/08-Wave%20%E5%AE%9E%E6%96%BD%E8%B7%AF%E7%BA%BF%E4%B8%8E%E8%BF%9B%E5%BA%A6%E6%80%BB%E8%A7%88.md) · [Self-hosting](SELF_HOSTING.md)
+[中文](README.zh.md) · [Architecture](docs/diy/正式设计/README.md) · [Wave progress](docs/diy/进度板/14-Wave%204-6实施路线与进度总览.md) · [Self-hosting](SELF_HOSTING.md)
 
 </div>
 
@@ -52,7 +52,7 @@ complete. The next gates are real Planner integration, multi-provider runtime co
 the pixel-world projection. This is an active personal development baseline, not a published cloud
 service.
 
-See the [Wave board](docs/diy/08-Wave%20%E5%AE%9E%E6%96%BD%E8%B7%AF%E7%BA%BF%E4%B8%8E%E8%BF%9B%E5%BA%A6%E6%80%BB%E8%A7%88.md)
+See the [Wave board](docs/diy/进度板/14-Wave%204-6实施路线与进度总览.md)
 for the authoritative scope and progress.
 
 ## Local development
