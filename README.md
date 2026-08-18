@@ -50,10 +50,9 @@ product's control plane. Core orchestration and visualization remain owned by Li
 
 The personal-product subtraction, orchestration foundation, real Planner, deterministic role and
 Runtime routing, structured collaboration mailbox, formal pixel world, Replay, Project Command
-Center, and heterogeneous Runtime acceptance through Wave 6B are complete. The current release
-gate covers repeatable self-host upgrades, restart/long-run recovery, security boundaries, and
-operator documentation. This remains a personal self-host development baseline, not a published
-cloud service.
+Center, heterogeneous Runtime acceptance, repeatable self-host upgrades, restart recovery,
+security boundaries, and operator documentation through Wave 6 are complete. This remains a
+personal self-host development baseline, not a published cloud service.
 
 See the [Wave board](docs/diy/进度板/14-Wave%204-6实施路线与进度总览.md)
 for the authoritative scope and progress.

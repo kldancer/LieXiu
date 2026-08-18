@@ -47,8 +47,8 @@ DeepSeek Harness 被定位为 LieXiu 内部的一种强 Runtime 和插件生态�
 ## 当前进度
 
 个人版产品减法、Orchestration 基础、真实 Planner、确定性角色/Runtime 路由、结构化协作 Mailbox、正式像素世界、
-Replay、项目指挥中心和异构 Runtime 验收已推进到 Wave 6B 完成。当前发布 Gate 收敛可重复的自托管升级、重启/长时
-恢复、安全边界和运维文档。当前仓库仍是个人自托管研发基线，不代表已经发布线上云服务。
+Replay、项目指挥中心、异构 Runtime 验收、可重复自托管升级、重启恢复、安全边界和运维文档已推进到 Wave 6 完成。
+当前仓库仍是个人自托管研发基线，不代表已经发布线上云服务。
 
 稳定合同维护在[正式设计](docs/diy/正式设计/README.md)，当前范围与进度统一维护在
 [Wave 进度板](docs/diy/进度板/14-Wave%204-6实施路线与进度总览.md)。
